@@ -15,7 +15,7 @@ const env = {
 };
 const ctx = { waitUntil() {}, passThroughOnException() {} };
 
-test("renders the CRVO dashboard and verified snapshot", async () => {
+test("renders the CRVO operational reporting navigation and daily snapshot", async () => {
   const worker = await loadWorker();
 
   const response = await worker.fetch(
@@ -33,10 +33,13 @@ test("renders the CRVO dashboard and verified snapshot", async () => {
   );
   const html = await response.text();
   assert.match(html, developmentPreviewMeta);
-  assert.match(html, /Performance CRVO Lens/);
-  assert.match(html, /1[\s ]?097/);
-  assert.match(html, />Sources</);
-  assert.match(html, />Studio</);
+  assert.match(html, /Performance du jour/);
+  assert.match(html, /Dashboard de la veille/);
+  assert.match(html, /Goulots &amp; encours/);
+  assert.match(html, /Plus vieux dossiers/);
+  assert.match(html, /Sources &amp; connexion/);
+  assert.match(html, /07 août 2026/);
+  assert.match(html, /Priorité du jour : Carrosserie et DSP/);
 });
 
 test("serves a truthful verified snapshot when Supabase is not configured", async () => {
