@@ -1,20 +1,10 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import { useEffect, useMemo, useState } from "react";
 
-type Tab = "Pilotage" | "Sources" | "Studio" | "Paramètres";
-type IconName =
-  | "dashboard" | "database" | "studio" | "settings" | "calendar" | "download"
-  | "filter" | "bell" | "upload" | "clock" | "check" | "warning" | "arrow"
-  | "file" | "server" | "shield" | "refresh" | "plus" | "eye" | "chevron";
-
-const tabs: Array<{ label: Tab; icon: IconName }> = [
-  { label: "Pilotage", icon: "dashboard" },
-  { label: "Sources", icon: "database" },
-  { label: "Studio", icon: "studio" },
-  { label: "Paramètres", icon: "settings" },
-];
+type View = "today" | "yesterday" | "bottlenecks" | "oldest" | "sources";
+type IconName = "today" | "yesterday" | "bottleneck" | "oldest" | "source" | "calendar" | "refresh" | "menu" | "close" | "arrow" | "check" | "warning" | "car";
 
 type Snapshot = {
   date: string;
@@ -31,306 +21,310 @@ type Snapshot = {
 const seedSnapshot: Snapshot = {
   date: "2026-08-07",
   label: "07 août 2026",
-  source: "Classeur Excel CRVO quotidien",
+  source: "Book CRVO Lens - Journée du 07.08.2026.xlsx",
   entries: 78,
   exits: 86,
   stock: 1097,
   over15: 494,
   over20: 399,
   production: [
-    { name: "Expertise", value: 80, tone: "blue" },
-    { name: "Mécanique", value: 96, tone: "cyan" },
-    { name: "DSP", value: 24, tone: "teal" },
-    { name: "Carrosserie", value: 11, tone: "yellow" },
-    { name: "Préparation", value: 89, tone: "blue" },
-    { name: "Qualité", value: 88, tone: "cyan" },
-    { name: "Sortie usine", value: 86, tone: "teal" },
+    { name: "Expertise", value: 80, tone: "coral" },
+    { name: "Mécanique", value: 96, tone: "green" },
+    { name: "DSP", value: 24, tone: "cyan" },
+    { name: "Carrosserie", value: 11, tone: "red" },
+    { name: "Préparation", value: 89, tone: "purple" },
+    { name: "Qualité", value: 88, tone: "orange" },
+    { name: "Sortie usine", value: 86, tone: "blue" },
   ],
 };
 
-function getStudioMetrics(snapshot: Snapshot) { return [
-  { id: "stock", label: "Stock usine", value: snapshot.stock },
-  { id: "over15", label: "Stock > 15 jours", value: snapshot.over15 },
-  { id: "over20", label: "Stock > 20 jours", value: snapshot.over20 },
-  { id: "entries", label: "Entrées VOP", value: snapshot.entries },
-  { id: "exits", label: "Sorties VOP", value: snapshot.exits },
-]; }
+const views: Array<{ id: View; label: string; short: string; icon: IconName }> = [
+  { id: "today", label: "Performance du jour", short: "Aujourd’hui", icon: "today" },
+  { id: "yesterday", label: "Dashboard de la veille", short: "Veille", icon: "yesterday" },
+  { id: "bottlenecks", label: "Goulots & encours", short: "Goulots", icon: "bottleneck" },
+  { id: "oldest", label: "Plus vieux dossiers", short: "Dossiers", icon: "oldest" },
+  { id: "sources", label: "Sources & connexion", short: "Sources", icon: "source" },
+];
 
-function useLiveSnapshot() {
-  const [snapshot, setSnapshot] = useState<Snapshot>(seedSnapshot);
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/dashboard", { signal: controller.signal })
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("unavailable")))
-      .then((payload: unknown) => {
-        const parsed = payload as { snapshot?: Snapshot };
-        if (parsed.snapshot) setSnapshot(parsed.snapshot);
-      })
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, []);
-  return snapshot;
-}
+const performanceTargets: Record<string, { daily: number; monthly: number; monthlyTarget: number }> = {
+  Expertise: { daily: 90, monthly: 398, monthlyTarget: 449 },
+  Mécanique: { daily: 85, monthly: 449, monthlyTarget: 424 },
+  DSP: { daily: 48, monthly: 129, monthlyTarget: 240 },
+  Carrosserie: { daily: 63, monthly: 71, monthlyTarget: 313 },
+  Préparation: { daily: 90, monthly: 441, monthlyTarget: 448 },
+  Qualité: { daily: 90, monthly: 446, monthlyTarget: 448 },
+  "Sortie usine": { daily: 92, monthly: 444, monthlyTarget: 464 },
+};
+
+const rollingDates = ["07 juil", "08", "09", "10", "13", "15", "16", "17", "20", "21", "22", "23", "24", "27", "28", "29", "30", "31", "03 août", "04", "05", "06", "07 août"];
+
+type Bottleneck = { name: string; actual: number; max: number; cadence: number; workDays: number; series: number[]; color: string };
+const bottlenecks: Bottleneck[] = [
+  { name: "Expertise", actual: 194, max: 160, cadence: 80, workDays: 2.43, color: "#eb5b56", series: [80,74,55,33,83,86,93,132,140,133,143,131,133,150,181,177,245,260,233,205,203,190,194] },
+  { name: "Chiffrage", actual: 32, max: 25, cadence: 50, workDays: 0.64, color: "#ee7a70", series: [26,26,25,20,16,19,13,16,17,17,18,18,15,13,11,12,9,9,15,24,19,23,32] },
+  { name: "Contrôle technique", actual: 140, max: 70, cadence: 50, workDays: 2.8, color: "#b12d36", series: [143,152,147,160,163,164,133,131,111,112,125,115,120,104,107,106,110,123,125,132,145,132,140] },
+  { name: "DSP", actual: 162, max: 50, cadence: 30, workDays: 5.4, color: "#009edb", series: [56,76,80,81,70,73,76,89,84,95,125,133,149,167,192,207,204,188,170,159,134,141,162] },
+  { name: "Jantes", actual: 159, max: 60, cadence: 35, workDays: 4.54, color: "#47b9b4", series: [82,91,99,108,95,101,110,113,103,103,111,109,112,119,121,125,108,114,111,122,129,141,159] },
+  { name: "Mécanique", actual: 262, max: 160, cadence: 80, workDays: 3.27, color: "#278b65", series: [123,146,175,209,236,224,260,260,247,274,285,287,295,299,307,314,307,305,284,262,251,266,262] },
+  { name: "Carrosserie", actual: 280, max: 100, cadence: 50, workDays: 5.6, color: "#004f9f", series: [250,257,256,268,270,269,281,281,258,256,249,255,249,268,269,272,255,259,251,264,236,259,280] },
+  { name: "Parc travaux", actual: 394, max: 300, cadence: 80, workDays: 4.93, color: "#344b62", series: [261,289,299,332,364,348,372,374,365,392,397,407,416,437,458,464,440,443,418,393,366,389,394] },
+  { name: "Préparation", actual: 11, max: 150, cadence: 80, workDays: 0.14, color: "#8d5ec7", series: [18,13,15,5,3,1,3,10,8,15,8,2,3,4,2,2,2,3,11] },
+];
+
+type OldCase = { sector: string; registration: string; order: string; status: string; client: string; days: number };
+const oldestCases: OldCase[] = [
+  { sector:"Expertise", registration:"UC527058", order:"2085519", status:"En attente de lavage rapide", client:"EMOCAR VISE", days:14.1 },
+  { sector:"Expertise", registration:"NL019086", order:"2085517", status:"En attente de lavage rapide", client:"EMOCAR VISE", days:14.1 },
+  { sector:"Expertise", registration:"GP489EN", order:"2085534", status:"En attente de lavage rapide", client:"KEOS METZ BY AUTOSPHERE", days:13.9 },
+  { sector:"Expertise", registration:"MW504455", order:"2085756", status:"En attente de lavage rapide", client:"GAM-11 Groupe Autosphere Waremme", days:11 },
+  { sector:"Expertise", registration:"GF249WH", order:"2085786", status:"En attente de lavage rapide", client:"KEOS HENIN BEAUMONT BY AUTOSPHERE", days:10.8 },
+  { sector:"Chiffrage", registration:"GN305QR", order:"2085814", status:"Stocké sur parc d’attente chiffrage", client:"QUANTIUM REIMS BY AUTOSPHERE", days:9.2 },
+  { sector:"Chiffrage", registration:"GC176DT", order:"2085465", status:"Stocké sur parc d’attente chiffrage", client:"NYXO RONCQ BY AUTOSPHERE", days:7.6 },
+  { sector:"Chiffrage", registration:"GV290AV", order:"2085477", status:"Stocké sur parc d’attente chiffrage", client:"KEOS ENGLOS BY AUTOSPHERE", days:6.3 },
+  { sector:"CT", registration:"GE185TR", order:"2085199", status:"Stocké sur parc d’attente (Départ CT)", client:"MOTORCAR MAUBEUGE BY AUTOSPHERE", days:20.2 },
+  { sector:"CT", registration:"GJ507MS", order:"2085512", status:"Stocké sur parc d’attente (Départ CT)", client:"KEOS THIONVILLE BY AUTOSPHERE", days:14.1 },
+  { sector:"CT", registration:"FX635YC", order:"2085593", status:"Stocké sur parc d’attente (Départ CT)", client:"NYXO LOMME BY AUTOSPHERE", days:12.7 },
+  { sector:"DSP", registration:"JV022232", order:"2082631", status:"En attente de DSP", client:"GAM-14 Groupe Autosphere Huy", days:58 },
+  { sector:"DSP", registration:"MU073117", order:"2081971", status:"En attente de DSP", client:"GAM-01 Groupe Autosphere Wandre", days:43.1 },
+  { sector:"DSP", registration:"GF017YK", order:"2084549", status:"En attente de DSP", client:"KEOS TROYES BY AUTOSPHERE", days:27.1 },
+  { sector:"Jantes", registration:"GR756KW", order:"2086054", status:"En attente de jantes", client:"BAYERN SECLIN BY AUTOSPHERE", days:1.1 },
+  { sector:"Jantes", registration:"GP860QY", order:"2086000", status:"En attente de jantes", client:"KEOS CHALONS BY AUTOSPHERE", days:1.1 },
+  { sector:"Jantes", registration:"HG183QS", order:"2085842", status:"En attente de jantes", client:"TECHSTAR BEAUVAIS BY AUTOSPHERE", days:1.1 },
+  { sector:"Mécanique", registration:"EE748AS", order:"2081455", status:"Mécanique en cours", client:"KEOS SAINT AVOLD BY AUTOSPHERE", days:71.9 },
+  { sector:"Mécanique", registration:"GN176XF", order:"2084613", status:"En attente de mécanique", client:"BAYERN SECLIN BY AUTOSPHERE", days:23 },
+  { sector:"Mécanique", registration:"FM682RP", order:"2085190", status:"En attente de mécanique", client:"ABCIS BEAUVAIS BY AUTOSPHERE", days:11.2 },
+  { sector:"Carrosserie", registration:"05U93932", order:"2081974", status:"En attente de carrosserie", client:"GAM-01 Groupe Autosphere Wandre", days:69.9 },
+  { sector:"Carrosserie", registration:"66741547", order:"2079442", status:"En attente de carrosserie", client:"KEOS BRUSSELS SA", days:66.2 },
+  { sector:"Carrosserie", registration:"GF144NZ", order:"2082200", status:"En attente de Fixline 3", client:"KEOS BETHUNE BY AUTOSPHERE", days:58.2 },
+  { sector:"Carrosserie", registration:"GG313FP", order:"2081623", status:"En attente de carrosserie", client:"ABCIS BEAUVAIS BY AUTOSPHERE", days:57.5 },
+  { sector:"Préparation", registration:"GN496LT", order:"2085227", status:"En attente de préparation", client:"KEOS CHALONS BY AUTOSPHERE", days:5.8 },
+  { sector:"Préparation", registration:"GQ610XF", order:"2084915", status:"En attente de préparation", client:"KEOS WORMHOUT BY AUTOSPHERE", days:2.5 },
+  { sector:"Préparation", registration:"GR497FV", order:"2085551", status:"En attente de préparation", client:"KEOS ARRAS BY AUTOSPHERE", days:2.5 },
+  { sector:"Qualité", registration:"FF865AE", order:"2085598", status:"En attente de contrôle qualité", client:"KEOS LOMME BY AUTOSPHERE", days:1.5 },
+  { sector:"Qualité", registration:"HG415NW", order:"2084250", status:"Travaux suite contrôle qualité", client:"BMW FRANCE Prestations", days:1.2 },
+  { sector:"Qualité", registration:"HG568SV", order:"2084485", status:"En attente de contrôle qualité", client:"BMW FRANCE Prestations", days:1 },
+  { sector:"Parc travaux", registration:"GT881VT", order:"2078117", status:"Stocké sur parc d’attente travaux", client:"KEOS LENS BY AUTOSPHERE", days:102.6 },
+  { sector:"Parc travaux", registration:"GS665JJ", order:"2080687", status:"Stocké sur parc d’attente travaux", client:"KEOS CHALONS BY AUTOSPHERE", days:90.7 },
+  { sector:"Parc travaux", registration:"HB946HN", order:"2080646", status:"Stocké sur parc d’attente travaux", client:"TOYOTA FRANCE", days:89.9 },
+  { sector:"Parc travaux", registration:"GZ301QN", order:"2080593", status:"Stocké sur parc d’attente travaux", client:"TOYOTA FRANCE", days:88.6 },
+  { sector:"Parc travaux", registration:"HE859JS", order:"2081057", status:"Stocké sur parc d’attente travaux", client:"INTENZ REIMS BY AUTOSPHERE", days:85.8 },
+];
 
 function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, React.ReactNode> = {
-    dashboard: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
-    database: <><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></>,
-    studio: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/><circle cx="4" cy="7" r="2"/><circle cx="10" cy="16" r="2"/><circle cx="16" cy="10" r="2"/></>,
-    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></>,
-    calendar: <><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M16 3v4M8 3v4M3 10h18"/></>,
-    download: <><path d="M12 3v12m-5-5 5 5 5-5M5 21h14"/></>,
-    filter: <path d="M3 5h18l-7 8v5l-4 2v-7Z"/>,
-    bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></>,
-    upload: <><path d="M12 21V9m-5 5 5-5 5 5"/><path d="M5 4h14"/></>,
-    clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
+    today: <><path d="M4 19V9m6 10V5m6 14v-7m4 7H2"/><path d="m4 6 6-3 6 5 5-5"/></>,
+    yesterday: <><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v5m8-5v5M3 10h18M7 14h3m4 0h3m-10 3h3"/></>,
+    bottleneck: <><path d="M4 4h16l-5 7v7l-6 3V11Z"/><path d="M8 7h8"/></>,
+    oldest: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l4 2"/></>,
+    source: <><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></>,
+    calendar: <><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4m8-4v4M3 10h18"/></>,
+    refresh: <><path d="M20 11a8 8 0 0 0-14-5L3 9"/><path d="M3 4v5h5M4 13a8 8 0 0 0 14 5l3-3"/><path d="M21 20v-5h-5"/></>,
+    menu: <path d="M4 7h16M4 12h16M4 17h16"/>,
+    close: <path d="m6 6 12 12M18 6 6 18"/>,
+    arrow: <><path d="M5 12h14"/><path d="m14 7 5 5-5 5"/></>,
     check: <path d="m5 12 4 4L19 6"/>,
     warning: <><path d="M12 3 2.8 20h18.4Z"/><path d="M12 9v4m0 3h.01"/></>,
-    arrow: <><path d="M5 12h14"/><path d="m14 7 5 5-5 5"/></>,
-    file: <><path d="M6 2h8l4 4v16H6Z"/><path d="M14 2v5h5M9 13h6M9 17h6"/></>,
-    server: <><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M11 6.5h7M11 17.5h7"/></>,
-    shield: <><path d="M12 2 4 5v6c0 5.1 3.4 8.7 8 11 4.6-2.3 8-5.9 8-11V5Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></>,
-    refresh: <><path d="M20 11a8 8 0 0 0-14-5L3 9"/><path d="M3 4v5h5M4 13a8 8 0 0 0 14 5l3-3"/><path d="M21 20v-5h-5"/></>,
-    plus: <path d="M12 5v14M5 12h14"/>,
-    eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></>,
-    chevron: <path d="m9 18 6-6-6-6"/>,
+    car: <><path d="m5 11 2-5h10l2 5"/><path d="M3 12h18v6H3zM6 18v2m12-2v2M6.5 14h.01m11 0h.01"/></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 
-function PageTitle({ tab }: { tab: Tab }) {
-  const content: Record<Tab, { eyebrow: string; title: string; description: string }> = {
-    Pilotage: { eyebrow: "PILOTAGE OPÉRATIONNEL", title: "Performance CRVO Lens", description: "Lecture consolidée de l'activité à partir des instantanés archivés." },
-    Sources: { eyebrow: "DATA HUB", title: "Sources & historique", description: "Chaque fichier est archivé sans écrasement avant traitement." },
-    Studio: { eyebrow: "STUDIO DE PILOTAGE", title: "Créer un visuel", description: "Composez les indicateurs comme dans un outil décisionnel." },
-    Paramètres: { eyebrow: "CONFIGURATION", title: "Passerelle & règles", description: "Pilotez la collecte, l'archivage et la transformation des données." },
-  };
-  return <div className="title-block"><span>{content[tab].eyebrow}</span><h1>{content[tab].title}</h1><p>{content[tab].description}</p></div>;
+function useDashboard() {
+  const [state, setState] = useState({ snapshot: seedSnapshot, connected: false, backend: "book-excel" });
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/dashboard", { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((payload) => setState({ snapshot: payload.snapshot ?? seedSnapshot, connected: Boolean(payload.connected), backend: payload.backend ?? "book-excel" }))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+  return state;
 }
 
-function MetricCard({ label, value, suffix, note, icon, tone = "blue" }: { label: string; value: string | number; suffix?: string; note: string; icon: IconName; tone?: string }) {
-  return <article className="metric-card">
-    <div className={`metric-icon ${tone}`}><Icon name={icon}/></div>
-    <span>{label}</span><strong>{value}{suffix && <small>{suffix}</small>}</strong><p>{note}</p>
-  </article>;
+function SectionTitle({ eyebrow, title, description, action }: { eyebrow: string; title: string; description?: string; action?: React.ReactNode }) {
+  return <header className="section-title"><div><span>{eyebrow}</span><h2>{title}</h2>{description && <p>{description}</p>}</div>{action}</header>;
 }
 
-function Pilotage() {
-  const snapshot = useLiveSnapshot();
+function Freshness({ snapshot, connected }: { snapshot: Snapshot; connected: boolean }) {
+  return <div className="freshness"><span className={connected ? "live-dot" : "book-dot"}/><div><strong>{connected ? "Supabase connecté" : "Book chargé"}</strong><small>Données arrêtées au {snapshot.label} · prochaine actualisation après connexion SFTP</small></div><span className="freshness-tag">SOURCE RÉELLE</span></div>;
+}
+
+function TodayView({ snapshot, connected }: { snapshot: Snapshot; connected: boolean }) {
+  const net = snapshot.entries - snapshot.exits;
+  return <div className="view-page">
+    <Freshness snapshot={snapshot} connected={connected}/>
+    <section className="day-hero">
+      <div className="day-hero-copy"><span>PILOTAGE QUOTIDIEN</span><h2>Performance<br/>du jour</h2><p>Un coup d’œil suffit pour voir les ateliers en avance et ceux qui nécessitent une action immédiate.</p></div>
+      <div className="day-hero-stats">
+        <div><span>Entrées</span><strong>{snapshot.entries}</strong><small>VOP</small></div>
+        <div><span>Sorties</span><strong>{snapshot.exits}</strong><small>VOP</small></div>
+        <div className={net <= 0 ? "good" : "bad"}><span>Solde flux</span><strong>{net > 0 ? "+" : ""}{net}</strong><small>véhicules</small></div>
+      </div>
+      <div className="hero-watermark">J</div>
+    </section>
+
+    <section className="performance-board">
+      <div className="board-ribbon"><div><span>AFFICHAGE PRODUCTION VOP</span><strong>Résultat du dernier jour importé</strong></div><div><Icon name="calendar" size={17}/>{snapshot.label}</div></div>
+      <div className="performance-scroll"><div className="performance-grid">
+        {snapshot.production.map((item) => {
+          const target = performanceTargets[item.name];
+          const gap = Math.round(item.value - target.daily);
+          const ratio = item.value / target.daily;
+          return <article className={`performance-column tone-${item.tone}`} key={item.name}>
+            <h3>{item.name}</h3>
+            <div className="performance-main"><span>RÉSULTAT</span><strong>{item.value}</strong><small>objectif {Math.round(target.daily)}</small></div>
+            <div className="performance-progress"><i style={{ width: `${Math.min(ratio * 100, 100)}%` }}/></div>
+            <div className={`performance-gap ${gap >= 0 ? "positive" : "negative"}`}><span>Écart jour</span><strong>{gap > 0 ? "+" : ""}{gap}</strong></div>
+            <div className="performance-month"><span>Résultat mois</span><strong>{target.monthly}</strong><small>/ {target.monthlyTarget} cible</small></div>
+          </article>;
+        })}
+      </div></div>
+      <div className="board-insight"><Icon name="warning"/><div><strong>Priorité du jour : Carrosserie et DSP</strong><span>Les deux secteurs concentrent les écarts les plus importants à l’objectif journalier.</span></div><button onClick={() => document.getElementById("nav-bottlenecks")?.click()}>Voir les goulots <Icon name="arrow" size={16}/></button></div>
+    </section>
+  </div>;
+}
+
+function YesterdayView({ snapshot, connected }: { snapshot: Snapshot; connected: boolean }) {
   const recent = snapshot.stock - snapshot.over15;
   const between = snapshot.over15 - snapshot.over20;
   const net = snapshot.entries - snapshot.exits;
-  const maxProduction = Math.max(...snapshot.production.map((item) => item.value));
-  return <div className="page-content">
-    <section className="data-banner">
-      <div className="data-banner-icon"><Icon name="check"/></div>
-      <div><strong>Instantané réel chargé</strong><span>{snapshot.source} · arrêté au {snapshot.label}</span></div>
-      <div className="data-banner-meta"><span>75 feuilles analysées</span><span>16 vues métier identifiées</span></div>
+  const maxProd = Math.max(...snapshot.production.map((item) => item.value));
+  return <div className="view-page">
+    <Freshness snapshot={snapshot} connected={connected}/>
+    <SectionTitle eyebrow="SYNTHÈSE DE LA VEILLE" title="La journée en un écran" description="La lecture consolidée présentée dans le book, simplifiée pour le pilotage quotidien."/>
+    <section className="headline-kpis">
+      <article className="headline-kpi"><span>ENTRÉES VOP</span><strong>{snapshot.entries}</strong><small>71 EFF + 7 EXT</small></article>
+      <article className="headline-kpi"><span>SORTIES VOP</span><strong>{snapshot.exits}</strong><small>objectif 92</small></article>
+      <article className="headline-kpi featured"><span>STOCK USINE</span><strong>{snapshot.stock.toLocaleString("fr-FR")}</strong><small>véhicules</small></article>
+      <article className="headline-kpi alert"><span>STOCK +20 JOURS</span><strong>{snapshot.over20}</strong><small>{Math.round(snapshot.over20 / snapshot.stock * 100)}% du parc</small></article>
     </section>
-
-    <section className="kpi-grid">
-      <MetricCard label="ENTRÉES VOP" value={snapshot.entries} note="Flux du jour" icon="download" tone="cyan" />
-      <MetricCard label="SORTIES VOP" value={snapshot.exits} note="Flux du jour" icon="upload" tone="blue" />
-      <MetricCard label="STOCK USINE" value={snapshot.stock.toLocaleString("fr-FR")} note="Photographie à l'instant T" icon="dashboard" tone="blue" />
-      <MetricCard label="STOCK > 20 JOURS" value={snapshot.over20} note={`${Math.round(snapshot.over20 / snapshot.stock * 100)}% du stock`} icon="warning" tone="red" />
-    </section>
-
-    <section className="dashboard-grid">
-      <article className="panel production-panel">
-        <div className="panel-heading"><div><span>PRODUCTION DU JOUR</span><h2>Volumes par étape</h2></div><div className="source-chip"><i/>Donnée vérifiée</div></div>
-        <div className="production-chart">
-          {snapshot.production.map((item) => <div className="production-row" key={item.name}>
-            <div className="production-label"><span>{item.name}</span><strong>{item.value}</strong></div>
-            <div className="bar-track"><i className={item.tone} style={{ width: `${item.value / maxProduction * 100}%` }}/></div>
-          </div>)}
-        </div>
+    <section className="summary-grid">
+      <article className="report-panel production-summary">
+        <SectionTitle eyebrow="PRODUCTION" title="Volume par secteur"/>
+        <div className="production-list">{snapshot.production.map((item) => <div key={item.name}><span>{item.name}</span><div><i className={`tone-${item.tone}`} style={{ width: `${item.value / maxProd * 100}%` }}/></div><strong>{item.value}</strong></div>)}</div>
       </article>
-
-      <article className="panel stock-panel">
-        <div className="panel-heading"><div><span>ANCIENNETÉ DU STOCK</span><h2>Répartition des 1 097 véhicules</h2></div></div>
-        <div className="stock-visual">
-          <div className="stock-donut" style={{ "--recent": `${recent / snapshot.stock * 360}deg`, "--between": `${(recent + between) / snapshot.stock * 360}deg` } as React.CSSProperties}><div><strong>{snapshot.stock.toLocaleString("fr-FR")}</strong><span>VÉHICULES</span></div></div>
-          <div className="stock-legend">
-            <div><i className="recent"/><span>0 à 15 jours</span><strong>{recent}</strong></div>
-            <div><i className="between"/><span>16 à 20 jours</span><strong>{between}</strong></div>
-            <div><i className="old"/><span>Plus de 20 jours</span><strong>{snapshot.over20}</strong></div>
-          </div>
-        </div>
+      <article className="report-panel aging-summary">
+        <SectionTitle eyebrow="PARC USINE" title="Ancienneté du stock"/>
+        <div className="aging-content"><div className="aging-donut" style={{ "--recent": `${recent / snapshot.stock * 360}deg`, "--between": `${(recent + between) / snapshot.stock * 360}deg` } as React.CSSProperties}><div><strong>{snapshot.stock.toLocaleString("fr-FR")}</strong><span>VÉHICULES</span></div></div><div className="aging-legend"><div><i className="recent"/><span>0–15 jours</span><strong>{recent}</strong></div><div><i className="mid"/><span>16–20 jours</span><strong>{between}</strong></div><div><i className="old"/><span>+20 jours</span><strong>{snapshot.over20}</strong></div></div></div>
       </article>
-    </section>
-
-    <section className="dashboard-bottom">
-      <article className="panel flow-card">
-        <div className="panel-heading"><div><span>ÉQUILIBRE DES FLUX</span><h2>Entrées vs sorties</h2></div><strong className={net < 0 ? "positive-net" : "negative-net"}>{net > 0 ? "+" : ""}{net}</strong></div>
-        <div className="flow-comparison"><div><span>Entrées</span><strong>{snapshot.entries}</strong><i style={{ width: `${snapshot.entries}%` }}/></div><div><span>Sorties</span><strong>{snapshot.exits}</strong><i style={{ width: `${snapshot.exits}%` }}/></div></div>
-        <p>Le stock a diminué de <b>{Math.abs(net)} véhicules</b> sur la journée.</p>
+      <article className="report-panel flow-summary">
+        <SectionTitle eyebrow="FLUX" title="Entrées versus sorties" action={<strong className={net <= 0 ? "good-number" : "bad-number"}>{net > 0 ? "+" : ""}{net}</strong>}/>
+        <div className="flow-bars"><div><span>Entrées</span><strong>{snapshot.entries}</strong><i style={{ width: `${snapshot.entries}%` }}/></div><div><span>Sorties</span><strong>{snapshot.exits}</strong><i style={{ width: `${snapshot.exits}%` }}/></div></div>
+        <p>Le stock a diminué de <strong>{Math.abs(net)} véhicules</strong> sur la journée.</p>
       </article>
-      <article className="panel quality-card">
-        <div className="panel-heading"><div><span>QUALITÉ DE LA DONNÉE</span><h2>Traçabilité de l’instantané</h2></div><div className="quality-score">VÉRIFIÉ</div></div>
-        <ul><li><Icon name="check"/>Source et méthode identifiées</li><li><Icon name="check"/>Date de référence identifiée</li><li><Icon name="check"/>Valeurs contrôlées dans le classeur</li></ul>
+      <article className="report-panel watch-summary">
+        <SectionTitle eyebrow="POINT DE VIGILANCE" title="Vieillissement du parc"/>
+        <div className="watch-number"><strong>{snapshot.over15}</strong><span>véhicules à plus de 15 jours</span></div>
+        <div className="watch-scale"><i style={{ width: `${snapshot.over15 / snapshot.stock * 100}%` }}/></div>
+        <p>{Math.round(snapshot.over15 / snapshot.stock * 100)}% du stock usine exige un suivi renforcé.</p>
       </article>
     </section>
   </div>;
 }
 
-function Sources() {
-  const snapshot = useLiveSnapshot();
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [importDate, setImportDate] = useState(seedSnapshot.date);
-  const [message, setMessage] = useState("");
-  function pickFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0] ?? null;
-    setSelectedFile(file);
-    setMessage("");
-  }
-  function prepareImport() {
-    if (!selectedFile) return setMessage("Sélectionnez d'abord un fichier CSV, XLS ou XLSX.");
-    setMessage(`« ${selectedFile.name} » est prêt pour le contrôle des colonnes. L'archivage serveur sera activé dès la reconnexion Supabase.`);
-  }
-  return <div className="page-content sources-page">
-    <section className="source-overview">
-      <article className="panel connector-card">
-        <div className="connector-head"><div className="connector-icon"><Icon name="server"/></div><div><span>PASSERELLE AUTOMATIQUE</span><h2>Serveur SFTP CRVO</h2></div><div className="status-pill pending"><i/>À configurer</div></div>
-        <div className="connector-grid"><div><small>MODE</small><strong>Lecture seule</strong></div><div><small>FRÉQUENCE</small><strong>Chaque jour · 05:30</strong></div><div><small>ARCHIVAGE</small><strong>Copie immuable</strong></div><div><small>DOUBLONS</small><strong>Contrôle SHA-256</strong></div></div>
-        <div className="connector-footer"><p><Icon name="shield"/>Aucun fichier ne sera modifié ni supprimé sur le serveur source.</p><button className="text-button">Configurer <Icon name="arrow"/></button></div>
+function TrendChart({ item }: { item: Bottleneck }) {
+  const width = 760, height = 260, left = 42, right = 20, top = 22, bottom = 42;
+  const usableW = width - left - right, usableH = height - top - bottom;
+  const maxValue = Math.max(...item.series, item.max) * 1.12;
+  const points = item.series.map((value, index) => ({ x: left + index / (item.series.length - 1) * usableW, y: top + (maxValue - value) / maxValue * usableH }));
+  const line = points.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const area = `${line} L${points.at(-1)?.x},${top + usableH} L${points[0].x},${top + usableH} Z`;
+  const thresholdY = top + (maxValue - item.max) / maxValue * usableH;
+  return <div className="trend-chart"><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Évolution de l’encours ${item.name} sur 30 jours glissants`}>
+    <defs><linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={item.color} stopOpacity=".26"/><stop offset="1" stopColor={item.color} stopOpacity=".015"/></linearGradient></defs>
+    {[0,.25,.5,.75,1].map((tick) => { const y = top + usableH * tick; return <g key={tick}><line x1={left} x2={width-right} y1={y} y2={y} className="grid-line"/><text x={left-9} y={y+4} textAnchor="end">{Math.round(maxValue * (1-tick))}</text></g>; })}
+    <line x1={left} x2={width-right} y1={thresholdY} y2={thresholdY} className="threshold-line"/><text x={width-right} y={thresholdY-7} textAnchor="end" className="threshold-label">SEUIL MAX {item.max}</text>
+    <path d={area} fill="url(#areaFill)"/><path d={line} fill="none" stroke={item.color} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
+    {points.map((p, i) => (i === 0 || i === points.length-1 || i === Math.floor(points.length/2)) ? <circle key={i} cx={p.x} cy={p.y} r="4" fill="white" stroke={item.color} strokeWidth="3"/> : null)}
+    <text x={left} y={height-12}>{rollingDates[0]}</text><text x={left+usableW/2} y={height-12} textAnchor="middle">{rollingDates[Math.floor(rollingDates.length/2)]}</text><text x={width-right} y={height-12} textAnchor="end">{rollingDates.at(-1)}</text>
+  </svg></div>;
+}
+
+function BottlenecksView({ snapshot, connected }: { snapshot: Snapshot; connected: boolean }) {
+  const [selected, setSelected] = useState("Carrosserie");
+  const item = bottlenecks.find((entry) => entry.name === selected) ?? bottlenecks[0];
+  const start = item.series[0];
+  const change = Math.round((item.actual - start) / start * 100);
+  const critical = bottlenecks.filter((entry) => entry.actual > entry.max).length;
+  return <div className="view-page">
+    <Freshness snapshot={snapshot} connected={connected}/>
+    <SectionTitle eyebrow="GOULOTS D’ÉTRANGLEMENT" title="Encours par secteur · 30 jours glissants" description="Les seuils, cadences et historiques sont repris du book CRVO. Cliquez sur un secteur pour détailler sa trajectoire." action={<div className="critical-badge"><span>{critical}</span> secteurs au-dessus du seuil</div>}/>
+    <section className="bottleneck-layout">
+      <article className="report-panel main-trend">
+        <div className="trend-heading"><div><span>SECTEUR SÉLECTIONNÉ</span><h3>{item.name}</h3></div><div className="trend-values"><div><span>ENCOURS</span><strong>{item.actual}</strong></div><div><span>ÉVOLUTION</span><strong className={change > 0 ? "negative-text" : "positive-text"}>{change > 0 ? "+" : ""}{change}%</strong></div><div><span>JOURS DE STOCK</span><strong>{item.workDays.toLocaleString("fr-FR", { maximumFractionDigits: 2 })}</strong></div></div></div>
+        <TrendChart item={item}/>
+        <div className="chart-note"><span style={{ background: item.color }}/><strong>Encours réel</strong><i/>Seuil maximum du book · série du 07/07 au 07/08/2026</div>
       </article>
-      <article className="panel source-stats"><span>VOLUMÉTRIE IDENTIFIÉE</span><h2>Classeur quotidien</h2><strong>126<small> Mo</small></strong><div><span>75 feuilles</span><span>+1 M lignes sur certaines sources</span></div></article>
+      <aside className="report-panel bottleneck-priority"><SectionTitle eyebrow="PRIORITÉ" title="Charge à résorber"/><strong>{Math.max(item.actual - item.max, 0)}</strong><span>véhicules au-dessus du seuil</span><div><small>Cadence secteur</small><b>{item.cadence} / jour</b></div><p>{item.actual > item.max ? `À cadence constante, le secteur porte ${item.workDays.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} jours de travail en stock.` : "Le secteur reste sous son seuil maximum."}</p></aside>
     </section>
+    <section className="bottleneck-cards">{bottlenecks.map((entry) => {
+      const ratio = entry.actual / entry.max;
+      const first = entry.series[0];
+      const delta = Math.round((entry.actual-first)/first*100);
+      return <button key={entry.name} className={`${selected === entry.name ? "active" : ""} ${ratio > 1.5 ? "danger" : ratio > 1 ? "warning" : "healthy"}`} onClick={() => setSelected(entry.name)}>
+        <span className="sector-color" style={{ background: entry.color }}/><div className="sector-card-head"><strong>{entry.name}</strong><span>{ratio > 1.5 ? "CRITIQUE" : ratio > 1 ? "À SURVEILLER" : "MAÎTRISÉ"}</span></div><div className="sector-card-value"><strong>{entry.actual}</strong><span>/ max {entry.max}</span></div><div className="sector-card-track"><i style={{ width: `${Math.min(ratio * 100, 100)}%`, background: entry.color }}/></div><div className="sector-card-foot"><span>{entry.workDays.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} j de stock</span><b className={delta > 0 ? "up" : "down"}>{delta > 0 ? "+" : ""}{delta}%</b></div>
+      </button>;
+    })}</section>
+  </div>;
+}
 
-    <section className="sources-grid">
-      <article className="panel import-card">
-        <div className="panel-heading"><div><span>IMPORT HISTORIQUE</span><h2>Ajouter un fichier antérieur</h2></div><div className="file-types">CSV · XLS · XLSX</div></div>
-        <label className={selectedFile ? "dropzone has-file" : "dropzone"}>
-          <input type="file" accept=".csv,.xls,.xlsx" onChange={pickFile}/>
-          <div className="drop-icon"><Icon name={selectedFile ? "check" : "upload"}/></div>
-          {selectedFile ? <><strong>{selectedFile.name}</strong><span>{(selectedFile.size / 1024 / 1024).toFixed(1)} Mo · prêt à contrôler</span></> : <><strong>Déposez votre fichier ici</strong><span>ou cliquez pour parcourir vos dossiers</span></>}
-        </label>
-        <div className="import-controls"><label><span>Date de l’instantané</span><input type="date" value={importDate} onChange={(event) => setImportDate(event.target.value)}/></label><label><span>Jeu de données</span><select><option>Production CRVO complète</option><option>Stock usine</option><option>Entrées / Sorties</option></select></label></div>
-        {message && <div className="inline-message"><Icon name="warning"/><span>{message}</span></div>}
-        <button className="primary-button" onClick={prepareImport}><Icon name="arrow"/>Contrôler les colonnes</button>
-      </article>
-
-      <article className="panel history-card">
-        <div className="panel-heading"><div><span>HISTORIQUE DES IMPORTS</span><h2>Instantanés archivés</h2></div><button className="icon-action" aria-label="Actualiser"><Icon name="refresh"/></button></div>
-        <div className="history-timeline">
-          <div className="history-item"><div className="timeline-dot success"><Icon name="check" size={14}/></div><div><strong>Instantané du {snapshot.label}</strong><span>{snapshot.source}</span><small><Icon name="clock" size={13}/>Valeurs métier vérifiées · original à archiver</small></div><div className="history-tag">RÉEL</div></div>
-          <div className="history-empty"><i/><p>Les prochains fichiers apparaîtront ici sans remplacer les précédents.</p></div>
-        </div>
-      </article>
+function OldestView({ snapshot, connected }: { snapshot: Snapshot; connected: boolean }) {
+  const [sector, setSector] = useState("Tous");
+  const sectors = ["Tous", ...Array.from(new Set(oldestCases.map((item) => item.sector)))];
+  const filtered = useMemo(() => oldestCases.filter((item) => sector === "Tous" || item.sector === sector).sort((a,b) => b.days-a.days).slice(0, sector === "Tous" ? 12 : 8), [sector]);
+  const oldest = filtered[0];
+  return <div className="view-page">
+    <Freshness snapshot={snapshot} connected={connected}/>
+    <SectionTitle eyebrow="FIFO & VIEILLISSEMENT" title="Les plus vieux dossiers par secteur" description="Classement selon le nombre de jours passés sur le statut actuel, pour orienter les actions de déblocage."/>
+    <section className="oldest-overview">
+      <article className="oldest-callout"><div><span>PLUS ANCIEN · {sector.toUpperCase()}</span><strong>{oldest?.days.toLocaleString("fr-FR")}<small> jours</small></strong><p>{oldest?.registration} · OR {oldest?.order}</p></div><Icon name="car" size={52}/></article>
+      <article><span>DOSSIERS AFFICHÉS</span><strong>{filtered.length}</strong><small>extraits du classement FIFO</small></article>
+      <article><span>SEUIL D’ALERTE</span><strong>20<small> jours</small></strong><small>priorité renforcée au-delà</small></article>
     </section>
-
-    <section className="panel dataset-table">
-      <div className="panel-heading"><div><span>JEUX DE DONNÉES</span><h2>Domaines métier détectés dans le classeur</h2></div><button className="secondary-button"><Icon name="plus"/>Nouveau jeu</button></div>
-      <div className="table-wrap"><table><thead><tr><th>Domaine</th><th>Source</th><th>Actualisation</th><th>État</th><th/></tr></thead><tbody>
-        {["Production & synthèse", "Main-d'œuvre & chiffre d'affaires", "Parc usine & flux", "Ateliers & goulots", "Qualité & contrôle technique"].map((name, index) => <tr key={name}><td><div className="table-name"><Icon name="database"/><strong>{name}</strong></div></td><td>Classeur quotidien</td><td>{index === 0 ? "07/08/2026" : "À mapper"}</td><td><span className={index === 0 ? "status-pill success" : "status-pill neutral"}><i/>{index === 0 ? "Disponible" : "Préparé"}</span></td><td><button aria-label={`Ouvrir ${name}`}><Icon name="chevron"/></button></td></tr>)}
-      </tbody></table></div>
+    <div className="sector-filter" role="tablist" aria-label="Filtrer par secteur">{sectors.map((name) => <button role="tab" aria-selected={sector === name} className={sector === name ? "active" : ""} onClick={() => setSector(name)} key={name}>{name}</button>)}</div>
+    <section className="report-panel oldest-table-panel">
+      <div className="table-heading"><div><span>CLASSEMENT FIFO</span><h3>{sector === "Tous" ? "Priorités tous secteurs" : `Priorités · ${sector}`}</h3></div><small>Jour sur statut · ordre décroissant</small></div>
+      <div className="table-scroll"><table className="oldest-table"><thead><tr><th>Rang</th><th>Secteur</th><th>Immatriculation</th><th>OR</th><th>Dernier statut</th><th>Client</th><th>Jours</th></tr></thead><tbody>{filtered.map((entry,index) => <tr key={`${entry.order}-${entry.sector}`}><td><span className={`rank rank-${Math.min(index+1,4)}`}>{index+1}</span></td><td><span className="sector-pill">{entry.sector}</span></td><td><strong>{entry.registration}</strong></td><td>{entry.order}</td><td>{entry.status}</td><td>{entry.client}</td><td><strong className={entry.days > 40 ? "age-critical" : entry.days > 20 ? "age-warning" : "age-normal"}>{entry.days.toLocaleString("fr-FR")}</strong></td></tr>)}</tbody></table></div>
     </section>
   </div>;
 }
 
-function Studio() {
-  const snapshot = useLiveSnapshot();
-  const studioMetrics = getStudioMetrics(snapshot);
-  const [metric, setMetric] = useState("stock");
-  const [visual, setVisual] = useState("number");
-  const [title, setTitle] = useState("Stock usine à date");
-  const [saved, setSaved] = useState(false);
-  const selected = studioMetrics.find((item) => item.id === metric) ?? studioMetrics[0];
-  const max = Math.max(...studioMetrics.map((item) => item.value));
-  return <div className="page-content studio-page">
-    <section className="studio-layout">
-      <aside className="panel studio-config">
-        <div className="panel-heading"><div><span>PROPRIÉTÉS</span><h2>Configuration du visuel</h2></div></div>
-        <label><span>Titre du visuel</span><input value={title} onChange={(event) => { setTitle(event.target.value); setSaved(false); }}/></label>
-        <label><span>Jeu de données</span><select><option>Instantané métier CRVO</option></select></label>
-        <label><span>Mesure</span><select value={metric} onChange={(event) => { setMetric(event.target.value); setSaved(false); }}>{studioMetrics.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></label>
-        <label><span>Agrégation</span><select><option>Dernière valeur</option><option>Somme</option><option>Moyenne</option><option>Minimum</option><option>Maximum</option></select></label>
-        <label><span>Filtre temporel</span><select><option>Instantané sélectionné</option><option>Période</option><option>Comparer deux dates</option></select></label>
-        <div className="visual-selector"><span>TYPE DE VISUEL</span><div>{[
-          ["number", "123", "Indicateur"], ["bar", "▥", "Barres"], ["donut", "◔", "Anneau"], ["table", "▦", "Tableau"],
-        ].map(([id, glyph, label]) => <button className={visual === id ? "active" : ""} onClick={() => { setVisual(id); setSaved(false); }} key={id}><strong>{glyph}</strong><span>{label}</span></button>)}</div></div>
-        <button className="primary-button" onClick={() => setSaved(true)}><Icon name="check"/>Ajouter au dashboard</button>
-        {saved && <div className="saved-message"><Icon name="check"/>Visuel préparé pour publication.</div>}
-      </aside>
-
-      <section className="studio-canvas">
-        <div className="canvas-toolbar"><div><span>APERÇU</span><strong>Format bureau · données du {snapshot.label}</strong></div><div><button><Icon name="eye"/>Prévisualiser</button></div></div>
-        <article className="visual-preview">
-          <div className="preview-header"><div><span>INSTANTANÉ MÉTIER</span><h2>{title || "Sans titre"}</h2></div><div className="preview-date"><Icon name="calendar"/>{snapshot.label}</div></div>
-          {visual === "number" && <div className="number-preview"><strong>{selected.value.toLocaleString("fr-FR")}</strong><span>{selected.label}</span><div><i/>Source réelle · Excel quotidien</div></div>}
-          {visual === "bar" && <div className="preview-bars">{studioMetrics.map((item) => <div key={item.id}><span>{item.label}</span><div><i style={{ width: `${item.value / max * 100}%` }}/></div><strong>{item.value.toLocaleString("fr-FR")}</strong></div>)}</div>}
-          {visual === "donut" && <div className="donut-preview"><div className="large-donut" style={{ "--value": `${selected.value / max * 360}deg` } as React.CSSProperties}><strong>{selected.value.toLocaleString("fr-FR")}</strong></div><div><span>Part relative au maximum de la sélection</span><strong>{Math.round(selected.value / max * 100)}%</strong><small>Base : {max.toLocaleString("fr-FR")}</small></div></div>}
-          {visual === "table" && <div className="preview-table"><table><thead><tr><th>Mesure</th><th>Valeur</th><th>Date</th></tr></thead><tbody>{studioMetrics.map((item) => <tr key={item.id}><td>{item.label}</td><td>{item.value.toLocaleString("fr-FR")}</td><td>{snapshot.label}</td></tr>)}</tbody></table></div>}
-        </article>
-        <div className="canvas-hint"><Icon name="plus"/><div><strong>Zone de composition</strong><span>Les visuels enregistrés pourront être déplacés et redimensionnés dans la prochaine étape de mise en page.</span></div></div>
-      </section>
+function SourcesView({ snapshot, connected }: { snapshot: Snapshot; connected: boolean }) {
+  return <div className="view-page">
+    <Freshness snapshot={snapshot} connected={connected}/>
+    <SectionTitle eyebrow="DATA HUB" title="Sources & actualisation" description="Le dashboard fonctionne déjà sur le book réel. La collecte automatique démarrera dès réception des paramètres IT."/>
+    <section className="source-cards">
+      <article className="source-card active"><div className="source-icon"><Icon name="source"/></div><div><span>BASE DE DONNÉES</span><h3>Supabase KPI CRVO</h3><p>Historique immuable, 12 indicateurs réels et règles de sécurité actives.</p></div><strong><i/>CONNECTÉ</strong></article>
+      <article className="source-card active"><div className="source-icon excel">XL</div><div><span>SOURCE PROVISOIRE</span><h3>Book CRVO · 07/08/2026</h3><p>75 feuilles analysées, vues de production, goulots et FIFO intégrées.</p></div><strong><i/>CHARGÉ</strong></article>
+      <article className="source-card pending"><div className="source-icon"><Icon name="refresh"/></div><div><span>COLLECTE AUTOMATIQUE</span><h3>Passerelle SFTP</h3><p>Lecture seule, déduplication SHA-256 et archivage des originaux.</p></div><strong><i/>ATTENTE IT</strong></article>
     </section>
+    <section className="report-panel source-next"><SectionTitle eyebrow="PROCHAINE ÉTAPE" title="Brancher le flux quotidien"/><div className="source-steps"><div className="done"><b>1</b><span><strong>Cloudflare</strong><small>Application déployée</small></span><Icon name="check"/></div><div className="done"><b>2</b><span><strong>Supabase</strong><small>Base connectée et sécurisée</small></span><Icon name="check"/></div><div><b>3</b><span><strong>Informations IT</strong><small>Hôte, chemin et empreinte SFTP</small></span><span className="wait-tag">EN ATTENTE</span></div><div><b>4</b><span><strong>Mapping automatique</strong><small>Alimentation quotidienne de toutes les vues</small></span></div></div></section>
   </div>;
 }
 
-function Parametres() {
-  const [authMode, setAuthMode] = useState("key");
-  const [notice, setNotice] = useState("");
-  return <div className="page-content settings-page">
-    <section className="settings-grid">
-      <article className="panel settings-card wide">
-        <div className="settings-heading"><div className="settings-icon"><Icon name="server"/></div><div><span>CONNEXION SFTP</span><h2>Passerelle vers le serveur source</h2><p>Les informations sensibles seront stockées dans les secrets Cloudflare.</p></div><div className="status-pill pending"><i/>Non connectée</div></div>
-        <div className="form-grid"><label><span>Hôte</span><input placeholder="sftp.exemple.fr"/></label><label><span>Port</span><input type="number" defaultValue="22"/></label><label><span>Utilisateur</span><input placeholder="crvo_lecture"/></label><label><span>Répertoire source</span><input placeholder="/exports/kpi"/></label></div>
-        <div className="segmented"><span>Authentification</span><div><button className={authMode === "key" ? "active" : ""} onClick={() => setAuthMode("key")}>Clé privée</button><button className={authMode === "password" ? "active" : ""} onClick={() => setAuthMode("password")}>Mot de passe</button></div></div>
-        <div className="secret-info"><Icon name="shield"/><div><strong>Secret non saisi dans le dashboard</strong><span>La clé privée ou le mot de passe sera ajouté directement dans Cloudflare ou GitHub Actions, jamais dans le navigateur ni dans le dépôt.</span></div></div>
-        <div className="settings-actions"><button className="secondary-button" onClick={() => setNotice("La passerelle doit d'abord être déployée et recevoir ses secrets.")}><Icon name="refresh"/>Tester la connexion</button><button className="primary-button" onClick={() => setNotice("Paramètres contrôlés. L'enregistrement serveur sera disponible dès que Supabase sera reconnecté.")}><Icon name="check"/>Préparer la configuration</button></div>
-        {notice && <div className="inline-message"><Icon name="warning"/><span>{notice}</span></div>}
-      </article>
-
-      <article className="panel settings-card">
-        <div className="settings-heading compact"><div className="settings-icon"><Icon name="clock"/></div><div><span>PLANIFICATION</span><h2>Collecte automatique</h2></div></div>
-        <label><span>Fréquence</span><select><option>Tous les jours</option><option>Du lundi au vendredi</option><option>Toutes les heures</option></select></label>
-        <div className="two-fields"><label><span>Heure</span><input type="time" defaultValue="05:30"/></label><label><span>Fuseau</span><select><option>Europe/Paris</option></select></label></div>
-        <label className="switch-row"><div><strong>Relance automatique</strong><span>Nouvelle tentative en cas d’échec</span></div><input type="checkbox" defaultChecked/><i/></label>
-      </article>
-
-      <article className="panel settings-card">
-        <div className="settings-heading compact"><div className="settings-icon"><Icon name="shield"/></div><div><span>HISTORISATION</span><h2>Politique d’archivage</h2></div></div>
-        <div className="locked-rule"><Icon name="check"/><div><strong>Conservation immuable</strong><span>Un import crée toujours une nouvelle version.</span></div><b>OBLIGATOIRE</b></div>
-        <label><span>Durée de conservation</span><select defaultValue="unlimited"><option value="unlimited">Sans limite</option><option>10 ans</option><option>5 ans</option></select></label>
-        <label className="switch-row"><div><strong>Détection des doublons</strong><span>Empreinte SHA-256 avant import</span></div><input type="checkbox" defaultChecked/><i/></label>
-      </article>
-    </section>
-
-    <section className="panel mapping-panel">
-      <div className="panel-heading"><div><span>MODÈLE DE TRANSFORMATION</span><h2>Correspondance des valeurs sources</h2><p>Les règles restent modifiables sans altérer les fichiers archivés.</p></div><button className="secondary-button"><Icon name="plus"/>Ajouter une règle</button></div>
-      <div className="mapping-list">
-        {[['Entrées VOP', 'entries_vop', 'Somme'], ['Sorties VOP', 'exits_vop', 'Somme'], ['Parc Usine', 'factory_stock', 'Dernière valeur'], ['Stock +20 jours', 'stock_over_20d', 'Dernière valeur']].map(([source, target, agg]) => <div className="mapping-row" key={target}><div><small>CHAMP SOURCE</small><strong>{source}</strong></div><Icon name="arrow"/><div><small>CHAMP NORMALISÉ</small><strong>{target}</strong></div><div><small>AGRÉGATION</small><strong>{agg}</strong></div><button aria-label={`Modifier ${source}`}><Icon name="settings"/></button></div>)}
-      </div>
-    </section>
-  </div>;
-}
-
-export default function Home() {
-  const [active, setActive] = useState<Tab>("Pilotage");
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const activeIndex = useMemo(() => tabs.findIndex((tab) => tab.label === active), [active]);
-  function changeTab(tab: Tab) { setActive(tab); setMobileOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); }
-  return <main className="app-shell">
-    <aside className={mobileOpen ? "sidebar open" : "sidebar"}>
-      <div className="brand"><Image src="/crvo-logo.png" alt="CRVO - Votre potentiel VO au plus haut" width={280} height={94} priority/></div>
-      <nav aria-label="Navigation principale">{tabs.map((tab) => <button key={tab.label} className={active === tab.label ? "nav-item active" : "nav-item"} onClick={() => changeTab(tab.label)}><Icon name={tab.icon}/><span>{tab.label}</span>{tab.label === "Sources" && <i>1</i>}</button>)}</nav>
-      <div className="sidebar-status"><span className="status-dot warning"/><div><strong>Connexion à finaliser</strong><small>Supabase & SFTP en attente</small></div></div>
-      <div className="user-card"><span>CG</span><div><strong>Cyril Gay</strong><small>Administrateur</small></div></div>
+export default function Dashboard() {
+  const [view, setView] = useState<View>("today");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { snapshot, connected } = useDashboard();
+  const current = views.find((item) => item.id === view) ?? views[0];
+  function navigate(next: View) { setView(next); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  return <div className="app-shell">
+    <aside className={menuOpen ? "sidebar open" : "sidebar"}>
+      <div className="sidebar-brand"><Image src="/crvo-logo.png" width={190} height={65} alt="CRVO" priority/></div>
+      <div className="sidebar-context"><span>REPORTING</span><strong>CRVO Lens</strong><small>Pilotage opérationnel</small></div>
+      <nav>{views.map((item) => <button id={`nav-${item.id}`} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} key={item.id}><Icon name={item.icon}/><span>{item.label}</span>{view === item.id && <i/>}</button>)}</nav>
+      <div className="sidebar-bottom"><span className={connected ? "live-dot" : "book-dot"}/><div><strong>{connected ? "Données connectées" : "Mode book Excel"}</strong><small>Dernier import · {snapshot.label}</small></div></div>
     </aside>
-    {mobileOpen && <button className="sidebar-overlay" aria-label="Fermer le menu" onClick={() => setMobileOpen(false)}/>}
-
-    <section className="workspace">
-      <header className="topbar">
-        <button className="mobile-menu" aria-label="Ouvrir le menu" onClick={() => setMobileOpen(true)}><span/><span/><span/></button>
-        <PageTitle tab={active}/>
-        <div className="top-actions"><button className="icon-button" aria-label="Notifications"><Icon name="bell"/><span/></button><label className="period"><Icon name="calendar"/><select aria-label="Instantané"><option>07/08/2026</option></select></label><button className="export"><Icon name="download"/>Exporter</button></div>
-      </header>
-      <div className="mobile-tabs" aria-label="Navigation mobile">{tabs.map((tab, index) => <button className={index === activeIndex ? "active" : ""} onClick={() => changeTab(tab.label)} key={tab.label}><Icon name={tab.icon}/><span>{tab.label}</span></button>)}</div>
-      {active === "Pilotage" && <Pilotage/>}
-      {active === "Sources" && <Sources/>}
-      {active === "Studio" && <Studio/>}
-      {active === "Paramètres" && <Parametres/>}
-    </section>
-  </main>;
+    {menuOpen && <button className="sidebar-backdrop" aria-label="Fermer le menu" onClick={() => setMenuOpen(false)}/>} 
+    <main className="main-workspace">
+      <header className="topbar"><button className="menu-button" aria-label="Ouvrir le menu" onClick={() => setMenuOpen(!menuOpen)}><Icon name={menuOpen ? "close" : "menu"}/></button><div className="topbar-title"><span>REPORTING CRVO LENS</span><h1>{current.label}</h1></div><div className="topbar-date"><Icon name="calendar"/><div><span>DERNIÈRE DONNÉE</span><strong>{snapshot.label}</strong></div></div></header>
+      {view === "today" && <TodayView snapshot={snapshot} connected={connected}/>} 
+      {view === "yesterday" && <YesterdayView snapshot={snapshot} connected={connected}/>} 
+      {view === "bottlenecks" && <BottlenecksView snapshot={snapshot} connected={connected}/>} 
+      {view === "oldest" && <OldestView snapshot={snapshot} connected={connected}/>} 
+      {view === "sources" && <SourcesView snapshot={snapshot} connected={connected}/>} 
+      <nav className="mobile-nav">{views.slice(0,4).map((item) => <button className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} key={item.id}><Icon name={item.icon}/><span>{item.short}</span></button>)}</nav>
+    </main>
+  </div>;
 }
