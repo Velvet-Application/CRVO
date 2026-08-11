@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 
 type View = "today" | "yesterday" | "bottlenecks" | "oldest" | "sources";
-type IconName = "today" | "yesterday" | "bottleneck" | "oldest" | "source" | "calendar" | "refresh" | "menu" | "close" | "arrow" | "check" | "warning" | "car";
+type IconName = "today" | "yesterday" | "bottleneck" | "oldest" | "source" | "calendar" | "refresh" | "menu" | "close" | "arrow" | "check" | "warning" | "car" | "upload";
 
 type Snapshot = {
   date: string;
@@ -125,6 +125,7 @@ function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
     check: <path d="m5 12 4 4L19 6"/>,
     warning: <><path d="M12 3 2.8 20h18.4Z"/><path d="M12 9v4m0 3h.01"/></>,
     car: <><path d="m5 11 2-5h10l2 5"/><path d="M3 12h18v6H3zM6 18v2m12-2v2M6.5 14h.01m11 0h.01"/></>,
+    upload: <><path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
@@ -291,9 +292,79 @@ function OldestView({ snapshot, connected }: { snapshot: Snapshot; connected: bo
 }
 
 function SourcesView({ snapshot, connected }: { snapshot: Snapshot; connected: boolean }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [status, setStatus] = useState<"idle" | "reading" | "uploading" | "done" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  function detectDate(filename: string) {
+    const iso = filename.match(/(20\d{2})[-_.](\d{2})[-_.](\d{2})/);
+    if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+    const french = filename.match(/(\d{2})[-_.](\d{2})[-_.](20\d{2})/);
+    if (french) return `${french[3]}-${french[2]}-${french[1]}`;
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  async function readBook(selected: File) {
+    const XLSX = await import("@e965/xlsx");
+    const buffer = await selected.arrayBuffer();
+    const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", buffer))).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const workbook = XLSX.read(buffer, { type: "array", sheets: ["Synthèse", "Tdb Production"] });
+    const summary = workbook.Sheets["Synthèse"];
+    const production = workbook.Sheets["Tdb Production"];
+    if (!summary || !production) throw new Error("Ce fichier ne contient pas les feuilles CRVO attendues.");
+    const value = (sheet: typeof summary, cell: string) => {
+      const parsed = Number(sheet[cell]?.v);
+      if (!Number.isFinite(parsed)) throw new Error(`La donnée ${cell} est absente du book.`);
+      return parsed;
+    };
+    const metrics = [
+      { key: "entries_vop", label: "Entrées VOP", value: value(summary, "E4") + value(summary, "E5") },
+      { key: "exits_vop", label: "Sorties VOP", value: value(summary, "E6") },
+      { key: "factory_stock", label: "Stock usine", value: value(summary, "E8") },
+      { key: "stock_over_15d", label: "Stock de plus de 15 jours", value: value(summary, "E10") + value(summary, "E11") },
+      { key: "stock_over_20d", label: "Stock de plus de 20 jours", value: value(summary, "E12") + value(summary, "E13") },
+      { key: "production_expertise", label: "Production Expertise", value: value(production, "G6") },
+      { key: "production_mechanics", label: "Production Mécanique", value: value(production, "M6") },
+      { key: "production_dsp", label: "Production DSP", value: value(production, "S6") },
+      { key: "production_bodywork", label: "Production Carrosserie", value: value(production, "Y6") },
+      { key: "production_preparation", label: "Production Préparation", value: value(production, "AE6") },
+      { key: "production_quality", label: "Production Qualité", value: value(production, "AK6") },
+      { key: "production_factory_exit", label: "Production Sortie usine", value: value(production, "AQ6") },
+    ];
+    return { buffer, hash, metrics, snapshotAt: detectDate(selected.name) };
+  }
+
+  async function uploadBook() {
+    if (!file || status === "reading" || status === "uploading") return;
+    try {
+      setStatus("reading"); setMessage("Lecture et contrôle du book…");
+      const book = await readBook(file);
+      setStatus("uploading"); setMessage("Archivage sécurisé de l’original…");
+      const initResponse = await fetch("/api/import-book/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: file.name, byteSize: file.size, sha256: book.hash, snapshotAt: book.snapshotAt, contentType: file.type }) });
+      const init = await initResponse.json();
+      if (!initResponse.ok) throw new Error(init.duplicate ? "Ce book est déjà présent dans l’historique." : init.error || "L’import n’a pas pu démarrer.");
+      const formData = new FormData(); formData.append("cacheControl", "3600"); formData.append("", file);
+      const uploadResponse = await fetch(init.signedUrl, { method: "PUT", headers: { "x-upsert": "false" }, body: formData });
+      if (!uploadResponse.ok) throw new Error("Le transfert de l’original a été interrompu.");
+      setMessage("Création de l’instantané du jour…");
+      const finalizeResponse = await fetch("/api/import-book/finalize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ batchId: init.batchId, metrics: book.metrics }) });
+      const finalized = await finalizeResponse.json();
+      if (!finalizeResponse.ok) throw new Error(finalized.error || "La validation du book a échoué.");
+      setStatus("done"); setMessage(`Book du ${new Intl.DateTimeFormat("fr-FR").format(new Date(`${book.snapshotAt}T12:00:00`))} intégré : ${finalized.metrics} indicateurs enregistrés.`);
+      window.setTimeout(() => window.location.reload(), 1400);
+    } catch (error) {
+      setStatus("error"); setMessage(error instanceof Error ? error.message : "Une erreur est survenue.");
+    }
+  }
+
   return <div className="view-page">
     <Freshness snapshot={snapshot} connected={connected}/>
     <SectionTitle eyebrow="DATA HUB" title="Sources & actualisation" description="Le dashboard fonctionne déjà sur le book réel. La collecte automatique démarrera dès réception des paramètres IT."/>
+    <section className="book-uploader">
+      <div className="upload-heading"><div className="upload-mark"><Icon name="upload" size={28}/></div><div><span>IMPORT MANUEL</span><h3>Ajouter un book CRVO</h3><p>Dépose le fichier Excel du jour ou un book antérieur. Chaque journée est contrôlée, archivée et ajoutée à l’historique sans écraser les précédentes.</p></div></div>
+      <label className={file ? "drop-zone selected" : "drop-zone"}><input type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setStatus("idle"); setMessage(""); }}/><Icon name={file ? "check" : "upload"} size={24}/><strong>{file ? file.name : "Glisser-déposer ou choisir un fichier"}</strong><small>{file ? `${(file.size / 1024 / 1024).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Mo · prêt à contrôler` : "Formats acceptés : XLSX ou XLS · 250 Mo maximum"}</small></label>
+      <div className="upload-actions"><button disabled={!file || status === "reading" || status === "uploading"} onClick={uploadBook}>{status === "reading" || status === "uploading" ? <Icon name="refresh" size={17}/> : <Icon name="upload" size={17}/>} {status === "reading" ? "Contrôle en cours…" : status === "uploading" ? "Import en cours…" : "Importer ce book"}</button><div className={`upload-feedback ${status}`}><i/>{message || "La date est détectée depuis le nom du fichier. Les doublons sont bloqués automatiquement."}</div></div>
+    </section>
     <section className="source-cards">
       <article className="source-card active"><div className="source-icon"><Icon name="source"/></div><div><span>BASE DE DONNÉES</span><h3>Supabase KPI CRVO</h3><p>Historique immuable, 12 indicateurs réels et règles de sécurité actives.</p></div><strong><i/>CONNECTÉ</strong></article>
       <article className="source-card active"><div className="source-icon excel">XL</div><div><span>SOURCE PROVISOIRE</span><h3>Book CRVO · 07/08/2026</h3><p>75 feuilles analysées, vues de production, goulots et FIFO intégrées.</p></div><strong><i/>CHARGÉ</strong></article>
@@ -311,14 +382,14 @@ export default function Dashboard() {
   function navigate(next: View) { setView(next); setMenuOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); }
   return <div className="app-shell">
     <aside className={menuOpen ? "sidebar open" : "sidebar"}>
-      <div className="sidebar-brand"><Image src="/crvo-logo.png" width={190} height={65} alt="CRVO" priority/></div>
+      <div className="sidebar-brand"><Image src="/crvo-logo.png" width={190} height={65} alt="CRVO - Votre potentiel VO au plus haut" priority unoptimized/></div>
       <div className="sidebar-context"><span>REPORTING</span><strong>CRVO Lens</strong><small>Pilotage opérationnel</small></div>
       <nav>{views.map((item) => <button id={`nav-${item.id}`} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} key={item.id}><Icon name={item.icon}/><span>{item.label}</span>{view === item.id && <i/>}</button>)}</nav>
       <div className="sidebar-bottom"><span className={connected ? "live-dot" : "book-dot"}/><div><strong>{connected ? "Données connectées" : "Mode book Excel"}</strong><small>Dernier import · {snapshot.label}</small></div></div>
     </aside>
     {menuOpen && <button className="sidebar-backdrop" aria-label="Fermer le menu" onClick={() => setMenuOpen(false)}/>} 
     <main className="main-workspace">
-      <header className="topbar"><button className="menu-button" aria-label="Ouvrir le menu" onClick={() => setMenuOpen(!menuOpen)}><Icon name={menuOpen ? "close" : "menu"}/></button><div className="topbar-title"><span>REPORTING CRVO LENS</span><h1>{current.label}</h1></div><div className="topbar-date"><Icon name="calendar"/><div><span>DERNIÈRE DONNÉE</span><strong>{snapshot.label}</strong></div></div></header>
+      <header className="topbar"><button className="menu-button" aria-label="Ouvrir le menu" onClick={() => setMenuOpen(!menuOpen)}><Icon name={menuOpen ? "close" : "menu"}/></button><div className="topbar-brand"><Image src="/crvo-logo.png" width={151} height={47} alt="CRVO - Votre potentiel VO au plus haut" priority unoptimized/></div><div className="topbar-title"><span>REPORTING CRVO LENS</span><h1>{current.label}</h1></div><div className="topbar-date"><Icon name="calendar"/><div><span>DERNIÈRE DONNÉE</span><strong>{snapshot.label}</strong></div></div></header>
       {view === "today" && <TodayView snapshot={snapshot} connected={connected}/>} 
       {view === "yesterday" && <YesterdayView snapshot={snapshot} connected={connected}/>} 
       {view === "bottlenecks" && <BottlenecksView snapshot={snapshot} connected={connected}/>} 
