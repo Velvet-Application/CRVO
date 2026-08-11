@@ -197,3 +197,11 @@ values
   ('b3177ed3-7b28-43c0-9fa2-e627daf0fa42', 'production_quality', 'Qualité', 88),
   ('b3177ed3-7b28-43c0-9fa2-e627daf0fa42', 'production_factory_exit', 'Sortie usine', 86)
 on conflict (import_batch_id, metric_key, dimensions) do nothing;
+
+
+-- Durcissement détecté par Supabase Security Advisor.
+-- La fonction rls_auto_enable est un event trigger interne et ne doit pas être appelable via la Data API.
+revoke execute on function public.rls_auto_enable() from public, anon, authenticated;
+
+create index if not exists kpi_corrections_metric_idx
+  on public.kpi_corrections(original_metric_id);
