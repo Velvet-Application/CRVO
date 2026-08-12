@@ -26,7 +26,7 @@ type Objective = {
 
 type ObjectivesPayload = {
   objectives?: Objective[];
-  exitTargets?: Record<string, number>;
+  sortieDailyTargets?: Record<string, number>;
   connected?: boolean;
 };
 
@@ -101,7 +101,7 @@ export default function AtelierScreen() {
 
       setSnapshot(latest);
       setObjectives(objectivePayload.objectives ?? []);
-      setExitTargets(objectivePayload.exitTargets ?? {});
+      setExitTargets(objectivePayload.sortieDailyTargets ?? {});
       setConnected(Boolean(dashboard.connected && objectivePayload.connected));
       setLastRefresh(clock());
       setError("");
