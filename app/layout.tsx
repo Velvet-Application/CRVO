@@ -14,6 +14,7 @@ import UploadArchiveGuard from "./upload-archive-guard";
 import ObjectivesDailyPatch from "./objectives-daily-patch";
 import FinanceSourcePortal from "./finance-source-portal";
 import FinanceTrendPanel from "./finance-trend-panel";
+import PilotageNav from "./pilotage-nav";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <ObjectivesDailyPatch />
     <FinanceSourcePortal />
     <FinanceTrendPanel />
+    <PilotageNav />
     {children}
     <a className="global-book-launch" href="/book">BOOK D&apos;ANIMATION PDF</a>
     <style>{`
