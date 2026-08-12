@@ -33,49 +33,88 @@ function numberValue(metrics: SnapshotRow["metrics"], key: string, fallback: num
   return Number.isFinite(value) ? value : fallback;
 }
 
-export async function GET() {
+function formatSnapshot(row: SnapshotRow) {
+  const date = new Date(`${row.snapshot_at}T12:00:00Z`);
+  const metrics = row.metrics ?? {};
+  return {
+    date: row.snapshot_at,
+    label: new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" }).format(date),
+    source: row.source_name,
+    entries: numberValue(metrics, "entries_vop", 0),
+    exits: numberValue(metrics, "exits_vop", 0),
+    stock: numberValue(metrics, "factory_stock", 0),
+    over15: numberValue(metrics, "stock_over_15d", 0),
+    over20: numberValue(metrics, "stock_over_20d", 0),
+    production: [
+      { name: "Expertise", value: numberValue(metrics, "production_expertise", 0), tone: "blue" },
+      { name: "Mécanique", value: numberValue(metrics, "production_mechanics", 0), tone: "cyan" },
+      { name: "DSP", value: numberValue(metrics, "production_dsp", 0), tone: "teal" },
+      { name: "Carrosserie", value: numberValue(metrics, "production_bodywork", 0), tone: "yellow" },
+      { name: "Préparation", value: numberValue(metrics, "production_preparation", 0), tone: "blue" },
+      { name: "Qualité", value: numberValue(metrics, "production_quality", 0), tone: "cyan" },
+      { name: "Sortie usine", value: numberValue(metrics, "production_factory_exit", 0), tone: "teal" },
+    ],
+  };
+}
+
+export async function GET(request: Request) {
   const supabaseUrl = process.env.SUPABASE_URL;
   const secretKey = process.env.SUPABASE_SECRET_KEY;
+  const url = new URL(request.url);
+  const wantsHistory = url.searchParams.get("history") === "1";
+  const requestedDate = url.searchParams.get("date")?.match(/^\d{4}-\d{2}-\d{2}$/)?.[0] ?? null;
+
   if (!supabaseUrl || !secretKey) {
-    return NextResponse.json({ snapshot: verifiedSeed, backend: "verified-seed", connected: false });
+    return NextResponse.json({
+      snapshot: verifiedSeed,
+      snapshots: wantsHistory ? [verifiedSeed] : undefined,
+      backend: "verified-seed",
+      connected: false,
+    });
   }
 
   try {
-    const response = await fetch(`${supabaseUrl}/rest/v1/kpi_dashboard_snapshots?select=snapshot_at,source_name,metrics&order=snapshot_at.desc&limit=1`, {
+    const select = "select=snapshot_at,source_name,metrics";
+    const query = wantsHistory
+      ? `${select}&order=snapshot_at.asc&limit=120`
+      : requestedDate
+        ? `${select}&snapshot_at=eq.${encodeURIComponent(requestedDate)}&limit=1`
+        : `${select}&order=snapshot_at.desc&limit=1`;
+
+    const response = await fetch(`${supabaseUrl}/rest/v1/kpi_dashboard_snapshots?${query}`, {
       headers: { apikey: secretKey, Authorization: `Bearer ${secretKey}`, Accept: "application/json" },
       cache: "no-store",
     });
     if (!response.ok) throw new Error(`Supabase ${response.status}`);
+
     const rows = await response.json() as SnapshotRow[];
-    if (!rows.length) return NextResponse.json({ snapshot: verifiedSeed, backend: "verified-seed", connected: true });
-    const row = rows[0];
-    const date = new Date(`${row.snapshot_at}T12:00:00Z`);
-    const metrics = row.metrics;
-    return NextResponse.json({
-      connected: true,
-      backend: "supabase",
-      snapshot: {
-        date: row.snapshot_at,
-        label: new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" }).format(date),
-        source: row.source_name,
-        entries: numberValue(metrics, "entries_vop", 0),
-        exits: numberValue(metrics, "exits_vop", 0),
-        stock: numberValue(metrics, "factory_stock", 0),
-        over15: numberValue(metrics, "stock_over_15d", 0),
-        over20: numberValue(metrics, "stock_over_20d", 0),
-        production: [
-          { name: "Expertise", value: numberValue(metrics, "production_expertise", 0), tone: "blue" },
-          { name: "Mécanique", value: numberValue(metrics, "production_mechanics", 0), tone: "cyan" },
-          { name: "DSP", value: numberValue(metrics, "production_dsp", 0), tone: "teal" },
-          { name: "Carrosserie", value: numberValue(metrics, "production_bodywork", 0), tone: "yellow" },
-          { name: "Préparation", value: numberValue(metrics, "production_preparation", 0), tone: "blue" },
-          { name: "Qualité", value: numberValue(metrics, "production_quality", 0), tone: "cyan" },
-          { name: "Sortie usine", value: numberValue(metrics, "production_factory_exit", 0), tone: "teal" },
-        ],
-      },
-    });
+    if (!rows.length) {
+      return NextResponse.json({
+        snapshot: verifiedSeed,
+        snapshots: wantsHistory ? [verifiedSeed] : undefined,
+        backend: "verified-seed",
+        connected: true,
+      });
+    }
+
+    if (wantsHistory) {
+      const snapshots = rows.map(formatSnapshot);
+      return NextResponse.json({
+        connected: true,
+        backend: "supabase",
+        snapshot: snapshots.at(-1) ?? verifiedSeed,
+        snapshots,
+      });
+    }
+
+    return NextResponse.json({ connected: true, backend: "supabase", snapshot: formatSnapshot(rows[0]) });
   } catch (error) {
     console.error(JSON.stringify({ event: "dashboard_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
-    return NextResponse.json({ snapshot: verifiedSeed, backend: "verified-seed", connected: false });
+    return NextResponse.json({
+      snapshot: verifiedSeed,
+      snapshots: wantsHistory ? [verifiedSeed] : undefined,
+      backend: "verified-seed",
+      connected: false,
+    });
   }
 }
