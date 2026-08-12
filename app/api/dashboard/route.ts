@@ -12,13 +12,13 @@ const verifiedSeed = {
   over15: 494,
   over20: 399,
   production: [
-    { name: "Expertise", value: 80, tone: "blue" },
-    { name: "Mécanique", value: 96, tone: "cyan" },
-    { name: "DSP", value: 24, tone: "teal" },
-    { name: "Carrosserie", value: 11, tone: "yellow" },
-    { name: "Préparation", value: 89, tone: "blue" },
-    { name: "Qualité", value: 88, tone: "cyan" },
-    { name: "Sortie usine", value: 86, tone: "teal" },
+    { name: "Expertise", value: 80, tone: "coral" },
+    { name: "Mécanique", value: 96, tone: "green" },
+    { name: "DSP", value: 24, tone: "cyan" },
+    { name: "Carrosserie", value: 11, tone: "red" },
+    { name: "Préparation", value: 89, tone: "purple" },
+    { name: "Qualité", value: 88, tone: "orange" },
+    { name: "Sortie usine", value: 86, tone: "blue" },
   ],
 };
 
@@ -46,13 +46,13 @@ function formatSnapshot(row: SnapshotRow) {
     over15: numberValue(metrics, "stock_over_15d", 0),
     over20: numberValue(metrics, "stock_over_20d", 0),
     production: [
-      { name: "Expertise", value: numberValue(metrics, "production_expertise", 0), tone: "blue" },
-      { name: "Mécanique", value: numberValue(metrics, "production_mechanics", 0), tone: "cyan" },
-      { name: "DSP", value: numberValue(metrics, "production_dsp", 0), tone: "teal" },
-      { name: "Carrosserie", value: numberValue(metrics, "production_bodywork", 0), tone: "yellow" },
-      { name: "Préparation", value: numberValue(metrics, "production_preparation", 0), tone: "blue" },
-      { name: "Qualité", value: numberValue(metrics, "production_quality", 0), tone: "cyan" },
-      { name: "Sortie usine", value: numberValue(metrics, "production_factory_exit", 0), tone: "teal" },
+      { name: "Expertise", value: numberValue(metrics, "production_expertise", 0), tone: "coral" },
+      { name: "Mécanique", value: numberValue(metrics, "production_mechanics", 0), tone: "green" },
+      { name: "DSP", value: numberValue(metrics, "production_dsp", 0), tone: "cyan" },
+      { name: "Carrosserie", value: numberValue(metrics, "production_bodywork", 0), tone: "red" },
+      { name: "Préparation", value: numberValue(metrics, "production_preparation", 0), tone: "purple" },
+      { name: "Qualité", value: numberValue(metrics, "production_quality", 0), tone: "orange" },
+      { name: "Sortie usine", value: numberValue(metrics, "production_factory_exit", 0), tone: "blue" },
     ],
   };
 }
