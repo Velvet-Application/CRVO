@@ -6,6 +6,7 @@ import "@fontsource/exo/700.css";
 import "@fontsource/exo/800.css";
 import "@fontsource/exo/800-italic.css";
 import "./globals.css";
+import "./dashboard-additions.css";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
