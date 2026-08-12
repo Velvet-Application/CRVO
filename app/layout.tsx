@@ -15,5 +15,36 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="fr"><body>{children}</body></html>;
+  return <html lang="fr"><body>
+    {children}
+    <a className="global-book-launch" href="/book">BOOK D&apos;ANIMATION PDF</a>
+    <style>{`
+      .global-book-launch {
+        position: fixed;
+        right: 22px;
+        bottom: 22px;
+        z-index: 90;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 0 16px;
+        border-radius: 12px;
+        background: #004f9f;
+        color: #fff;
+        text-decoration: none;
+        font-family: Exo, Arial, sans-serif;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: .03em;
+        box-shadow: 0 12px 28px rgba(0,79,159,.24);
+        border: 1px solid rgba(255,255,255,.18);
+      }
+      .global-book-launch:hover { background: #0068b5; transform: translateY(-1px); }
+      @media (max-width: 760px) {
+        .global-book-launch { right: 14px; bottom: 76px; min-height: 40px; padding: 0 13px; font-size: 10px; }
+      }
+      @media print { .global-book-launch { display: none !important; } }
+    `}</style>
+  </body></html>;
 }
