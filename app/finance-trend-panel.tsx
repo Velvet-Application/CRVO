@@ -16,7 +16,6 @@ type Point = {
   actual: number | null;
   target: number;
   projection: number | null;
-  isFuture: boolean;
 };
 
 function euro(value: number) {
@@ -31,18 +30,13 @@ function monthLabel(month: string) {
   return new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" }).format(new Date(`${month}-01T12:00:00`));
 }
 
-function isWeekday(date: Date) {
-  const day = date.getDay();
-  return day !== 0 && day !== 6;
-}
-
 function workingDates(month: string) {
   const [year, mon] = month.split("-").map(Number);
   const lastDay = new Date(year, mon, 0).getDate();
   const dates: string[] = [];
   for (let day = 1; day <= lastDay; day += 1) {
     const date = new Date(year, mon - 1, day, 12);
-    if (!isWeekday(date)) continue;
+    if (date.getDay() === 0 || date.getDay() === 6) continue;
     dates.push(`${year}-${String(mon).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
   }
   return dates;
@@ -59,9 +53,7 @@ function validNumber(value: unknown) {
 }
 
 function buildSeries(rows: FinancialSnapshot[], month: string) {
-  const monthRows = rows
-    .filter((row) => row.date.startsWith(month))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const monthRows = rows.filter((row) => row.date.startsWith(month)).sort((a, b) => a.date.localeCompare(b.date));
   if (!monthRows.length) return null;
 
   const days = workingDates(month);
@@ -76,27 +68,23 @@ function buildSeries(rows: FinancialSnapshot[], month: string) {
   const projectionEnd = averagePerWorkedDay * days.length;
   const remainingDays = Math.max(days.length - elapsed, 0);
   const requiredPerDay = remainingDays > 0 ? Math.max(monthTarget - latestActual, 0) / remainingDays : 0;
-
   const actualByDate = new Map(monthRows.map((row) => [row.date, validNumber(row.metrics.revenue_cumulative)]));
-  const latestIndex = days.findIndex((date) => date === latest.date);
+  const latestIndex = Math.max(days.findIndex((date) => date === latest.date), elapsed - 1);
+
   const points: Point[] = days.map((date, index) => {
-    const target = dailyTarget * (index + 1);
     const actual = actualByDate.get(date) ?? null;
     let projection: number | null = null;
     if (index === latestIndex) projection = latestActual;
-    else if (index > latestIndex) projection = latestActual + averagePerWorkedDay * (index - latestIndex);
-    return { date, label: shortDate(date), actual, target, projection, isFuture: date > latest.date };
+    if (index > latestIndex) projection = latestActual + averagePerWorkedDay * (index - latestIndex);
+    return { date, label: shortDate(date), actual, target: dailyTarget * (index + 1), projection };
   });
 
   return {
     points,
-    latest,
-    latestActual,
     monthTarget,
     projectionEnd,
     averagePerWorkedDay,
     requiredPerDay,
-    elapsed,
     totalDays: days.length,
     remainingDays,
     projectionGap: projectionEnd - monthTarget,
@@ -105,21 +93,15 @@ function buildSeries(rows: FinancialSnapshot[], month: string) {
 }
 
 function RevenueSvg({ points }: { points: Point[] }) {
-  const width = 1200;
-  const height = 390;
-  const left = 86;
-  const right = 36;
-  const top = 32;
-  const bottom = 58;
-  const usableW = width - left - right;
-  const usableH = height - top - bottom;
-  const allValues = points.flatMap((point) => [point.actual, point.target, point.projection]).filter((value): value is number => value != null);
-  const maxValue = Math.max(...allValues, 1) * 1.08;
+  const width = 1200, height = 390, left = 86, right = 36, top = 32, bottom = 58;
+  const usableW = width - left - right, usableH = height - top - bottom;
+  const values = points.flatMap((point) => [point.actual, point.target, point.projection]).filter((value): value is number => value != null);
+  const maxValue = Math.max(...values, 1) * 1.08;
   const x = (index: number) => left + index / Math.max(points.length - 1, 1) * usableW;
   const y = (value: number) => top + (maxValue - value) / maxValue * usableH;
-  const path = (values: Array<number | null>) => {
+  const path = (series: Array<number | null>) => {
     let started = false;
-    return values.map((value, index) => {
+    return series.map((value, index) => {
       if (value == null) return "";
       const command = started ? "L" : "M";
       started = true;
@@ -129,24 +111,21 @@ function RevenueSvg({ points }: { points: Point[] }) {
   const actualPath = path(points.map((point) => point.actual));
   const targetPath = path(points.map((point) => point.target));
   const projectionPath = path(points.map((point) => point.projection));
-  const ticks = [0, .25, .5, .75, 1];
-  const labelIndexes = Array.from(new Set([0, Math.floor((points.length - 1) * .25), Math.floor((points.length - 1) * .5), Math.floor((points.length - 1) * .75), points.length - 1]));
+  let lastActualIndex = 0;
+  points.forEach((point, index) => { if (point.actual != null) lastActualIndex = index; });
+  const areaPath = actualPath ? `${actualPath} L${x(lastActualIndex)},${top + usableH} L${x(0)},${top + usableH} Z` : "";
+  const labels = Array.from(new Set([0, Math.floor((points.length - 1) * .25), Math.floor((points.length - 1) * .5), Math.floor((points.length - 1) * .75), points.length - 1]));
 
-  return <div className="finance-month-chart">
-    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Évolution du chiffre d’affaires cumulé, objectif et projection fin de mois">
-      <defs>
-        <linearGradient id="financeActualFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#009edb" stopOpacity=".22"/><stop offset="1" stopColor="#009edb" stopOpacity=".015"/></linearGradient>
-      </defs>
-      {ticks.map((tick) => { const yy = top + usableH * tick; const value = maxValue * (1 - tick); return <g key={tick}><line className="finance-grid-line" x1={left} x2={width-right} y1={yy} y2={yy}/><text className="finance-axis-label" x={left-12} y={yy+4} textAnchor="end">{compactEuro(value)}</text></g>; })}
-      <path d={`${actualPath} ${actualPath ? `L${x(Math.max(points.findLastIndex((p) => p.actual != null),0))},${top+usableH} L${x(0)},${top+usableH} Z` : ""}`} fill="url(#financeActualFill)"/>
-      <path d={targetPath} className="finance-target-line" fill="none"/>
-      <path d={actualPath} className="finance-actual-line" fill="none"/>
-      <path d={projectionPath} className="finance-projection-line" fill="none"/>
-      {points.map((point, index) => point.actual != null ? <circle key={`a-${point.date}`} cx={x(index)} cy={y(point.actual)} r="5" className="finance-actual-dot"/> : null)}
-      {labelIndexes.map((index) => <text key={index} className="finance-x-label" x={x(index)} y={height-18} textAnchor={index === 0 ? "start" : index === points.length-1 ? "end" : "middle"}>{points[index]?.label}</text>)}
-    </svg>
-    <div className="finance-chart-legend"><span><i className="actual"/>CA réel cumulé</span><span><i className="target"/>Objectif cumulé</span><span><i className="projection"/>Projection au rythme actuel</span></div>
-  </div>;
+  return <div className="finance-month-chart"><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Évolution du chiffre d’affaires cumulé, objectif et projection fin de mois">
+    <defs><linearGradient id="financeActualFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#009edb" stopOpacity=".22"/><stop offset="1" stopColor="#009edb" stopOpacity=".015"/></linearGradient></defs>
+    {[0,.25,.5,.75,1].map((tick) => { const yy = top + usableH * tick; return <g key={tick}><line className="finance-grid-line" x1={left} x2={width-right} y1={yy} y2={yy}/><text className="finance-axis-label" x={left-12} y={yy+4} textAnchor="end">{compactEuro(maxValue * (1-tick))}</text></g>; })}
+    <path d={areaPath} fill="url(#financeActualFill)"/>
+    <path d={targetPath} className="finance-target-line" fill="none"/>
+    <path d={actualPath} className="finance-actual-line" fill="none"/>
+    <path d={projectionPath} className="finance-projection-line" fill="none"/>
+    {points.map((point,index) => point.actual != null ? <circle key={point.date} cx={x(index)} cy={y(point.actual)} r="5" className="finance-actual-dot"/> : null)}
+    {labels.map((index) => <text key={index} className="finance-x-label" x={x(index)} y={height-18} textAnchor={index === 0 ? "start" : index === points.length-1 ? "end" : "middle"}>{points[index]?.label}</text>)}
+  </svg><div className="finance-chart-legend"><span><i className="actual"/>CA réel cumulé</span><span><i className="target"/>Objectif cumulé</span><span><i className="projection"/>Projection au rythme actuel</span></div></div>;
 }
 
 export default function FinanceTrendPanel() {
@@ -156,7 +135,7 @@ export default function FinanceTrendPanel() {
 
   useEffect(() => {
     const locate = () => {
-      const kpis = document.querySelector<HTMLElement>(".finance-kpis");
+      const kpis = document.querySelector(".finance-kpis") as HTMLElement | null;
       if (!kpis?.parentElement) { if (host) setHost(null); return; }
       let portal = document.getElementById("finance-trend-root");
       if (!portal) {
@@ -165,15 +144,15 @@ export default function FinanceTrendPanel() {
         kpis.insertAdjacentElement("afterend", portal);
       }
       if (host !== portal) setHost(portal);
-      const picker = document.querySelector<HTMLSelectElement>(".finance-date-select");
-      if (picker?.value) setSelectedMonth(picker.value.slice(0, 7));
+      const picker = document.querySelector(".finance-date-select") as any;
+      if (picker?.value) setSelectedMonth(String(picker.value).slice(0, 7));
     };
     locate();
     const observer = new MutationObserver(locate);
     observer.observe(document.body, { childList: true, subtree: true });
     const onChange = (event: Event) => {
-      const target = event.target as HTMLSelectElement | null;
-      if (target?.matches(".finance-date-select") && target.value) setSelectedMonth(target.value.slice(0, 7));
+      const target = event.target as any;
+      if (target?.classList?.contains("finance-date-select") && target.value) setSelectedMonth(String(target.value).slice(0, 7));
     };
     document.addEventListener("change", onChange);
     return () => { observer.disconnect(); document.removeEventListener("change", onChange); };
@@ -195,16 +174,8 @@ export default function FinanceTrendPanel() {
   if (!host || !trend) return null;
 
   return createPortal(<section className="finance-trend-panel">
-    <div className="finance-trend-heading">
-      <div><span>TRAJECTOIRE DU MOIS</span><h3>CA cumulé, tendance & projection</h3><p>{monthLabel(selectedMonth)} · projection calculée sur le rythme moyen des jours ouvrés réellement écoulés.</p></div>
-      <div className="finance-projection-main"><span>PROJECTION FIN DE MOIS</span><strong>{euro(trend.projectionEnd)}</strong><small className={trend.projectionGap >= 0 ? "positive" : "negative"}>{trend.projectionGap >= 0 ? "+" : ""}{euro(trend.projectionGap)} vs objectif</small></div>
-    </div>
+    <div className="finance-trend-heading"><div><span>TRAJECTOIRE DU MOIS</span><h3>CA cumulé, tendance & projection</h3><p>{monthLabel(selectedMonth)} · projection calculée sur le rythme moyen des jours ouvrés réellement écoulés.</p></div><div className="finance-projection-main"><span>PROJECTION FIN DE MOIS</span><strong>{euro(trend.projectionEnd)}</strong><small className={trend.projectionGap >= 0 ? "positive" : "negative"}>{trend.projectionGap >= 0 ? "+" : ""}{euro(trend.projectionGap)} vs objectif</small></div></div>
     <RevenueSvg points={trend.points}/>
-    <div className="finance-trend-stats">
-      <article><span>OBJECTIF MOIS</span><strong>{euro(trend.monthTarget)}</strong><small>{trend.totalDays} jours ouvrés</small></article>
-      <article><span>RYTHME ACTUEL</span><strong>{euro(trend.averagePerWorkedDay)}</strong><small>CA moyen / jour ouvré</small></article>
-      <article><span>CADENCE À TENIR</span><strong>{euro(trend.requiredPerDay)}</strong><small>{trend.remainingDays} jours ouvrés restants</small></article>
-      <article className={trend.attainmentProjection >= 100 ? "success" : "warning"}><span>ATTERRISSAGE PROJETÉ</span><strong>{trend.attainmentProjection.toLocaleString("fr-FR", { maximumFractionDigits: 1 })}%</strong><small>de l’objectif mensuel</small></article>
-    </div>
+    <div className="finance-trend-stats"><article><span>OBJECTIF MOIS</span><strong>{euro(trend.monthTarget)}</strong><small>{trend.totalDays} jours ouvrés</small></article><article><span>RYTHME ACTUEL</span><strong>{euro(trend.averagePerWorkedDay)}</strong><small>CA moyen / jour ouvré</small></article><article><span>CADENCE À TENIR</span><strong>{euro(trend.requiredPerDay)}</strong><small>{trend.remainingDays} jours ouvrés restants</small></article><article className={trend.attainmentProjection >= 100 ? "success" : "warning"}><span>ATTERRISSAGE PROJETÉ</span><strong>{trend.attainmentProjection.toLocaleString("fr-FR", { maximumFractionDigits: 1 })}%</strong><small>de l’objectif mensuel</small></article></div>
   </section>, host);
 }
