@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { supabaseRestHeaders } from "../../supabase-rest";
 
 export const dynamic = "force-dynamic";
 
@@ -85,7 +86,7 @@ export async function GET(request: Request) {
         : `${select}&order=snapshot_at.desc&limit=120`;
 
     const response = await fetch(`${supabaseUrl}/rest/v1/kpi_dashboard_snapshots?${query}`, {
-      headers: { apikey: secretKey, Authorization: `Bearer ${secretKey}`, Accept: "application/json" },
+      headers: supabaseRestHeaders(secretKey, { Accept: "application/json" }),
       cache: "no-store",
     });
     if (!response.ok) throw new Error(`Supabase ${response.status}`);
