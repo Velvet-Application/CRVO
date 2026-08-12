@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getImportIdentity } from "../../import-auth";
+import { supabaseRestHeaders } from "../../supabase-rest";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,12 @@ function monthStart(value: string | null) {
 
 function monthKey(value: string) { return value.slice(0, 7); }
 function cookieName(month: string) { return `crvo_objectives_${month.replace("-", "_")}`; }
+
+function nextMonthStart(month: string) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, monthNumber, 1));
+  return date.toISOString().slice(0, 10);
+}
 
 function readCookie(request: Request, month: string): StoredObjectives | null {
   const raw = request.headers.get("cookie") ?? "";
@@ -86,10 +93,19 @@ export async function GET(request: Request) {
     });
   }
 
-  const response = await fetch(`${config.supabaseUrl}/rest/v1/kpi_monthly_objectives?select=month,sector_key,sector_label,daily_target,min_threshold,max_threshold&month=eq.${month}&order=sector_label.asc`, {
-    headers: { apikey: config.secretKey, Authorization: `Bearer ${config.secretKey}`, Accept: "application/json" },
-    cache: "no-store",
-  });
+  const headers = supabaseRestHeaders(config.secretKey, { Accept: "application/json" });
+  const dailyEnd = nextMonthStart(key);
+  const [response, dailyResponse] = await Promise.all([
+    fetch(`${config.supabaseUrl}/rest/v1/kpi_monthly_objectives?select=month,sector_key,sector_label,daily_target,min_threshold,max_threshold&month=eq.${month}&order=sector_label.asc`, {
+      headers,
+      cache: "no-store",
+    }),
+    fetch(`${config.supabaseUrl}/rest/v1/kpi_daily_exit_objectives?select=target_date,target_value&target_date=gte.${key}-01&target_date=lt.${dailyEnd}&order=target_date.asc`, {
+      headers,
+      cache: "no-store",
+    }),
+  ]);
+
   if (!response.ok) {
     return NextResponse.json({
       objectives: local?.objectives?.length ? local.objectives : FALLBACK_OBJECTIVES,
@@ -97,8 +113,10 @@ export async function GET(request: Request) {
       month,
       connected: false,
       storage: local ? "browser" : "fallback",
+      error: `Supabase ${response.status}`,
     });
   }
+
   const rows = await response.json() as Array<Record<string, unknown>>;
   const objectives = rows.length ? rows.map((row) => ({
     month: row.month,
@@ -108,7 +126,24 @@ export async function GET(request: Request) {
     minThreshold: row.min_threshold == null ? null : Number(row.min_threshold),
     maxThreshold: row.max_threshold == null ? null : Number(row.max_threshold),
   })) : (local?.objectives?.length ? local.objectives : FALLBACK_OBJECTIVES);
-  return NextResponse.json({ connected: true, month, objectives, sortieDailyTargets: local?.sortieDailyTargets ?? {}, storage: rows.length ? "supabase" : local ? "browser" : "fallback" });
+
+  let remoteDailyTargets: Record<string, number> = {};
+  if (dailyResponse.ok) {
+    const dailyRows = await dailyResponse.json() as Array<Record<string, unknown>>;
+    remoteDailyTargets = Object.fromEntries(dailyRows.map((row) => [String(row.target_date), Math.max(0, Number(row.target_value) || 0)]));
+  }
+
+  const sortieDailyTargets = Object.keys(remoteDailyTargets).length
+    ? remoteDailyTargets
+    : (local?.sortieDailyTargets ?? {});
+
+  return NextResponse.json({
+    connected: true,
+    month,
+    objectives,
+    sortieDailyTargets,
+    storage: rows.length || Object.keys(remoteDailyTargets).length ? "supabase" : local ? "browser" : "fallback",
+  });
 }
 
 export async function PUT(request: Request) {
@@ -151,18 +186,46 @@ export async function PUT(request: Request) {
     max_threshold: item.maxThreshold,
     updated_at: new Date().toISOString(),
   }));
+
+  const commonHeaders = supabaseRestHeaders(config.secretKey, {
+    "Content-Type": "application/json",
+    Prefer: "resolution=merge-duplicates,return=minimal",
+  });
+
   const response = await fetch(`${config.supabaseUrl}/rest/v1/kpi_monthly_objectives?on_conflict=month,sector_key`, {
     method: "POST",
-    headers: {
-      apikey: config.secretKey,
-      Authorization: `Bearer ${config.secretKey}`,
-      "Content-Type": "application/json",
-      Prefer: "resolution=merge-duplicates,return=minimal",
-    },
+    headers: commonHeaders,
     body: JSON.stringify(rows),
   });
+
   if (!response.ok) {
     return withCookie(NextResponse.json({ saved: cleanObjectives.length, month, identity: identity.method, storage: "browser", warning: "Supabase indisponible, sauvegarde navigateur utilisée." }), key, payload);
   }
-  return withCookie(NextResponse.json({ saved: rows.length, month, identity: identity.method, storage: "supabase+browser" }), key, payload);
+
+  let dailySaved = 0;
+  let dailyWarning: string | undefined;
+  const dailyRows = Object.entries(sortieDailyTargets).map(([targetDate, targetValue]) => ({
+    target_date: targetDate,
+    target_value: targetValue,
+    updated_at: new Date().toISOString(),
+  }));
+
+  if (dailyRows.length) {
+    const dailyResponse = await fetch(`${config.supabaseUrl}/rest/v1/kpi_daily_exit_objectives?on_conflict=target_date`, {
+      method: "POST",
+      headers: commonHeaders,
+      body: JSON.stringify(dailyRows),
+    });
+    if (dailyResponse.ok) dailySaved = dailyRows.length;
+    else dailyWarning = `Planning quotidien conservé dans le navigateur (Supabase ${dailyResponse.status}).`;
+  }
+
+  return withCookie(NextResponse.json({
+    saved: rows.length,
+    dailySaved,
+    month,
+    identity: identity.method,
+    storage: dailyWarning ? "supabase+browser" : "supabase+browser",
+    warning: dailyWarning,
+  }), key, payload);
 }
