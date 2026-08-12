@@ -20,6 +20,11 @@ function safeFilename(value: string) {
   return value.normalize("NFKD").replace(/[^a-zA-Z0-9._-]/g, "_").slice(-140);
 }
 
+async function signedUpload(supabase: ReturnType<typeof createClient>, objectPath: string) {
+  const { data, error } = await supabase.storage.from("kpi-raw-archive").createSignedUploadUrl(objectPath);
+  return error || !data ? null : data;
+}
+
 export async function POST(request: Request) {
   const user = await getImportIdentity(request);
   if (!user) return NextResponse.json({ error: "Déverrouille l’import sécurisé avant de continuer.", authRequired: true }, { status: 401 });
@@ -38,16 +43,32 @@ export async function POST(request: Request) {
   if (!SHA256.test(sha256) || !DATE.test(snapshotAt)) return NextResponse.json({ error: "Le fichier ou sa date n’a pas pu être validé." }, { status: 400 });
 
   const supabase = createClient(supabaseUrl, secretKey, { auth: { persistSession: false, autoRefreshToken: false } });
-  const { data: duplicate, error: duplicateError } = await supabase.from("kpi_import_batches").select("id,snapshot_at,original_filename,status").eq("sha256", sha256).maybeSingle();
+  const { data: duplicate, error: duplicateError } = await supabase
+    .from("kpi_import_batches")
+    .select("id,snapshot_at,original_filename,status,archive_object_path")
+    .eq("sha256", sha256)
+    .maybeSingle();
   if (duplicateError) return NextResponse.json({ error: "Impossible de vérifier l’historique." }, { status: 502 });
-  if (duplicate) return NextResponse.json({ duplicate: true, existing: duplicate }, { status: 409 });
+
+  if (duplicate) {
+    if (duplicate.status !== "received") return NextResponse.json({ duplicate: true, existing: duplicate }, { status: 409 });
+    const objectPath = duplicate.archive_object_path || `${snapshotAt}/${sha256}-${filename}`;
+    const signed = await signedUpload(supabase, objectPath);
+    return NextResponse.json({
+      batchId: duplicate.id,
+      signedUrl: signed?.signedUrl ?? null,
+      path: signed?.path ?? objectPath,
+      token: signed?.token ?? null,
+      resumed: true,
+      archiveOptional: true,
+    });
+  }
 
   const { data: source, error: sourceError } = await supabase.from("kpi_data_sources").select("id").eq("kind", "manual").eq("is_enabled", true).limit(1).single();
   if (sourceError || !source) return NextResponse.json({ error: "La source d’import manuel n’est pas disponible." }, { status: 503 });
 
   const objectPath = `${snapshotAt}/${sha256}-${filename}`;
-  const { data: signed, error: signedError } = await supabase.storage.from("kpi-raw-archive").createSignedUploadUrl(objectPath);
-  if (signedError || !signed) return NextResponse.json({ error: "Impossible de préparer l’archivage du book." }, { status: 502 });
+  const signed = await signedUpload(supabase, objectPath);
 
   const { data: batch, error: batchError } = await supabase.from("kpi_import_batches").insert({
     source_id: source.id,
@@ -58,9 +79,20 @@ export async function POST(request: Request) {
     byte_size: byteSize,
     status: "received",
     archive_status: "pending",
-    metadata: { uploaded_by: user.email, upload_channel: "dashboard", content_type: body.contentType ?? "application/octet-stream" },
+    metadata: {
+      uploaded_by: user.email,
+      upload_channel: "dashboard",
+      content_type: body.contentType ?? "application/octet-stream",
+      archive_optional: true,
+    },
   }).select("id").single();
   if (batchError || !batch) return NextResponse.json({ error: "Impossible de créer l’import." }, { status: 502 });
 
-  return NextResponse.json({ batchId: batch.id, signedUrl: signed.signedUrl, path: signed.path, token: signed.token });
+  return NextResponse.json({
+    batchId: batch.id,
+    signedUrl: signed?.signedUrl ?? null,
+    path: signed?.path ?? objectPath,
+    token: signed?.token ?? null,
+    archiveOptional: true,
+  });
 }
