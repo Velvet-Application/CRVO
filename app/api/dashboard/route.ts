@@ -2,31 +2,21 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const verifiedSeed = {
-  date: "2026-08-07",
-  label: "07 août 2026",
-  source: "Classeur Excel CRVO quotidien",
-  entries: 78,
-  exits: 86,
-  stock: 1097,
-  over15: 494,
-  over20: 399,
-  production: [
-    { name: "Expertise", value: 80, tone: "coral" },
-    { name: "Mécanique", value: 96, tone: "green" },
-    { name: "DSP", value: 24, tone: "cyan" },
-    { name: "Carrosserie", value: 11, tone: "red" },
-    { name: "Préparation", value: 89, tone: "purple" },
-    { name: "Qualité", value: 88, tone: "orange" },
-    { name: "Sortie usine", value: 86, tone: "blue" },
-  ],
-};
-
 type SnapshotRow = {
   snapshot_at: string;
   source_name: string;
   metrics: Record<string, number | string>;
 };
+
+const verifiedRows: SnapshotRow[] = [
+  { snapshot_at: "2026-08-03", source_name: "Book CRVO Lens - Journée du 03.08.2026.xlsx", metrics: { entries_vop: 50, exits_vop: 87, factory_stock: 1146, stock_over_15d: 508, stock_over_20d: 418, production_expertise: 83, production_mechanics: 83, production_dsp: 25, production_bodywork: 13, production_preparation: 85, production_quality: 91, production_factory_exit: 87 } },
+  { snapshot_at: "2026-08-04", source_name: "Book CRVO Lens - Journée du 04.08.2026.xlsx", metrics: { entries_vop: 54, exits_vop: 91, factory_stock: 1139, stock_over_15d: 476, stock_over_20d: 392, production_expertise: 86, production_mechanics: 91, production_dsp: 26, production_bodywork: 17, production_preparation: 91, production_quality: 91, production_factory_exit: 91 } },
+  { snapshot_at: "2026-08-05", source_name: "Book CRVO Lens - Journée du 05.08.2026.xlsx", metrics: { entries_vop: 79, exits_vop: 84, factory_stock: 1129, stock_over_15d: 475, stock_over_20d: 395, production_expertise: 72, production_mechanics: 84, production_dsp: 32, production_bodywork: 18, production_preparation: 84, production_quality: 85, production_factory_exit: 84 } },
+  { snapshot_at: "2026-08-06", source_name: "Book CRVO Lens - Journée du 06.08.2026.xlsx", metrics: { entries_vop: 47, exits_vop: 96, factory_stock: 1094, stock_over_15d: 474, stock_over_20d: 402, production_expertise: 77, production_mechanics: 95, production_dsp: 22, production_bodywork: 12, production_preparation: 92, production_quality: 91, production_factory_exit: 96 } },
+  { snapshot_at: "2026-08-07", source_name: "Book CRVO Lens - Journée du 07.08.2026.xlsx", metrics: { entries_vop: 78, exits_vop: 86, factory_stock: 1097, stock_over_15d: 494, stock_over_20d: 399, production_expertise: 80, production_mechanics: 96, production_dsp: 24, production_bodywork: 11, production_preparation: 89, production_quality: 88, production_factory_exit: 86 } },
+  { snapshot_at: "2026-08-10", source_name: "Book CRVO Lens - Journée du 10.08.2026.xlsx", metrics: { entries_vop: 62, exits_vop: 92, factory_stock: 1092, stock_over_15d: 467, stock_over_20d: 391, production_expertise: 76, production_mechanics: 77, production_dsp: 28, production_bodywork: 5, production_preparation: 87, production_quality: 93, production_factory_exit: 92 } },
+  { snapshot_at: "2026-08-11", source_name: "Book CRVO Lens - Journée du 11.08.2026.xlsx", metrics: { entries_vop: 42, exits_vop: 108, factory_stock: 1069, stock_over_15d: 470, stock_over_20d: 379, production_expertise: 68, production_mechanics: 82, production_dsp: 31, production_bodywork: 14, production_preparation: 87, production_quality: 91, production_factory_exit: 108 } },
+];
 
 function numberValue(metrics: SnapshotRow["metrics"], key: string, fallback: number) {
   const value = Number(metrics[key]);
@@ -57,6 +47,24 @@ function formatSnapshot(row: SnapshotRow) {
   };
 }
 
+function mergedRows(liveRows: SnapshotRow[]) {
+  const byDate = new Map(verifiedRows.map((row) => [row.snapshot_at, row]));
+  liveRows.forEach((row) => byDate.set(row.snapshot_at, row));
+  return [...byDate.values()].sort((a, b) => a.snapshot_at.localeCompare(b.snapshot_at));
+}
+
+function responseFor(rows: SnapshotRow[], wantsHistory: boolean, requestedDate: string | null, connected: boolean, backend: string) {
+  const all = mergedRows(rows);
+  const selected = requestedDate ? all.find((row) => row.snapshot_at === requestedDate) : all.at(-1);
+  const snapshot = formatSnapshot(selected ?? all.at(-1) ?? verifiedRows.at(-1)!);
+  return NextResponse.json({
+    connected,
+    backend,
+    snapshot,
+    snapshots: wantsHistory ? all.map(formatSnapshot) : undefined,
+  });
+}
+
 export async function GET(request: Request) {
   const supabaseUrl = process.env.SUPABASE_URL;
   const secretKey = process.env.SUPABASE_SECRET_KEY;
@@ -65,12 +73,7 @@ export async function GET(request: Request) {
   const requestedDate = url.searchParams.get("date")?.match(/^\d{4}-\d{2}-\d{2}$/)?.[0] ?? null;
 
   if (!supabaseUrl || !secretKey) {
-    return NextResponse.json({
-      snapshot: verifiedSeed,
-      snapshots: wantsHistory ? [verifiedSeed] : undefined,
-      backend: "verified-seed",
-      connected: false,
-    });
+    return responseFor([], wantsHistory, requestedDate, false, "embedded-history");
   }
 
   try {
@@ -79,42 +82,17 @@ export async function GET(request: Request) {
       ? `${select}&order=snapshot_at.asc&limit=120`
       : requestedDate
         ? `${select}&snapshot_at=eq.${encodeURIComponent(requestedDate)}&limit=1`
-        : `${select}&order=snapshot_at.desc&limit=1`;
+        : `${select}&order=snapshot_at.desc&limit=120`;
 
     const response = await fetch(`${supabaseUrl}/rest/v1/kpi_dashboard_snapshots?${query}`, {
       headers: { apikey: secretKey, Authorization: `Bearer ${secretKey}`, Accept: "application/json" },
       cache: "no-store",
     });
     if (!response.ok) throw new Error(`Supabase ${response.status}`);
-
     const rows = await response.json() as SnapshotRow[];
-    if (!rows.length) {
-      return NextResponse.json({
-        snapshot: verifiedSeed,
-        snapshots: wantsHistory ? [verifiedSeed] : undefined,
-        backend: "verified-seed",
-        connected: true,
-      });
-    }
-
-    if (wantsHistory) {
-      const snapshots = rows.map(formatSnapshot);
-      return NextResponse.json({
-        connected: true,
-        backend: "supabase",
-        snapshot: snapshots.at(-1) ?? verifiedSeed,
-        snapshots,
-      });
-    }
-
-    return NextResponse.json({ connected: true, backend: "supabase", snapshot: formatSnapshot(rows[0]) });
+    return responseFor(rows, wantsHistory, requestedDate, true, "supabase+embedded-history");
   } catch (error) {
     console.error(JSON.stringify({ event: "dashboard_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
-    return NextResponse.json({
-      snapshot: verifiedSeed,
-      snapshots: wantsHistory ? [verifiedSeed] : undefined,
-      backend: "verified-seed",
-      connected: false,
-    });
+    return responseFor([], wantsHistory, requestedDate, false, "embedded-history");
   }
 }
