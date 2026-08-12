@@ -29,8 +29,8 @@ export async function POST(request: Request) {
     .single();
   if (batchError || !batch || batch.status !== "received") return NextResponse.json({ error: "Cet import n’est plus disponible." }, { status: 409 });
 
-  let archiveStored = body.archiveStored === true;
-  if (archiveStored && batch.archive_object_path) {
+  let archiveStored = false;
+  if (body.archiveStored !== false && batch.archive_object_path) {
     const folder = batch.archive_object_path.split("/")[0];
     const filename = batch.archive_object_path.split("/").at(-1);
     const { data: objects, error: listError } = await supabase.storage.from("kpi-raw-archive").list(folder, { search: filename, limit: 1 });
