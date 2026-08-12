@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getImportIdentity } from "../../import-auth";
+import { supabaseRestHeaders } from "../../supabase-rest";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export async function GET(request: Request) {
 
   try {
     const response = await fetch(`${config.supabaseUrl}/rest/v1/kpi_financial_snapshots?select=snapshot_at,source_name,original_filename,metrics,imported_at&order=snapshot_at.desc&limit=120`, {
-      headers: { apikey: config.secretKey, Authorization: `Bearer ${config.secretKey}`, Accept: "application/json" },
+      headers: supabaseRestHeaders(config.secretKey, { Accept: "application/json" }),
       cache: "no-store",
     });
     if (!response.ok) throw new Error(`Supabase ${response.status}`);
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
   const row = { snapshot_at: body.snapshotAt, source_name: "Import Finance CRVO", original_filename: body.filename, sha256: body.sha256 || null, byte_size: Math.max(0, Number(body.byteSize) || 0), metrics: body.metrics, imported_at: new Date().toISOString() };
   const response = await fetch(`${config.supabaseUrl}/rest/v1/kpi_financial_snapshots?on_conflict=snapshot_at`, {
     method: "POST",
-    headers: { apikey: config.secretKey, Authorization: `Bearer ${config.secretKey}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
+    headers: supabaseRestHeaders(config.secretKey, { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }),
     body: JSON.stringify([row]),
   });
   if (!response.ok) return NextResponse.json({ error: `Supabase ${response.status}: ${await response.text()}` }, { status: 502 });
