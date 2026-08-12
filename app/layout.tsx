@@ -7,6 +7,7 @@ import "@fontsource/exo/800.css";
 import "@fontsource/exo/800-italic.css";
 import "./globals.css";
 import "./dashboard-additions.css";
+import UploadArchiveGuard from "./upload-archive-guard";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -17,6 +18,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="fr"><body>
+    <UploadArchiveGuard />
     {children}
     <a className="global-book-launch" href="/book">BOOK D&apos;ANIMATION PDF</a>
     <style>{`
