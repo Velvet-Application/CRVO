@@ -18,6 +18,24 @@ type Snapshot = {
   production: Array<{ name: string; value: number; tone: string }>;
 };
 
+type DashboardPayload = {
+  snapshot?: Snapshot;
+  connected?: boolean;
+  backend?: string;
+};
+
+type ImportInitPayload = {
+  batchId?: string;
+  signedUrl?: string;
+  duplicate?: boolean;
+  error?: string;
+};
+
+type ImportFinalizePayload = {
+  metrics?: number;
+  error?: string;
+};
+
 const seedSnapshot: Snapshot = {
   date: "2026-08-07",
   label: "07 août 2026",
@@ -135,7 +153,7 @@ function useDashboard() {
   useEffect(() => {
     const controller = new AbortController();
     fetch("/api/dashboard", { signal: controller.signal })
-      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((response) => response.ok ? response.json() as Promise<DashboardPayload> : Promise.reject())
       .then((payload) => setState({ snapshot: payload.snapshot ?? seedSnapshot, connected: Boolean(payload.connected), backend: payload.backend ?? "book-excel" }))
       .catch(() => undefined);
     return () => controller.abort();
@@ -341,15 +359,17 @@ function SourcesView({ snapshot, connected }: { snapshot: Snapshot; connected: b
       const book = await readBook(file);
       setStatus("uploading"); setMessage("Archivage sécurisé de l’original…");
       const initResponse = await fetch("/api/import-book/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: file.name, byteSize: file.size, sha256: book.hash, snapshotAt: book.snapshotAt, contentType: file.type }) });
-      const init = await initResponse.json();
+      const init = await initResponse.json() as ImportInitPayload;
       if (!initResponse.ok) throw new Error(init.duplicate ? "Ce book est déjà présent dans l’historique." : init.error || "L’import n’a pas pu démarrer.");
+      if (!init.signedUrl || !init.batchId) throw new Error("La préparation de l’import est incomplète.");
       const formData = new FormData(); formData.append("cacheControl", "3600"); formData.append("", file);
       const uploadResponse = await fetch(init.signedUrl, { method: "PUT", headers: { "x-upsert": "false" }, body: formData });
       if (!uploadResponse.ok) throw new Error("Le transfert de l’original a été interrompu.");
       setMessage("Création de l’instantané du jour…");
       const finalizeResponse = await fetch("/api/import-book/finalize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ batchId: init.batchId, metrics: book.metrics }) });
-      const finalized = await finalizeResponse.json();
+      const finalized = await finalizeResponse.json() as ImportFinalizePayload;
       if (!finalizeResponse.ok) throw new Error(finalized.error || "La validation du book a échoué.");
+      if (typeof finalized.metrics !== "number") throw new Error("La validation du book n’a pas renvoyé son bilan.");
       setStatus("done"); setMessage(`Book du ${new Intl.DateTimeFormat("fr-FR").format(new Date(`${book.snapshotAt}T12:00:00`))} intégré : ${finalized.metrics} indicateurs enregistrés.`);
       window.setTimeout(() => window.location.reload(), 1400);
     } catch (error) {
