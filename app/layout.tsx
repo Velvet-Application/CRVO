@@ -9,6 +9,7 @@ import "./globals.css";
 import "./dashboard-additions.css";
 import "./sector-colors.css";
 import UploadArchiveGuard from "./upload-archive-guard";
+import ObjectivesDailyPatch from "./objectives-daily-patch";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -20,6 +21,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="fr"><body>
     <UploadArchiveGuard />
+    <ObjectivesDailyPatch />
     {children}
     <a className="global-book-launch" href="/book">BOOK D&apos;ANIMATION PDF</a>
     <style>{`
