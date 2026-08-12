@@ -7,6 +7,7 @@ import "@fontsource/exo/800.css";
 import "@fontsource/exo/800-italic.css";
 import "./globals.css";
 import "./dashboard-additions.css";
+import "./sector-colors.css";
 import UploadArchiveGuard from "./upload-archive-guard";
 
 export const metadata: Metadata = {
