@@ -8,8 +8,10 @@ import "@fontsource/exo/800-italic.css";
 import "./globals.css";
 import "./dashboard-additions.css";
 import "./sector-colors.css";
+import "./finance-source-portal.css";
 import UploadArchiveGuard from "./upload-archive-guard";
 import ObjectivesDailyPatch from "./objectives-daily-patch";
+import FinanceSourcePortal from "./finance-source-portal";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -22,6 +24,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return <html lang="fr"><body>
     <UploadArchiveGuard />
     <ObjectivesDailyPatch />
+    <FinanceSourcePortal />
     {children}
     <a className="global-book-launch" href="/book">BOOK D&apos;ANIMATION PDF</a>
     <style>{`
