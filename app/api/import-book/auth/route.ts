@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import {
   clearImportSessionCookie,
+  createImportSessionToken,
   getImportIdentity,
   importSessionCookie,
-  isValidAccessToken,
+  isValidAccessCode,
 } from "../../../import-auth";
 
 export const dynamic = "force-dynamic";
@@ -23,13 +24,14 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json() as { accessCode?: string };
-  const accessCode = String(body.accessCode ?? "").trim().toLowerCase();
-  if (!await isValidAccessToken(accessCode)) {
+  const accessCode = String(body.accessCode ?? "");
+  if (!await isValidAccessCode(accessCode)) {
     return NextResponse.json({ error: "Code d’accès incorrect." }, { status: 401 });
   }
 
+  const sessionToken = await createImportSessionToken(accessCode);
   const response = NextResponse.json({ authenticated: true, method: "access-code" });
-  response.headers.set("Set-Cookie", importSessionCookie(accessCode));
+  response.headers.set("Set-Cookie", importSessionCookie(sessionToken));
   return response;
 }
 

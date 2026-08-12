@@ -72,8 +72,9 @@ test("keeps imports locked until a valid access code creates a secure session", 
   );
   assert.equal(rejected.status, 401);
 
-  const accessCode = "a".repeat(48);
-  process.env.IMPORT_ACCESS_TOKEN_SHA256 = createHash("sha256").update(accessCode).digest("hex");
+  const accessCode = "CRVOlens62!";
+  const normalizedAccessCode = accessCode.trim().toLowerCase();
+  process.env.IMPORT_ACCESS_TOKEN_SHA256 = createHash("sha256").update(normalizedAccessCode).digest("hex");
   const unlocked = await worker.fetch(
     new Request("http://localhost/api/import-book/auth", {
       method: "POST",
@@ -89,8 +90,10 @@ test("keeps imports locked until a valid access code creates a secure session", 
   assert.match(setCookie, /HttpOnly/);
   assert.match(setCookie, /Secure/);
   assert.match(setCookie, /SameSite=Strict/);
+  assert.doesNotMatch(setCookie, /CRVOlens62!/);
 
   const cookie = setCookie.split(";", 1)[0];
+  assert.match(cookie, /^crvo_import_access=[a-f0-9]{64}$/);
   const authenticated = await worker.fetch(
     new Request("http://localhost/api/import-book/auth", { headers: { cookie } }),
     env,

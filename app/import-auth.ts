@@ -1,7 +1,7 @@
 const CHATGPT_EMAIL_HEADER = "oai-authenticated-user-email";
 const CLOUDFLARE_ACCESS_EMAIL_HEADER = "cf-access-authenticated-user-email";
 const IMPORT_COOKIE = "crvo_import_access";
-const DEFAULT_ACCESS_TOKEN_SHA256 = "7305e47fcf8a5418a24e7756a055c8d435690193e482c060901c87bdf5f41986";
+const DEFAULT_ACCESS_TOKEN_SHA256 = "fb43c6bdb581beace363759653cf45499886eacb9ede7163638e7d4fa799682e";
 
 export type ImportIdentity = {
   email: string;
@@ -17,27 +17,44 @@ export async function getImportIdentity(request: Request): Promise<ImportIdentit
     return { email: cloudflareAccessEmail, method: "cloudflare-access" };
   }
 
-  const token = readCookie(request.headers.get("cookie"), IMPORT_COOKIE);
-  if (token && await isValidAccessToken(token)) {
+  const sessionToken = readCookie(request.headers.get("cookie"), IMPORT_COOKIE);
+  if (sessionToken && isValidImportSession(sessionToken)) {
     return { email: "cloudflare-dashboard", method: "access-code" };
   }
 
   return null;
 }
 
-export async function isValidAccessToken(token: string): Promise<boolean> {
-  if (!/^[a-f0-9]{48}$/.test(token)) return false;
-  const actual = await sha256Hex(token);
-  const expected = process.env.IMPORT_ACCESS_TOKEN_SHA256 ?? DEFAULT_ACCESS_TOKEN_SHA256;
-  return constantTimeEqual(actual, expected.toLowerCase());
+export async function isValidAccessCode(accessCode: string): Promise<boolean> {
+  const normalized = normalizeAccessCode(accessCode);
+  if (normalized.length < 10 || normalized.length > 128) return false;
+  const actual = await sha256Hex(normalized);
+  return constantTimeEqual(actual, expectedAccessCodeHash());
 }
 
-export function importSessionCookie(token: string): string {
-  return `${IMPORT_COOKIE}=${token}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Strict`;
+export async function createImportSessionToken(accessCode: string): Promise<string> {
+  return sha256Hex(normalizeAccessCode(accessCode));
+}
+
+export function importSessionCookie(sessionToken: string): string {
+  return `${IMPORT_COOKIE}=${sessionToken}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Strict`;
 }
 
 export function clearImportSessionCookie(): string {
   return `${IMPORT_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`;
+}
+
+function isValidImportSession(sessionToken: string): boolean {
+  return /^[a-f0-9]{64}$/.test(sessionToken)
+    && constantTimeEqual(sessionToken, expectedAccessCodeHash());
+}
+
+function expectedAccessCodeHash(): string {
+  return (process.env.IMPORT_ACCESS_TOKEN_SHA256 ?? DEFAULT_ACCESS_TOKEN_SHA256).toLowerCase();
+}
+
+function normalizeAccessCode(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 function readCookie(cookieHeader: string | null, name: string): string | null {
