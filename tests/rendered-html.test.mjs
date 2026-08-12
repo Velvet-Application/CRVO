@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 const developmentPreviewMeta =
@@ -52,4 +53,49 @@ test("serves a truthful verified snapshot when Supabase is not configured", asyn
   assert.equal(body.snapshot.date, "2026-08-07");
   assert.equal(body.snapshot.stock, 1097);
   assert.equal(body.snapshot.over20, 399);
+});
+
+test("keeps imports locked until a valid access code creates a secure session", async () => {
+  const worker = await loadWorker();
+  const anonymous = await worker.fetch(new Request("http://localhost/api/import-book/auth"), env, ctx);
+  assert.equal(anonymous.status, 200);
+  assert.deepEqual(await anonymous.json(), { authenticated: false, method: null });
+
+  const rejected = await worker.fetch(
+    new Request("http://localhost/api/import-book/auth", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ accessCode: "incorrect" }),
+    }),
+    env,
+    ctx,
+  );
+  assert.equal(rejected.status, 401);
+
+  const accessCode = "a".repeat(48);
+  process.env.IMPORT_ACCESS_TOKEN_SHA256 = createHash("sha256").update(accessCode).digest("hex");
+  const unlocked = await worker.fetch(
+    new Request("http://localhost/api/import-book/auth", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ accessCode }),
+    }),
+    env,
+    ctx,
+  );
+  assert.equal(unlocked.status, 200);
+  const setCookie = unlocked.headers.get("set-cookie") ?? "";
+  assert.match(setCookie, /crvo_import_access=/);
+  assert.match(setCookie, /HttpOnly/);
+  assert.match(setCookie, /Secure/);
+  assert.match(setCookie, /SameSite=Strict/);
+
+  const cookie = setCookie.split(";", 1)[0];
+  const authenticated = await worker.fetch(
+    new Request("http://localhost/api/import-book/auth", { headers: { cookie } }),
+    env,
+    ctx,
+  );
+  assert.equal(authenticated.status, 200);
+  assert.deepEqual(await authenticated.json(), { authenticated: true, method: "access-code" });
 });

@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import { getChatGPTUser } from "../../../chatgpt-auth";
+import { getImportIdentity } from "../../../import-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -8,8 +8,8 @@ type Metric = { key: string; label: string; value: number };
 type FinalizeRequest = { batchId?: string; metrics?: Metric[] };
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
-  if (!user) return NextResponse.json({ error: "Authentification requise." }, { status: 401 });
+  const user = await getImportIdentity(request);
+  if (!user) return NextResponse.json({ error: "Déverrouille l’import sécurisé avant de continuer.", authRequired: true }, { status: 401 });
   const supabaseUrl = process.env.SUPABASE_URL;
   const secretKey = process.env.SUPABASE_SECRET_KEY;
   if (!supabaseUrl || !secretKey) return NextResponse.json({ error: "La base de données n’est pas configurée." }, { status: 503 });

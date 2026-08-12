@@ -28,11 +28,19 @@ type ImportInitPayload = {
   batchId?: string;
   signedUrl?: string;
   duplicate?: boolean;
+  authRequired?: boolean;
   error?: string;
 };
 
 type ImportFinalizePayload = {
   metrics?: number;
+  authRequired?: boolean;
+  error?: string;
+};
+
+type ImportAuthPayload = {
+  authenticated?: boolean;
+  method?: "chatgpt" | "cloudflare-access" | "access-code" | null;
   error?: string;
 };
 
@@ -313,6 +321,39 @@ function SourcesView({ snapshot, connected }: { snapshot: Snapshot; connected: b
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<"idle" | "reading" | "uploading" | "done" | "error">("idle");
   const [message, setMessage] = useState("");
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
+  const [accessCode, setAccessCode] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/import-book/auth", { signal: controller.signal, cache: "no-store" })
+      .then((response) => response.json() as Promise<ImportAuthPayload>)
+      .then((payload) => setAuthorized(Boolean(payload.authenticated)))
+      .catch(() => setAuthorized(false));
+    return () => controller.abort();
+  }, []);
+
+  async function unlockImport() {
+    setAuthMessage("Vérification…");
+    try {
+      const response = await fetch("/api/import-book/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessCode }),
+      });
+      const payload = await response.json() as ImportAuthPayload;
+      if (!response.ok || !payload.authenticated) {
+        throw new Error(payload.error || "Le déverrouillage a échoué.");
+      }
+      setAuthorized(true);
+      setAccessCode("");
+      setAuthMessage("Import sécurisé déverrouillé sur cet appareil.");
+    } catch (error) {
+      setAuthorized(false);
+      setAuthMessage(error instanceof Error ? error.message : "Le déverrouillage a échoué.");
+    }
+  }
 
   function detectDate(filename: string) {
     const iso = filename.match(/(20\d{2})[-_.](\d{2})[-_.](\d{2})/);
@@ -360,6 +401,7 @@ function SourcesView({ snapshot, connected }: { snapshot: Snapshot; connected: b
       setStatus("uploading"); setMessage("Archivage sécurisé de l’original…");
       const initResponse = await fetch("/api/import-book/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: file.name, byteSize: file.size, sha256: book.hash, snapshotAt: book.snapshotAt, contentType: file.type }) });
       const init = await initResponse.json() as ImportInitPayload;
+      if (init.authRequired) setAuthorized(false);
       if (!initResponse.ok) throw new Error(init.duplicate ? "Ce book est déjà présent dans l’historique." : init.error || "L’import n’a pas pu démarrer.");
       if (!init.signedUrl || !init.batchId) throw new Error("La préparation de l’import est incomplète.");
       const formData = new FormData(); formData.append("cacheControl", "3600"); formData.append("", file);
@@ -368,6 +410,7 @@ function SourcesView({ snapshot, connected }: { snapshot: Snapshot; connected: b
       setMessage("Création de l’instantané du jour…");
       const finalizeResponse = await fetch("/api/import-book/finalize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ batchId: init.batchId, metrics: book.metrics }) });
       const finalized = await finalizeResponse.json() as ImportFinalizePayload;
+      if (finalized.authRequired) setAuthorized(false);
       if (!finalizeResponse.ok) throw new Error(finalized.error || "La validation du book a échoué.");
       if (typeof finalized.metrics !== "number") throw new Error("La validation du book n’a pas renvoyé son bilan.");
       setStatus("done"); setMessage(`Book du ${new Intl.DateTimeFormat("fr-FR").format(new Date(`${book.snapshotAt}T12:00:00`))} intégré : ${finalized.metrics} indicateurs enregistrés.`);
@@ -382,8 +425,14 @@ function SourcesView({ snapshot, connected }: { snapshot: Snapshot; connected: b
     <SectionTitle eyebrow="DATA HUB" title="Sources & actualisation" description="Le dashboard fonctionne déjà sur le book réel. La collecte automatique démarrera dès réception des paramètres IT."/>
     <section className="book-uploader">
       <div className="upload-heading"><div className="upload-mark"><Icon name="upload" size={28}/></div><div><span>IMPORT MANUEL</span><h3>Ajouter un book CRVO</h3><p>Dépose le fichier Excel du jour ou un book antérieur. Chaque journée est contrôlée, archivée et ajoutée à l’historique sans écraser les précédentes.</p></div></div>
+      {authorized === false && <div className="import-unlock">
+        <div><span>ACCÈS PROTÉGÉ</span><strong>Déverrouiller l’import</strong><small>Le code n’est demandé qu’une fois par appareil.</small></div>
+        <div className="import-unlock-form"><input type="password" value={accessCode} onChange={(event) => setAccessCode(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && accessCode) void unlockImport(); }} placeholder="Code d’accès" autoComplete="current-password" aria-label="Code d’accès à l’import"/><button onClick={() => void unlockImport()} disabled={!accessCode}>Déverrouiller</button></div>
+        {authMessage && <p className="import-auth-message">{authMessage}</p>}
+      </div>}
+      {authorized === true && <div className="import-authorized"><Icon name="check" size={17}/><span>{authMessage || "Import sécurisé actif"}</span></div>}
       <label className={file ? "drop-zone selected" : "drop-zone"}><input type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setStatus("idle"); setMessage(""); }}/><Icon name={file ? "check" : "upload"} size={24}/><strong>{file ? file.name : "Glisser-déposer ou choisir un fichier"}</strong><small>{file ? `${(file.size / 1024 / 1024).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Mo · prêt à contrôler` : "Formats acceptés : XLSX ou XLS · 250 Mo maximum"}</small></label>
-      <div className="upload-actions"><button disabled={!file || status === "reading" || status === "uploading"} onClick={uploadBook}>{status === "reading" || status === "uploading" ? <Icon name="refresh" size={17}/> : <Icon name="upload" size={17}/>} {status === "reading" ? "Contrôle en cours…" : status === "uploading" ? "Import en cours…" : "Importer ce book"}</button><div className={`upload-feedback ${status}`}><i/>{message || "La date est détectée depuis le nom du fichier. Les doublons sont bloqués automatiquement."}</div></div>
+      <div className="upload-actions"><button disabled={!file || authorized !== true || status === "reading" || status === "uploading"} onClick={uploadBook}>{status === "reading" || status === "uploading" ? <Icon name="refresh" size={17}/> : <Icon name="upload" size={17}/>} {status === "reading" ? "Contrôle en cours…" : status === "uploading" ? "Import en cours…" : authorized === null ? "Vérification de l’accès…" : authorized === false ? "Déverrouiller avant l’import" : "Importer ce book"}</button><div className={`upload-feedback ${status}`}><i/>{message || "La date est détectée depuis le nom du fichier. Les doublons sont bloqués automatiquement."}</div></div>
     </section>
     <section className="source-cards">
       <article className="source-card active"><div className="source-icon"><Icon name="source"/></div><div><span>BASE DE DONNÉES</span><h3>Supabase KPI CRVO</h3><p>Historique immuable, 12 indicateurs réels et règles de sécurité actives.</p></div><strong><i/>CONNECTÉ</strong></article>
