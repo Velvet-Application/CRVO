@@ -20,11 +20,6 @@ function safeFilename(value: string) {
   return value.normalize("NFKD").replace(/[^a-zA-Z0-9._-]/g, "_").slice(-140);
 }
 
-async function signedUpload(supabase: ReturnType<typeof createClient>, objectPath: string) {
-  const { data, error } = await supabase.storage.from("kpi-raw-archive").createSignedUploadUrl(objectPath);
-  return error || !data ? null : data;
-}
-
 export async function POST(request: Request) {
   const user = await getImportIdentity(request);
   if (!user) return NextResponse.json({ error: "Déverrouille l’import sécurisé avant de continuer.", authRequired: true }, { status: 401 });
@@ -53,7 +48,7 @@ export async function POST(request: Request) {
   if (duplicate) {
     if (duplicate.status !== "received") return NextResponse.json({ duplicate: true, existing: duplicate }, { status: 409 });
     const objectPath = duplicate.archive_object_path || `${snapshotAt}/${sha256}-${filename}`;
-    const signed = await signedUpload(supabase, objectPath);
+    const { data: signed } = await supabase.storage.from("kpi-raw-archive").createSignedUploadUrl(objectPath);
     return NextResponse.json({
       batchId: duplicate.id,
       signedUrl: signed?.signedUrl ?? null,
@@ -68,7 +63,7 @@ export async function POST(request: Request) {
   if (sourceError || !source) return NextResponse.json({ error: "La source d’import manuel n’est pas disponible." }, { status: 503 });
 
   const objectPath = `${snapshotAt}/${sha256}-${filename}`;
-  const signed = await signedUpload(supabase, objectPath);
+  const { data: signed } = await supabase.storage.from("kpi-raw-archive").createSignedUploadUrl(objectPath);
 
   const { data: batch, error: batchError } = await supabase.from("kpi_import_batches").insert({
     source_id: source.id,
