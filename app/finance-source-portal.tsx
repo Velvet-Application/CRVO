@@ -79,37 +79,25 @@ export default function FinanceSourcePortal() {
   useEffect(() => {
     const locate = () => {
       const sourceCards = document.querySelector(".source-cards");
-      let portal = document.getElementById("finance-source-portal-root");
-      if (sourceCards?.parentElement) {
-        if (!portal) {
-          portal = document.createElement("div");
-          portal.id = "finance-source-portal-root";
-          sourceCards.parentElement.insertBefore(portal, sourceCards);
-        }
-        if (host !== portal) setHost(portal);
-      } else if (portal) {
-        portal.remove();
-        if (host) setHost(null);
+      if (!sourceCards?.parentElement) {
+        setHost((current) => current ? null : current);
+        return;
       }
 
-      const pages = Array.from(document.querySelectorAll<HTMLElement>(".view-page"));
-      for (const page of pages) {
-        const title = page.querySelector(".section-title h2")?.textContent?.trim();
-        if (title === "Chiffre d’affaires") {
-          page.querySelectorAll<HTMLElement>(".finance-uploader, .compact-unlock").forEach((element) => { element.style.display = "none"; });
-          const description = page.querySelector<HTMLElement>(".section-title p");
-          if (description) description.textContent = "Lecture des données financières CRVO. L’import et la gestion des sources sont centralisés dans Sources & connexion.";
-          const emptyText = page.querySelector<HTMLElement>(".empty-finance span");
-          if (emptyText) emptyText.textContent = "Aucune donnée financière disponible. Ajoute le book financier depuis Sources & connexion.";
-        }
+      let portal = document.getElementById("finance-source-portal-root");
+      if (!portal) {
+        portal = document.createElement("div");
+        portal.id = "finance-source-portal-root";
+        sourceCards.parentElement.insertBefore(portal, sourceCards);
       }
+      setHost((current) => current === portal ? current : portal);
     };
 
     locate();
     const observer = new MutationObserver(locate);
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [host]);
+  }, []);
 
   useEffect(() => {
     fetch("/api/import-book/auth", { cache: "no-store" })
@@ -167,7 +155,7 @@ export default function FinanceSourcePortal() {
     }
   }
 
-  if (!host) return null;
+  if (!host || !host.isConnected) return null;
 
   return createPortal(
     <section className="finance-source-hub">
