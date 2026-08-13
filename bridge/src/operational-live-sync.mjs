@@ -83,7 +83,7 @@ function parseLeadTime(input, sourceModifiedAt) {
 }
 
 function parseStatusHistory(input, sourceModifiedAt) {
-  return rows(input).map((row) => {
+  const parsed = rows(input).map((row) => {
     const eventDate = isoDate(row["Date"]);
     const eventTime = isoTime(row["Heure"]);
     const eventHash = hashEvent([row["Client"], row["OR"], row["VIN"], row["Flux"], row["Statut"], eventDate ?? row["Date"], eventTime ?? row["Heure"], row["Immatriculation"], row["ID RDV"]]);
@@ -101,6 +101,12 @@ function parseStatusHistory(input, sourceModifiedAt) {
       appointment_id: row["ID RDV"],
     };
   }).filter((row) => row.status && (row.vin || row.registration || row.work_order));
+  const seen = new Set();
+  return parsed.filter((row) => {
+    if (seen.has(row.event_hash)) return false;
+    seen.add(row.event_hash);
+    return true;
+  });
 }
 
 const connectionResponse = await fetch(connectionUrl, { headers: { "x-kpi-bridge-token": token } });
