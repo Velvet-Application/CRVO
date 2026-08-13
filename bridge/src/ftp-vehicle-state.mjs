@@ -52,3 +52,22 @@ export function parseEtatduParcVehicleState(buffer, { snapshotAt, sourceModified
     metadata: { type: value(row, "Type") || null },
   })).filter((row) => row.registration || row.work_order || row.vin);
 }
+
+export function computeSectorBacklog(rows) {
+  const scope = rows.filter((row) => ["VOP EFF", "VOP EXT"].includes(String(row.metadata?.type ?? "").trim()));
+  const status = (row) => normalize(row.status);
+  const park = (row) => status(row) === "stocke sur parc d attente travaux";
+  const present = (entry) => String(entry ?? "").trim() !== "";
+  const count = (test) => scope.filter(test).length;
+  return [
+    { sector_key: "expertise", sector_label: "Expertise", vehicle_count: count((row) => /expertise|lavage rapide/.test(status(row))) },
+    { sector_key: "chiffrage", sector_label: "Chiffrage", vehicle_count: count((row) => status(row) === "stocke sur parc d attente chiffrage") },
+    { sector_key: "controle_technique", sector_label: "Contrôle technique", vehicle_count: count((row) => ["stocke sur parc d attente depart ct", "controle technique en cours"].includes(status(row))) },
+    { sector_key: "dsp", sector_label: "DSP", vehicle_count: count((row) => park(row) && present(row.dsp)) },
+    { sector_key: "jantes", sector_label: "Jantes", vehicle_count: count((row) => park(row) && present(row.wheels)) },
+    { sector_key: "mecanique", sector_label: "Mécanique", vehicle_count: count((row) => park(row) && present(row.mechanics)) },
+    { sector_key: "carrosserie", sector_label: "Carrosserie", vehicle_count: count((row) => park(row) && present(row.bodywork)) },
+    { sector_key: "parc_travaux", sector_label: "Parc travaux", vehicle_count: count((row) => park(row) && normalize(row.part_available) === "piece disponible") },
+    { sector_key: "preparation", sector_label: "Préparation", vehicle_count: count((row) => status(row) === "stocke sur parc d attente preparation") },
+  ];
+}
