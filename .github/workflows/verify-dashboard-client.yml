@@ -1,0 +1,41 @@
+name: Verify Dashboard client
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-dashboard-client.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify dashboard, BMW and dossier history
+        run: |
+          node <<'NODE'
+          const origin = "https://kpi-crvo.cyril-gay.workers.dev";
+          const stamp = Date.now();
+          const page = await fetch(`${origin}/dashboard-client?_=${stamp}`, { headers:{"Cache-Control":"no-cache"} });
+          const listResponse = await fetch(`${origin}/api/client-dashboard?_=${stamp}`, { headers:{"Cache-Control":"no-cache"} });
+          const list = await listResponse.json();
+          console.log(`page=${page.status} clients=${list.clients?.length || 0} vehicles=${list.totalVehicles || 0}`);
+          if (!page.ok || !listResponse.ok || !Array.isArray(list.clients) || !list.clients.length) process.exit(1);
+          const names = list.clients.map(row => String(row.client));
+          const sorted = names.every((name,index) => index === 0 || names[index-1].localeCompare(name,"fr",{sensitivity:"base"}) <= 0);
+          console.log(`alphabetical=${sorted} first=${names[0]} last=${names.at(-1)}`);
+          if (!sorted) process.exit(2);
+          const bmwResponse = await fetch(`${origin}/api/client-dashboard?bmw=1&_=${stamp}`, { headers:{"Cache-Control":"no-cache"} });
+          const bmw = await bmwResponse.json();
+          console.log(`bmw=${bmwResponse.status} vehicles=${bmw.vehicles?.length || 0} events=${bmw.metrics?.historyEventCount || 0}`);
+          if (!bmwResponse.ok || bmw.client !== "BMW FRANCE Prestations" || !Array.isArray(bmw.vehicles) || !bmw.vehicles.length) process.exit(3);
+          const sample = bmw.vehicles.find(v => v.registration)?.registration;
+          const focusResponse = await fetch(`${origin}/api/client-dashboard?registration=${encodeURIComponent(sample)}&_=${stamp}`, { headers:{"Cache-Control":"no-cache"} });
+          const focus = await focusResponse.json();
+          console.log(`focus=${focusResponse.status} registration=${focus.vehicle?.registration || "none"} history=${focus.history?.length || 0}`);
+          if (!focusResponse.ok || !focus.vehicle?.registration || !Array.isArray(focus.history)) process.exit(4);
+          NODE
