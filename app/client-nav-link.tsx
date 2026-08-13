@@ -24,5 +24,5 @@ export default function ClientNavLink() {
   }, []);
 
   if (!host || !host.isConnected) return null;
-  return createPortal(<a className="client-nav-tab" href="/clients"><span className="client-nav-icon">▦</span><span>Parc par client</span><i/></a>, host);
+  return createPortal(<a className="client-nav-tab" href="/dashboard-client"><span className="client-nav-icon">▦</span><span>Dashboard client</span><i/></a>, host);
 }
