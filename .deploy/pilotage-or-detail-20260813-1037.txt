@@ -1,0 +1,3 @@
+CRVO Pilotage deployment trigger
+2026-08-13 10:37 Europe/Paris
+Expected UI: per-OR detail with registration, work order, activity, age, remaining labor time, potential revenue, FIFO/RUN strategy.
