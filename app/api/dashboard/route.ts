@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { supabaseRestHeaders } from "../../supabase-rest";
 
 export const dynamic = "force-dynamic";
+
+const PUBLIC_SUPABASE_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co";
+const PUBLIC_SUPABASE_KEY = "sb_publishable_bGCdOoq05alXNTOtouIQcQ_HX9jpKnv";
 
 type SnapshotRow = {
   snapshot_at: string;
@@ -9,8 +11,11 @@ type SnapshotRow = {
   metrics: Record<string, number | string>;
 };
 
-const PUBLIC_SUPABASE_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co";
-const PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2bWtodmZtZHN0a3Vud3d1enV6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTU4NjQsImV4cCI6MjEwMjAzMTg2NH0.w18MDX_dL1YarUElTeo9ID0Egivav18tVqjjbkCaOxc";
+type LiveRow = SnapshotRow & {
+  source_modified_at: string | null;
+  factory_modified_at: string | null;
+  park_modified_at: string | null;
+};
 
 const verifiedRows: SnapshotRow[] = [
   { snapshot_at: "2026-08-03", source_name: "Book CRVO Lens - Journée du 03.08.2026.xlsx", metrics: { entries_vop: 50, exits_vop: 87, factory_stock: 1146, stock_over_15d: 508, stock_over_20d: 418, production_expertise: 83, production_mechanics: 83, production_dsp: 25, production_bodywork: 13, production_preparation: 85, production_quality: 91, production_factory_exit: 87 } },
@@ -27,8 +32,7 @@ function priority(source: string) {
   const value = source.toLowerCase();
   if (value.includes("ftp") || value.includes("sftp")) return 30;
   if (value.includes("manuel") || value.includes("book")) return 20;
-  if (value.includes("seed") || value.includes("classeur")) return 10;
-  return 0;
+  return 10;
 }
 
 function sourceMode(source: string) {
@@ -38,123 +42,84 @@ function sourceMode(source: string) {
   return "embedded";
 }
 
-function numberValue(metrics: SnapshotRow["metrics"], key: string, fallback: number) {
+function numberValue(metrics: SnapshotRow["metrics"], key: string, fallback = 0) {
   const value = Number(metrics[key]);
   return Number.isFinite(value) ? value : fallback;
 }
 
 function formatSnapshot(row: SnapshotRow) {
-  const date = new Date(`${row.snapshot_at}T12:00:00Z`);
   const metrics = row.metrics ?? {};
   return {
     date: row.snapshot_at,
-    label: new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" }).format(date),
+    label: new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${row.snapshot_at}T12:00:00Z`)),
     source: row.source_name,
     sourceMode: sourceMode(row.source_name),
-    entries: numberValue(metrics, "entries_vop", 0),
-    exits: numberValue(metrics, "exits_vop", 0),
-    stock: numberValue(metrics, "factory_stock", 0),
-    over15: numberValue(metrics, "stock_over_15d", 0),
-    over20: numberValue(metrics, "stock_over_20d", 0),
+    entries: numberValue(metrics, "entries_vop"),
+    exits: numberValue(metrics, "exits_vop"),
+    stock: numberValue(metrics, "factory_stock"),
+    over15: numberValue(metrics, "stock_over_15d"),
+    over20: numberValue(metrics, "stock_over_20d"),
     production: [
-      { name: "Expertise", value: numberValue(metrics, "production_expertise", 0), tone: "coral" },
-      { name: "Mécanique", value: numberValue(metrics, "production_mechanics", 0), tone: "green" },
-      { name: "DSP", value: numberValue(metrics, "production_dsp", 0), tone: "cyan" },
-      { name: "Carrosserie", value: numberValue(metrics, "production_bodywork", 0), tone: "red" },
-      { name: "Préparation", value: numberValue(metrics, "production_preparation", 0), tone: "purple" },
-      { name: "Qualité", value: numberValue(metrics, "production_quality", 0), tone: "orange" },
-      { name: "Sortie usine", value: numberValue(metrics, "production_factory_exit", 0), tone: "blue" },
+      { name: "Expertise", value: numberValue(metrics, "production_expertise"), tone: "coral" },
+      { name: "Mécanique", value: numberValue(metrics, "production_mechanics"), tone: "green" },
+      { name: "DSP", value: numberValue(metrics, "production_dsp"), tone: "cyan" },
+      { name: "Carrosserie", value: numberValue(metrics, "production_bodywork"), tone: "red" },
+      { name: "Préparation", value: numberValue(metrics, "production_preparation"), tone: "purple" },
+      { name: "Qualité", value: numberValue(metrics, "production_quality"), tone: "orange" },
+      { name: "Sortie usine", value: numberValue(metrics, "production_factory_exit", numberValue(metrics, "exits_vop")), tone: "blue" },
     ],
   };
 }
 
-function mergedRows(liveRows: SnapshotRow[]) {
+function mergeRows(liveRows: SnapshotRow[]) {
   const byDate = new Map<string, SnapshotRow>();
-  verifiedRows.forEach((row) => byDate.set(row.snapshot_at, { ...row, metrics: { ...row.metrics } }));
-
-  const ordered = [...liveRows].sort((a, b) => a.snapshot_at.localeCompare(b.snapshot_at) || priority(a.source_name) - priority(b.source_name));
-  for (const row of ordered) {
+  verifiedRows.forEach((row) => byDate.set(row.snapshot_at, row));
+  for (const row of [...liveRows].sort((a, b) => a.snapshot_at.localeCompare(b.snapshot_at))) {
     const current = byDate.get(row.snapshot_at);
-    if (!current) {
-      byDate.set(row.snapshot_at, { ...row, metrics: { ...(row.metrics ?? {}) } });
-      continue;
-    }
-    const rowWins = priority(row.source_name) >= priority(current.source_name);
-    byDate.set(row.snapshot_at, {
-      snapshot_at: row.snapshot_at,
-      source_name: rowWins ? row.source_name : current.source_name,
-      metrics: rowWins ? { ...current.metrics, ...(row.metrics ?? {}) } : { ...(row.metrics ?? {}), ...current.metrics },
-    });
+    if (!current || priority(row.source_name) >= priority(current.source_name)) byDate.set(row.snapshot_at, row);
   }
   return [...byDate.values()].sort((a, b) => a.snapshot_at.localeCompare(b.snapshot_at));
 }
 
-function responseFor(rows: SnapshotRow[], wantsHistory: boolean, requestedDate: string | null, connected: boolean, backend: string) {
-  const all = mergedRows(rows);
-  const selected = requestedDate ? all.find((row) => row.snapshot_at === requestedDate) : all.at(-1);
-  const source = selected ?? all.at(-1) ?? verifiedRows.at(-1)!;
-  const snapshot = formatSnapshot(source);
-  return NextResponse.json({ connected, backend, sourceMode: sourceMode(source.source_name), latestSource: source.source_name, snapshot, snapshots: wantsHistory ? all.map(formatSnapshot) : undefined }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
-}
-
-async function readRows(baseUrl: string, secretKey: string, path: string) {
-  const response = await fetch(`${baseUrl}/rest/v1/${path}`, { headers: supabaseRestHeaders(secretKey, { Accept: "application/json" }), cache: "no-store" });
-  if (!response.ok) throw new Error(`Supabase ${response.status}`);
-  return response.json() as Promise<SnapshotRow[]>;
-}
-
-async function readPublicRows(wantsHistory: boolean, requestedDate: string | null) {
-  const select = "select=snapshot_at,source_name,metrics";
-  const query = wantsHistory
-    ? `${select}&order=snapshot_at.asc&limit=180`
-    : requestedDate
-      ? `${select}&snapshot_at=eq.${encodeURIComponent(requestedDate)}&limit=20`
-      : `${select}&order=snapshot_at.desc&limit=180`;
-  const response = await fetch(`${PUBLIC_SUPABASE_URL}/rest/v1/kpi_public_dashboard_snapshots?${query}`, {
-    headers: {
-      apikey: PUBLIC_SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${PUBLIC_SUPABASE_ANON_KEY}`,
-      Accept: "application/json",
-    },
+async function publicRest<T>(path: string): Promise<T> {
+  const response = await fetch(`${PUBLIC_SUPABASE_URL}/rest/v1/${path}`, {
+    headers: { apikey: PUBLIC_SUPABASE_KEY, Accept: "application/json" },
     cache: "no-store",
   });
   if (!response.ok) throw new Error(`Supabase public ${response.status}`);
-  return response.json() as Promise<SnapshotRow[]>;
+  return response.json() as Promise<T>;
 }
 
 export async function GET(request: Request) {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const secretKey = process.env.SUPABASE_SECRET_KEY;
   const url = new URL(request.url);
   const wantsHistory = url.searchParams.get("history") === "1";
   const requestedDate = url.searchParams.get("date")?.match(/^\d{4}-\d{2}-\d{2}$/)?.[0] ?? null;
 
-  if (!supabaseUrl || !secretKey) {
-    try {
-      const rows = await readPublicRows(wantsHistory, requestedDate);
-      return responseFor(rows, wantsHistory, requestedDate, true, "supabase-public-live+embedded-history");
-    } catch (error) {
-      console.error(JSON.stringify({ event: "dashboard_public_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
-      return responseFor([], wantsHistory, requestedDate, false, "embedded-history");
-    }
-  }
-
   try {
-    const select = "select=snapshot_at,source_name,metrics";
-    const snapshotQuery = wantsHistory ? `${select}&order=snapshot_at.asc&limit=180` : requestedDate ? `${select}&snapshot_at=eq.${encodeURIComponent(requestedDate)}&limit=20` : `${select}&order=snapshot_at.desc&limit=180`;
-    const ftpQuery = requestedDate ? `${select}&snapshot_at=eq.${encodeURIComponent(requestedDate)}&limit=1` : `${select}&limit=1`;
-    const [rows, ftpRows] = await Promise.all([
-      readRows(supabaseUrl, secretKey, `kpi_dashboard_snapshots?${snapshotQuery}`),
-      readRows(supabaseUrl, secretKey, `kpi_ftp_live_dashboard?${ftpQuery}`).catch(() => []),
+    const [historyRows, liveRows] = await Promise.all([
+      publicRest<SnapshotRow[]>("kpi_public_dashboard_snapshots?select=snapshot_at,source_name,metrics&order=snapshot_at.asc&limit=180"),
+      publicRest<LiveRow[]>("kpi_ftp_live_dashboard?select=snapshot_at,source_name,metrics,source_modified_at,factory_modified_at,park_modified_at&limit=1"),
     ]);
-    return responseFor([...rows, ...ftpRows], wantsHistory, requestedDate, true, "supabase+ftp-live+embedded-history");
+    const all = mergeRows([...historyRows, ...liveRows]);
+    const source = (requestedDate ? all.find((row) => row.snapshot_at === requestedDate) : all.at(-1)) ?? all.at(-1) ?? verifiedRows.at(-1)!;
+    const live = liveRows[0] ?? null;
+    return NextResponse.json({
+      connected: true,
+      backend: "supabase-public-live",
+      sourceMode: sourceMode(source.source_name),
+      latestSource: source.source_name,
+      snapshot: formatSnapshot(source),
+      snapshots: wantsHistory ? all.map(formatSnapshot) : undefined,
+      liveFreshness: live ? {
+        sourceModifiedAt: live.source_modified_at,
+        factoryModifiedAt: live.factory_modified_at,
+        parkModifiedAt: live.park_modified_at,
+      } : null,
+    }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
   } catch (error) {
-    console.error(JSON.stringify({ event: "dashboard_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
-    try {
-      const rows = await readPublicRows(wantsHistory, requestedDate);
-      return responseFor(rows, wantsHistory, requestedDate, true, "supabase-public-live+embedded-history");
-    } catch {
-      return responseFor([], wantsHistory, requestedDate, false, "embedded-history");
-    }
+    console.error(JSON.stringify({ event: "dashboard_public_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
+    const all = mergeRows([]);
+    const source = (requestedDate ? all.find((row) => row.snapshot_at === requestedDate) : all.at(-1)) ?? verifiedRows.at(-1)!;
+    return NextResponse.json({ connected: false, backend: "embedded-history", sourceMode: sourceMode(source.source_name), latestSource: source.source_name, snapshot: formatSnapshot(source), snapshots: wantsHistory ? all.map(formatSnapshot) : undefined, liveFreshness: null }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
   }
 }
