@@ -15,20 +15,22 @@ function boolEnv(value, fallback = false) {
   return /^(1|true|yes|on)$/i.test(String(value));
 }
 
+function hash(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
 const cfg = {
   // FTP_* est la configuration cible. Les anciens secrets SFTP_* restent acceptés
-  // temporairement pour assurer une bascule sans interruption du job GitHub Actions.
+  // pendant la transition pour ne pas casser la planification déjà en place.
   host: process.env.FTP_HOST ?? process.env.SFTP_HOST,
   port: Number(process.env.FTP_PORT ?? process.env.SFTP_PORT ?? "21"),
   username: process.env.FTP_USERNAME ?? process.env.SFTP_USERNAME,
   password: process.env.FTP_PASSWORD ?? process.env.SFTP_PASSWORD,
   remoteDir: normalizeRemoteDir(process.env.FTP_REMOTE_DIR ?? process.env.SFTP_REMOTE_DIR ?? "/"),
   secure: boolEnv(process.env.FTP_SECURE, false),
-  pattern: new RegExp(process.env.FTP_FILE_PATTERN ?? process.env.SFTP_FILE_PATTERN ?? "\\.(csv|xls|xlsx)$", "i"),
+  pattern: new RegExp(process.env.FTP_FILE_PATTERN || process.env.SFTP_FILE_PATTERN || "\\.(csv|xls|xlsx)$", "i"),
   supabaseUrl: process.env.SUPABASE_URL?.replace(/\/$/, ""),
-  secretKey: process.env.SUPABASE_SECRET_KEY,
   sourceId: process.env.KPI_SOURCE_ID,
-  archiveBucket: process.env.SUPABASE_ARCHIVE_BUCKET ?? "kpi-raw-archive",
 };
 
 const required = {
@@ -37,79 +39,47 @@ const required = {
   FTP_PASSWORD: cfg.password,
   FTP_REMOTE_DIR: cfg.remoteDir,
   SUPABASE_URL: cfg.supabaseUrl,
-  SUPABASE_SECRET_KEY: cfg.secretKey,
   KPI_SOURCE_ID: cfg.sourceId,
 };
 const missing = Object.entries(required).filter(([, value]) => !value).map(([name]) => name);
 if (missing.length) throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
 if (!Number.isFinite(cfg.port) || cfg.port <= 0) throw new Error("FTP_PORT must be a valid positive port number");
 
-function apiHeaders(extra = {}) {
-  const headers = { apikey: cfg.secretKey, "Content-Type": "application/json", ...extra };
-  if (cfg.secretKey.startsWith("eyJ")) headers.Authorization = `Bearer ${cfg.secretKey}`;
-  return headers;
-}
+const gatewayUrl = `${cfg.supabaseUrl}/functions/v1/kpi-ftp-bridge-gateway`;
+// Jeton dédié au bridge : il est dérivé du mot de passe FTP et ne réutilise jamais
+// ce mot de passe lui-même comme authentifiant HTTP.
+const gatewayToken = hash(`kpi-crvo-ftp-bridge:v1:${cfg.password}`);
 
 function log(event, details = {}) {
   process.stdout.write(`${JSON.stringify({ timestamp: new Date().toISOString(), event, ...details })}\n`);
 }
 
-async function supabase(pathname, init = {}) {
-  const response = await fetch(`${cfg.supabaseUrl}${pathname}`, { ...init, headers: apiHeaders(init.headers ?? {}) });
-  if (!response.ok) throw new Error(`Supabase ${response.status}: ${await response.text()}`);
-  if (response.status === 204) return null;
-  const contentType = response.headers.get("content-type") ?? "";
-  return contentType.includes("json") ? response.json() : response.text();
+async function gateway(action, { method = "POST", body, params = {}, allowedStatuses = [] } = {}) {
+  const url = new URL(gatewayUrl);
+  url.searchParams.set("action", action);
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, String(value));
+  const response = await fetch(url, {
+    method,
+    headers: {
+      "x-kpi-bridge-token": gatewayToken,
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok && !allowedStatuses.includes(response.status)) {
+    throw new Error(`KPI gateway ${response.status}: ${payload.error ?? "unknown error"}`);
+  }
+  return { status: response.status, payload };
 }
 
 async function sha256(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
-async function existingBatch(hash) {
-  const rows = await supabase(`/rest/v1/kpi_import_batches?sha256=eq.${hash}&select=id,status&limit=1`, { method: "GET" });
-  return rows?.[0] ?? null;
-}
-
-async function createBatch(file, hash, snapshotAt) {
-  const [batch] = await supabase("/rest/v1/kpi_import_batches", {
-    method: "POST",
-    headers: { Prefer: "return=representation" },
-    body: JSON.stringify({
-      source_id: cfg.sourceId,
-      snapshot_at: snapshotAt,
-      original_filename: file.name,
-      sha256: hash,
-      byte_size: file.size,
-      status: "received",
-      archive_status: "pending",
-      metadata: { remote_path: file.remotePath, modified_at: file.modifyTime, source_priority: "ftp" },
-    }),
-  });
-  return batch;
-}
-
-async function updateBatch(id, patch) {
-  await supabase(`/rest/v1/kpi_import_batches?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(patch) });
-}
-
-async function archiveOriginal(buffer, objectPath, contentType) {
-  return supabase(`/storage/v1/object/${cfg.archiveBucket}/${objectPath}`, {
-    method: "POST",
-    headers: { "Content-Type": contentType, "x-upsert": "false" },
-    body: buffer,
-  });
-}
-
-async function ensureArchiveBucket() {
-  const response = await fetch(`${cfg.supabaseUrl}/storage/v1/bucket/${cfg.archiveBucket}`, { headers: apiHeaders() });
-  if (response.ok) return;
-  if (response.status !== 404) throw new Error(`Bucket lookup failed: ${response.status} ${await response.text()}`);
-  await supabase("/storage/v1/bucket", { method: "POST", body: JSON.stringify({ id: cfg.archiveBucket, name: cfg.archiveBucket, public: false }) });
-}
-
 async function readMappings() {
-  return supabase(`/rest/v1/kpi_field_mappings?source_id=eq.${cfg.sourceId}&is_active=eq.true&select=source_field,target_metric_key,target_metric_label,aggregation`, { method: "GET" });
+  const { payload } = await gateway("mappings", { method: "GET", params: { sourceId: cfg.sourceId } });
+  return Array.isArray(payload.mappings) ? payload.mappings : [];
 }
 
 function rawCellValue(workbook, reference) {
@@ -137,7 +107,13 @@ function extractMetrics(buffer, filename, mappings) {
       log("mapping_skipped", { filename, sourceField: mapping.source_field, metric: mapping.target_metric_key, reason: "not_numeric" });
       return [];
     }
-    return [{ metric_key: mapping.target_metric_key, metric_label: mapping.target_metric_label, metric_value: value, unit: "count", dimensions: {} }];
+    return [{
+      metric_key: mapping.target_metric_key,
+      metric_label: mapping.target_metric_label,
+      metric_value: value,
+      unit: "count",
+      dimensions: {},
+    }];
   });
 }
 
@@ -167,14 +143,44 @@ function modifiedTimestamp(remoteFile) {
   return Date.now();
 }
 
+async function prepareImport(file, buffer, fileHash, snapshotAt) {
+  const { status, payload } = await gateway("init", {
+    body: {
+      sourceId: cfg.sourceId,
+      filename: file.name,
+      byteSize: file.size || buffer.length,
+      sha256: fileHash,
+      snapshotAt,
+      remotePath: file.remotePath,
+      modifiedAt: file.modifyTime,
+    },
+    allowedStatuses: [409],
+  });
+  if (status === 409 && payload.duplicate) return { duplicate: true, batchId: payload.batchId };
+  if (!payload.batchId || !payload.signedUrl) throw new Error("KPI gateway returned an incomplete FTP import preparation");
+  return { duplicate: false, batchId: payload.batchId, signedUrl: payload.signedUrl };
+}
+
+async function uploadArchive(signedUrl, buffer) {
+  const response = await fetch(signedUrl, {
+    method: "PUT",
+    headers: { "Content-Type": "application/octet-stream", "x-upsert": "false" },
+    body: buffer,
+  });
+  if (!response.ok) throw new Error(`Archive upload failed: ${response.status} ${await response.text()}`);
+}
+
 async function run() {
   const ftp = new FtpClient(30_000);
   ftp.ftp.verbose = false;
-  const run = await supabase("/rest/v1/kpi_bridge_runs", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ status: "running", details: { protocol: cfg.secure ? "ftps" : "ftp", remote_dir: cfg.remoteDir } }) });
-  const runId = run[0].id;
+  let runId = null;
   let filesSeen = 0;
   let filesImported = 0;
+
   try {
+    const started = await gateway("start-run", { body: { details: { protocol: cfg.secure ? "ftps" : "ftp", remote_dir: cfg.remoteDir } } });
+    runId = started.payload.runId ?? null;
+
     await ftp.access({
       host: cfg.host,
       port: cfg.port,
@@ -184,45 +190,51 @@ async function run() {
     });
     log("ftp_connected", { host: cfg.host, port: cfg.port, secure: cfg.secure, remoteDir: cfg.remoteDir });
 
-    await ensureArchiveBucket();
     const mappings = await readMappings();
     log("mappings_loaded", { count: mappings.length });
 
     const remoteFiles = (await ftp.list(cfg.remoteDir)).filter((file) => cfg.pattern.test(file.name));
     filesSeen = remoteFiles.length;
+    log("ftp_files_listed", { count: filesSeen });
 
     for (const remoteFile of remoteFiles) {
       const remotePath = path.posix.join(cfg.remoteDir, remoteFile.name);
       const buffer = await downloadToBuffer(ftp, remotePath);
-      const hash = await sha256(buffer);
-      if (await existingBatch(hash)) {
-        log("duplicate_skipped", { filename: remoteFile.name, sha256: hash });
+      const fileHash = await sha256(buffer);
+      const file = {
+        name: remoteFile.name,
+        size: remoteFile.size || buffer.length,
+        modifyTime: modifiedTimestamp(remoteFile),
+        remotePath,
+      };
+      const date = snapshotDate(file);
+      const prepared = await prepareImport(file, buffer, fileHash, date);
+      if (prepared.duplicate) {
+        log("duplicate_skipped", { filename: remoteFile.name, sha256: fileHash });
         continue;
       }
 
-      const file = { name: remoteFile.name, size: remoteFile.size || buffer.length, modifyTime: modifiedTimestamp(remoteFile), remotePath };
-      const date = snapshotDate(file);
-      const batch = await createBatch(file, hash, date);
-      const objectPath = `${date}/${hash}-${remoteFile.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-
-      try {
-        await archiveOriginal(buffer, objectPath, "application/octet-stream");
-        await updateBatch(batch.id, { status: "processing", archive_status: "stored", archive_object_path: objectPath });
-        const metrics = extractMetrics(buffer, remoteFile.name, mappings).map((metric) => ({ ...metric, import_batch_id: batch.id }));
-        if (metrics.length) await supabase("/rest/v1/kpi_snapshot_metrics", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify(metrics) });
-        await updateBatch(batch.id, { status: metrics.length ? "verified" : "archived", row_count: metrics.length });
-        filesImported += 1;
-        log("file_imported", { filename: remoteFile.name, snapshotAt: date, metrics: metrics.length, sha256: hash });
-      } catch (error) {
-        await updateBatch(batch.id, { status: "failed", metadata: { remote_path: remotePath, source_priority: "ftp", error: error instanceof Error ? error.message : "unknown" } });
-        throw error;
-      }
+      await uploadArchive(prepared.signedUrl, buffer);
+      const metrics = extractMetrics(buffer, remoteFile.name, mappings);
+      const finalized = await gateway("finalize", { body: { batchId: prepared.batchId, metrics } });
+      filesImported += 1;
+      log("file_imported", { filename: remoteFile.name, snapshotAt: date, metrics: finalized.payload.metrics ?? metrics.length, sha256: fileHash });
     }
 
-    await supabase(`/rest/v1/kpi_bridge_runs?id=eq.${runId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ finished_at: new Date().toISOString(), status: "success", files_seen: filesSeen, files_imported: filesImported, details: { protocol: cfg.secure ? "ftps" : "ftp", remote_dir: cfg.remoteDir } }) });
+    if (runId) await gateway("finish-run", { body: { runId, status: "success", filesSeen, filesImported, details: { protocol: cfg.secure ? "ftps" : "ftp", remote_dir: cfg.remoteDir } } });
     log("sync_completed", { filesSeen, filesImported });
   } catch (error) {
-    await supabase(`/rest/v1/kpi_bridge_runs?id=eq.${runId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ finished_at: new Date().toISOString(), status: "failed", files_seen: filesSeen, files_imported: filesImported, details: { protocol: cfg.secure ? "ftps" : "ftp", remote_dir: cfg.remoteDir, error: error instanceof Error ? error.message : "unknown" } }) }).catch(() => undefined);
+    if (runId) {
+      await gateway("finish-run", {
+        body: {
+          runId,
+          status: "failed",
+          filesSeen,
+          filesImported,
+          details: { protocol: cfg.secure ? "ftps" : "ftp", remote_dir: cfg.remoteDir, error: error instanceof Error ? error.message : "unknown" },
+        },
+      }).catch(() => undefined);
+    }
     throw error;
   } finally {
     ftp.close();
