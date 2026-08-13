@@ -20,6 +20,21 @@ const verifiedRows: SnapshotRow[] = [
   { snapshot_at: "2026-08-12", source_name: "Book CRVO Lens - Journée du 12.08.2026.xlsx", metrics: { entries_vop: 8, exits_vop: 94, factory_stock: 1064, stock_over_15d: 477, stock_over_20d: 382, production_expertise: 65, production_mechanics: 75, production_dsp: 27, production_bodywork: 10, production_preparation: 83, production_quality: 87, production_factory_exit: 94 } },
 ];
 
+function priority(source: string) {
+  const value = source.toLowerCase();
+  if (value.includes("sftp")) return 30;
+  if (value.includes("manuel") || value.includes("book")) return 20;
+  if (value.includes("seed") || value.includes("classeur")) return 10;
+  return 0;
+}
+
+function sourceMode(source: string) {
+  const value = source.toLowerCase();
+  if (value.includes("sftp")) return "sftp";
+  if (value.includes("manuel") || value.includes("book")) return "book";
+  return "embedded";
+}
+
 function numberValue(metrics: SnapshotRow["metrics"], key: string, fallback: number) {
   const value = Number(metrics[key]);
   return Number.isFinite(value) ? value : fallback;
@@ -32,6 +47,7 @@ function formatSnapshot(row: SnapshotRow) {
     date: row.snapshot_at,
     label: new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" }).format(date),
     source: row.source_name,
+    sourceMode: sourceMode(row.source_name),
     entries: numberValue(metrics, "entries_vop", 0),
     exits: numberValue(metrics, "exits_vop", 0),
     stock: numberValue(metrics, "factory_stock", 0),
@@ -50,16 +66,39 @@ function formatSnapshot(row: SnapshotRow) {
 }
 
 function mergedRows(liveRows: SnapshotRow[]) {
-  const byDate = new Map(verifiedRows.map((row) => [row.snapshot_at, row]));
-  liveRows.forEach((row) => byDate.set(row.snapshot_at, row));
+  const byDate = new Map<string, SnapshotRow>();
+  verifiedRows.forEach((row) => byDate.set(row.snapshot_at, { ...row, metrics: { ...row.metrics } }));
+
+  const ordered = [...liveRows].sort((a,b) => a.snapshot_at.localeCompare(b.snapshot_at) || priority(a.source_name)-priority(b.source_name));
+  for (const row of ordered) {
+    const current = byDate.get(row.snapshot_at);
+    if (!current) {
+      byDate.set(row.snapshot_at, { ...row, metrics: { ...(row.metrics ?? {}) } });
+      continue;
+    }
+    const rowWins = priority(row.source_name) >= priority(current.source_name);
+    byDate.set(row.snapshot_at, {
+      snapshot_at: row.snapshot_at,
+      source_name: rowWins ? row.source_name : current.source_name,
+      metrics: rowWins ? { ...current.metrics, ...(row.metrics ?? {}) } : { ...(row.metrics ?? {}), ...current.metrics },
+    });
+  }
   return [...byDate.values()].sort((a, b) => a.snapshot_at.localeCompare(b.snapshot_at));
 }
 
 function responseFor(rows: SnapshotRow[], wantsHistory: boolean, requestedDate: string | null, connected: boolean, backend: string) {
   const all = mergedRows(rows);
   const selected = requestedDate ? all.find((row) => row.snapshot_at === requestedDate) : all.at(-1);
-  const snapshot = formatSnapshot(selected ?? all.at(-1) ?? verifiedRows.at(-1)!);
-  return NextResponse.json({ connected, backend, snapshot, snapshots: wantsHistory ? all.map(formatSnapshot) : undefined });
+  const source = selected ?? all.at(-1) ?? verifiedRows.at(-1)!;
+  const snapshot = formatSnapshot(source);
+  return NextResponse.json({
+    connected,
+    backend,
+    sourceMode: sourceMode(source.source_name),
+    latestSource: source.source_name,
+    snapshot,
+    snapshots: wantsHistory ? all.map(formatSnapshot) : undefined,
+  }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function GET(request: Request) {
@@ -73,8 +112,10 @@ export async function GET(request: Request) {
 
   try {
     const select = "select=snapshot_at,source_name,metrics";
-    const query = wantsHistory ? `${select}&order=snapshot_at.asc&limit=120` : requestedDate ? `${select}&snapshot_at=eq.${encodeURIComponent(requestedDate)}&limit=1` : `${select}&order=snapshot_at.desc&limit=120`;
-    const response = await fetch(`${supabaseUrl}/rest/v1/kpi_dashboard_snapshots?${query}`, { headers: supabaseRestHeaders(secretKey, { Accept: "application/json" }), cache: "no-store" });
+    const query = wantsHistory ? `${select}&order=snapshot_at.asc&limit=180` : requestedDate ? `${select}&snapshot_at=eq.${encodeURIComponent(requestedDate)}&limit=20` : `${select}&order=snapshot_at.desc&limit=180`;
+    const response = await fetch(`${supabaseUrl}/rest/v1/kpi_dashboard_snapshots?${query}`, {
+      headers: supabaseRestHeaders(secretKey, { Accept: "application/json" }), cache: "no-store",
+    });
     if (!response.ok) throw new Error(`Supabase ${response.status}`);
     const rows = await response.json() as SnapshotRow[];
     return responseFor(rows, wantsHistory, requestedDate, true, "supabase+embedded-history");
