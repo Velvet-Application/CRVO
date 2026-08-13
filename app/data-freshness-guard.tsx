@@ -28,17 +28,20 @@ function timeLabel(value:string|null){
 }
 
 function modeLabel(mode:string){return mode==="ftp"||mode==="sftp"?"FTP opérationnel":mode==="book"?"Dernier Book CRVO":"Historique de secours";}
+function setText(node:HTMLElement|null,value:string){if(node&&node.textContent!==value)node.textContent=value;}
 
 export default function DataFreshnessGuard(){
   const [warning,setWarning]=useState<{date:string;expected:string;source:string}|null>(null);
   const [latest,setLatest]=useState<Latest|null>(null);
+
   useEffect(()=>{
     let active=true;
     const check=async()=>{
       try{
+        const stamp=Date.now();
         const [dashboardResponse,statusResponse]=await Promise.all([
-          fetch(`/api/dashboard?_=${Date.now()}`,{cache:"no-store"}),
-          fetch(`/api/system-status?_=${Date.now()}`,{cache:"no-store"}),
+          fetch(`/api/dashboard?_=${stamp}`,{cache:"no-store"}),
+          fetch(`/api/system-status?_=${stamp}`,{cache:"no-store"}),
         ]);
         if(!dashboardResponse.ok)return;
         const payload=await dashboardResponse.json() as Payload;
@@ -55,7 +58,8 @@ export default function DataFreshnessGuard(){
         }
       }catch{}
     };
-    void check(); const timer=window.setInterval(()=>void check(),30000);
+    void check();
+    const timer=window.setInterval(()=>void check(),20000);
     return()=>{active=false;window.clearInterval(timer);};
   },[]);
 
@@ -68,15 +72,26 @@ export default function DataFreshnessGuard(){
         ? `Dernier refresh FTP ${timeLabel(latest.lastRefreshAt)}${latest.lastDepositAt?` · dépôt source ${timeLabel(latest.lastDepositAt)}`:""}${latest.lastDepositFilename?` · ${latest.lastDepositFilename}`:""}`
         : `Données arrêtées au ${latest.label} · ${latest.source}`;
       document.querySelectorAll<HTMLElement>(".freshness").forEach((node)=>{
-        const strong=node.querySelector<HTMLElement>("strong"); const small=node.querySelector<HTMLElement>("small"); const tag=node.querySelector<HTMLElement>(".freshness-tag");
-        if(strong)strong.textContent=modeLabel(latest.mode);
-        if(small)small.textContent=ftpDetail;
-        if(tag)tag.textContent=latest.lastRefreshAt?"FTP · REFRESH 15 MIN":latest.mode==="book"?"SOURCE BOOK":"SOURCE RÉELLE";
+        setText(node.querySelector<HTMLElement>("strong"),modeLabel(latest.mode));
+        setText(node.querySelector<HTMLElement>("small"),ftpDetail);
+        setText(node.querySelector<HTMLElement>(".freshness-tag"),latest.lastRefreshAt?"FTP · REFRESH 15 MIN":latest.mode==="book"?"SOURCE BOOK":"SOURCE RÉELLE");
       });
       const side=document.querySelector<HTMLElement>(".sidebar-bottom");
-      if(side){const strong=side.querySelector<HTMLElement>("strong");const small=side.querySelector<HTMLElement>("small");if(strong)strong.textContent=modeLabel(latest.mode);if(small)small.textContent=latest.lastRefreshAt?`FTP refresh ${timeLabel(latest.lastRefreshAt)} · dépôt ${timeLabel(latest.lastDepositAt)}`:`Dernière donnée · ${latest.label}`;}
+      if(side){
+        setText(side.querySelector<HTMLElement>("strong"),modeLabel(latest.mode));
+        setText(side.querySelector<HTMLElement>("small"),latest.lastRefreshAt?`FTP refresh ${timeLabel(latest.lastRefreshAt)} · dépôt ${timeLabel(latest.lastDepositAt)}`:`Dernière donnée · ${latest.label}`);
+      }
     };
-    apply();const observer=new MutationObserver(apply);observer.observe(document.body,{childList:true,subtree:true});return()=>observer.disconnect();
+
+    apply();
+    let runs=0;
+    const warmup=window.setInterval(()=>{
+      runs+=1;
+      apply();
+      if(runs>=10)window.clearInterval(warmup);
+    },750);
+    const timer=window.setInterval(apply,20000);
+    return()=>{window.clearInterval(warmup);window.clearInterval(timer);};
   },[latest]);
 
   if(!warning)return null;
