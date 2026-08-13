@@ -23,11 +23,15 @@ export async function GET() {
     }
   }
 
+  const ftpBridge = Boolean(process.env.FTP_BRIDGE_HEALTH_URL ?? process.env.SFTP_BRIDGE_HEALTH_URL);
+
   return NextResponse.json({
     supabase,
     supabaseConfigured,
     supabaseStatus,
-    sftpBridge: Boolean(process.env.SFTP_BRIDGE_HEALTH_URL),
+    ftpBridge,
+    // Compatibilité avec les versions du front qui lisaient encore cette clé.
+    sftpBridge: ftpBridge,
     archiveBucket: process.env.SUPABASE_ARCHIVE_BUCKET ?? "kpi-raw-archive",
   }, { headers: { "Cache-Control": "no-store" } });
 }
