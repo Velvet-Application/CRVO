@@ -24,7 +24,7 @@ jobs:
           npx playwright install chromium --with-deps
       - name: Inspect production page
         run: |
-          cat >/tmp/check.cjs <<'NODE'
+          cat >check.cjs <<'NODE'
           const { chromium } = require('playwright');
           (async () => {
             const browser = await chromium.launch({ headless: true });
@@ -57,8 +57,7 @@ jobs:
             }));
             console.log('STATE', JSON.stringify(state));
             console.log('API', JSON.stringify(api));
-            await page.screenshot({path:'/tmp/prod.png', fullPage:true});
             await browser.close();
           })().catch(e=>{console.error(e);process.exitCode=1});
           NODE
-          node /tmp/check.cjs
+          node check.cjs
