@@ -9,6 +9,9 @@ type SnapshotRow = {
   metrics: Record<string, number | string>;
 };
 
+const PUBLIC_SUPABASE_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co";
+const PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2bWtodmZtZHN0a3Vud3d1enV6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTU4NjQsImV4cCI6MjEwMjAzMTg2NH0.w18MDX_dL1YarUElTeo9ID0Egivav18tVqjjbkCaOxc";
+
 const verifiedRows: SnapshotRow[] = [
   { snapshot_at: "2026-08-03", source_name: "Book CRVO Lens - Journée du 03.08.2026.xlsx", metrics: { entries_vop: 50, exits_vop: 87, factory_stock: 1146, stock_over_15d: 508, stock_over_20d: 418, production_expertise: 83, production_mechanics: 83, production_dsp: 25, production_bodywork: 13, production_preparation: 85, production_quality: 91, production_factory_exit: 87 } },
   { snapshot_at: "2026-08-04", source_name: "Book CRVO Lens - Journée du 04.08.2026.xlsx", metrics: { entries_vop: 54, exits_vop: 91, factory_stock: 1139, stock_over_15d: 476, stock_over_20d: 392, production_expertise: 86, production_mechanics: 91, production_dsp: 26, production_bodywork: 17, production_preparation: 91, production_quality: 91, production_factory_exit: 91 } },
@@ -100,6 +103,22 @@ async function readRows(baseUrl: string, secretKey: string, path: string) {
   return response.json() as Promise<SnapshotRow[]>;
 }
 
+async function readPublicEdgeRows(wantsHistory: boolean, requestedDate: string | null) {
+  const params = new URLSearchParams();
+  if (wantsHistory) params.set("history", "1");
+  if (requestedDate) params.set("date", requestedDate);
+  const response = await fetch(`${PUBLIC_SUPABASE_URL}/functions/v1/kpi-public-dashboard?${params.toString()}`, {
+    headers: {
+      apikey: PUBLIC_SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${PUBLIC_SUPABASE_ANON_KEY}`,
+      Accept: "application/json",
+    },
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`Supabase edge ${response.status}`);
+  return response.json() as Promise<SnapshotRow[]>;
+}
+
 export async function GET(request: Request) {
   const supabaseUrl = process.env.SUPABASE_URL;
   const secretKey = process.env.SUPABASE_SECRET_KEY;
@@ -107,7 +126,15 @@ export async function GET(request: Request) {
   const wantsHistory = url.searchParams.get("history") === "1";
   const requestedDate = url.searchParams.get("date")?.match(/^\d{4}-\d{2}-\d{2}$/)?.[0] ?? null;
 
-  if (!supabaseUrl || !secretKey) return responseFor([], wantsHistory, requestedDate, false, "embedded-history");
+  if (!supabaseUrl || !secretKey) {
+    try {
+      const rows = await readPublicEdgeRows(wantsHistory, requestedDate);
+      return responseFor(rows, wantsHistory, requestedDate, true, "supabase-edge-live+embedded-history");
+    } catch (error) {
+      console.error(JSON.stringify({ event: "dashboard_edge_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
+      return responseFor([], wantsHistory, requestedDate, false, "embedded-history");
+    }
+  }
 
   try {
     const select = "select=snapshot_at,source_name,metrics";
@@ -120,6 +147,11 @@ export async function GET(request: Request) {
     return responseFor([...rows, ...ftpRows], wantsHistory, requestedDate, true, "supabase+ftp-live+embedded-history");
   } catch (error) {
     console.error(JSON.stringify({ event: "dashboard_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
-    return responseFor([], wantsHistory, requestedDate, false, "embedded-history");
+    try {
+      const rows = await readPublicEdgeRows(wantsHistory, requestedDate);
+      return responseFor(rows, wantsHistory, requestedDate, true, "supabase-edge-live+embedded-history");
+    } catch {
+      return responseFor([], wantsHistory, requestedDate, false, "embedded-history");
+    }
   }
 }
