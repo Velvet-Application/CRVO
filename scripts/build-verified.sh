@@ -26,3 +26,12 @@ timeout \
   "${vinext}" build
 
 "${script_dir}/validate-artifact.sh"
+
+if [[ -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+  echo "Deploying the built App Router through vinext native Cloudflare deployment..."
+  timeout \
+    --signal=TERM \
+    --kill-after="20s" \
+    "5m" \
+    "${vinext}" deploy --skip-build --name kpi-crvo
+fi
