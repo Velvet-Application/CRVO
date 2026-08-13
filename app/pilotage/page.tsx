@@ -35,6 +35,8 @@ type Plan = {
   remainingHours: number;
   potentialRevenue: number;
   oldest: Vehicle[];
+  fifoCandidates: Vehicle[];
+  runCandidates: Vehicle[];
   recommendation: Vehicle[];
 };
 
@@ -42,13 +44,15 @@ type Payload = {
   snapshot: { date: string; label: string; source: string; exits: number; stock: number };
   dataConnected: boolean;
   workloadSnapshot: string | null;
-  productionMode: "sftp" | "book";
-  sources: { sftp: boolean; production: "sftp" | "book"; workloadSql: boolean; workloadTime: boolean; invoicesSql: boolean; financeBook: boolean };
+  productionMode: "ftp" | "book";
+  sources: { ftp?: boolean; sftp?: boolean; production: "ftp" | "book"; workloadSql: boolean; workloadTime: boolean; invoicesSql: boolean; financeBook: boolean };
   invoiceToday: { revenue: number; invoices: number; available: boolean; source: "none" | "sql" | "book" };
   workloadSummary: { workOrders: number; remainingHours: number; potentialRevenue: number };
   major: Plan[];
   plans: Plan[];
 };
+
+type FtpRefresh = { lastRefreshAt: string | null; lastDepositAt: string | null; lastDepositFilename: string | null };
 
 function euro(value: number | null | undefined) {
   return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(Number(value) || 0);
@@ -67,19 +71,41 @@ function shortDate(value: string | null) {
   return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T12:00:00`));
 }
 
+function timeParis(value: string | null | undefined) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Europe/Paris" }).format(new Date(value));
+}
+
+function VehicleQueue({ vehicles, mode }: { vehicles: Vehicle[]; mode: "FIFO" | "RUN" }) {
+  if (!vehicles.length) return <div className={styles.dataNeeded}><strong>Aucun véhicule {mode} disponible</strong><span>{mode === "FIFO" ? "La file sera affichée dès que des dossiers sont présents sur ce secteur." : "Aucun dossier ne respecte actuellement le seuil de temps RUN configuré."}</span></div>;
+  return <div className={styles.oldList}>{vehicles.map((vehicle, index) => <div key={`${mode}-${vehicle.registration}-${vehicle.work_order}`}>
+    <b>{index + 1}</b>
+    <div><strong>{vehicle.registration || vehicle.work_order || "—"}</strong><span>{vehicle.primary_activity || vehicle.status || vehicle.work_order || "Dossier"}</span></div>
+    <div><strong>{mode === "FIFO" ? `${vehicle.age_days?.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) ?? "—"} j` : minutes(vehicle.remaining_minutes)}</strong><span>{mode === "FIFO" ? `${minutes(vehicle.remaining_minutes)} · ${euro(vehicle.potential_revenue_total)}` : `${vehicle.age_days?.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) ?? "—"} j · ${euro(vehicle.potential_revenue_total)}`}</span></div>
+  </div>)}</div>;
+}
+
 export default function PilotagePage() {
   const [data, setData] = useState<Payload | null>(null);
   const [selected, setSelected] = useState("");
   const [error, setError] = useState("");
   const [updated, setUpdated] = useState("");
+  const [ftpRefresh, setFtpRefresh] = useState<FtpRefresh | null>(null);
 
   async function refresh() {
     try {
-      const response = await fetch(`/api/pilotage?_=${Date.now()}`, { cache: "no-store", headers: { "Cache-Control": "no-cache" } });
+      const [response, statusResponse] = await Promise.all([
+        fetch(`/api/pilotage?_=${Date.now()}`, { cache: "no-store", headers: { "Cache-Control": "no-cache" } }),
+        fetch(`/api/system-status?_=${Date.now()}`, { cache: "no-store" }),
+      ]);
       const payload = await response.json() as Payload & { error?: string };
       if (!response.ok) throw new Error(payload.error || "Pilotage indisponible.");
+      if (statusResponse.ok) {
+        const status = await statusResponse.json() as { ftpRefresh?: FtpRefresh | null };
+        setFtpRefresh(status.ftpRefresh ?? null);
+      }
       setData(payload);
-      setSelected((current) => payload.plans.some((item) => item.sectorKey === current) ? current : payload.major[0]?.sectorKey || payload.plans[0]?.sectorKey || "");
+      setSelected((current) => payload.plans.some((item) => item.sectorKey === current) ? current : payload.major[0]?.sectorKey || payload.plans.find((item) => item.fifoCandidates?.length || item.runCandidates?.length)?.sectorKey || payload.plans[0]?.sectorKey || "");
       setUpdated(new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date()));
       setError("");
     } catch (reason) {
@@ -111,13 +137,14 @@ export default function PilotagePage() {
       <div className={styles.headerStatus}>
         <span>DERNIÈRE PRODUCTION</span>
         <strong>{data.snapshot.label}</strong>
-        <small>{data.productionMode === "sftp" ? "SFTP" : "Dernier Book CRVO"} · actualisé {updated} · toutes les 20 s</small>
+        <small>{data.productionMode === "ftp" ? "FTP" : "Dernier Book CRVO"} · écran actualisé {updated}</small>
+        {ftpRefresh?.lastRefreshAt && <small><b>FTP refresh {timeParis(ftpRefresh.lastRefreshAt)}</b> · dernier dépôt {timeParis(ftpRefresh.lastDepositAt)}{ftpRefresh.lastDepositFilename ? ` · ${ftpRefresh.lastDepositFilename}` : ""}</small>}
       </div>
     </header>
 
     <section className={styles.sourceStrip}>
-      <div className={styles.ready}><i/><span>Production du jour</span><strong>{data.productionMode === "sftp" ? "SFTP" : "BOOK"}</strong></div>
-      <div className={data.sources.workloadSql ? styles.ready : styles.missing}><i/><span>SQL encours dossier</span><strong>{data.sources.workloadSql ? shortDate(data.workloadSnapshot).toUpperCase() : "À BRANCHER"}</strong></div>
+      <div className={styles.ready}><i/><span>Production du jour</span><strong>{data.productionMode === "ftp" ? "FTP" : "BOOK"}</strong></div>
+      <div className={data.sources.workloadSql ? styles.ready : styles.missing}><i/><span>Détail dossiers</span><strong>{data.sources.workloadSql ? shortDate(data.workloadSnapshot).toUpperCase() : "À BRANCHER"}</strong></div>
       <div className={data.sources.workloadTime ? styles.ready : styles.missing}><i/><span>Temps MO / véhicule</span><strong>{data.sources.workloadTime ? "PRÊT" : "À FOURNIR"}</strong></div>
       <div className={data.sources.invoicesSql || data.sources.financeBook ? styles.ready : styles.missing}><i/><span>Chiffre d’affaires</span><strong>{data.sources.invoicesSql ? "SQL FACTURES" : data.sources.financeBook ? "BOOK" : "À BRANCHER"}</strong></div>
     </section>
@@ -145,7 +172,7 @@ export default function PilotagePage() {
         <div><small>CA potentiel encours</small><strong>{data.sources.workloadSql ? euro(data.workloadSummary.potentialRevenue) : "—"}</strong></div>
         <div><small>Heures MO encours</small><strong>{data.sources.workloadTime ? Math.round(data.workloadSummary.remainingHours).toLocaleString("fr-FR") : "—"}</strong></div>
         <div><small>OR en cours</small><strong>{data.sources.workloadSql ? data.workloadSummary.workOrders.toLocaleString("fr-FR") : "—"}</strong></div>
-        {!data.invoiceToday.available && <p>Le CA instantané apparaîtra ici dès qu’un Book financier ou le reporting factures SQL est disponible.</p>}
+        {!data.invoiceToday.available && <p>Le CA instantané apparaîtra ici dès que le branchement SQL factures sera disponible.</p>}
       </article>
     </section>
 
@@ -154,7 +181,7 @@ export default function PilotagePage() {
         <div>
           <span>PLAN D’ACTION · {current.label.toUpperCase()}</span>
           <h2>{current.gap > 0 ? `${current.gap} véhicules à sécuriser` : "Objectif atteint"}</h2>
-          <p>{current.queue ? `${current.queue} dossiers/activités disponibles dans l’encours du ${shortDate(data.workloadSnapshot)}.` : "La file véhicule n’est pas encore alimentée par le SQL encours."}</p>
+          <p>{current.queue ? `${current.queue} dossiers/activités disponibles dans l’encours du ${shortDate(data.workloadSnapshot)}.` : "La file véhicule n’est pas encore alimentée."}</p>
         </div>
         <div className={styles.sectorMetrics}>
           <div><span>RÉALISÉ</span><strong>{current.actual}</strong></div>
@@ -168,35 +195,33 @@ export default function PilotagePage() {
 
       <section className={styles.logicGrid}>
         <article className={styles.logicCard}>
-          <span>LECTURE DU FIFO</span>
+          <span>FIFO · LISTE VÉHICULES</span>
           <h3>Les 10 plus vieux dossiers</h3>
-          {current.oldest.length ? <div className={styles.oldList}>{current.oldest.map((vehicle, index) => <div key={`${vehicle.registration}-${vehicle.work_order}`}>
-            <b>{index + 1}</b><div><strong>{vehicle.registration || vehicle.work_order}</strong><span>{vehicle.primary_activity || vehicle.status || vehicle.work_order || "Dossier"}</span></div><div><strong>{vehicle.age_days?.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) ?? "—"} j</strong><span>{minutes(vehicle.remaining_minutes)} · {euro(vehicle.potential_revenue_total)}</span></div>
-          </div>)}</div> : <div className={styles.dataNeeded}><strong>Détail véhicule en attente</strong><span>Les totaux d’encours sont disponibles ; la liste FIFO détaillée sera alimentée par les lignes OR.</span></div>}
+          <VehicleQueue vehicles={current.fifoCandidates?.length ? current.fifoCandidates : current.oldest} mode="FIFO"/>
         </article>
 
         <article className={styles.logicCard}>
-          <span>ARBITRAGE VOLUME / FIFO</span>
-          <h3>Lecture recommandée</h3>
-          {current.workloadReady ? <div className={styles.strategyBox}>
+          <span>RUN · LISTE VÉHICULES</span>
+          <h3>Dossiers courts disponibles</h3>
+          <VehicleQueue vehicles={current.runCandidates ?? []} mode="RUN"/>
+          <div className={styles.strategyBox}>
             <div><strong>{Math.round(current.fifoShare * 100)}%</strong><span>FIFO cible</span></div>
             <div><strong>≤ {Math.round(current.runMaxMinutes)} min</strong><span>définition RUN</span></div>
             <div><strong>{current.highTimeOld}</strong><span>dossiers lourds dans le top 10</span></div>
-            <p>{current.oldest.length ? (current.highTimeOld > 0 ? `${current.highTimeOld} dossiers parmi les plus anciens dépassent le seuil RUN. Le moteur complète le FIFO avec des dossiers courts pour sécuriser le volume sans perdre de vue les dossiers les plus anciens.` : "Le FIFO est compatible avec le volume cible : aucune injection RUN particulière n’est nécessaire.") : "Les agrégats temps et RUN sont disponibles. La recommandation nominative apparaîtra dès que les lignes véhicule sont chargées."}</p>
-          </div> : <div className={styles.dataNeeded}><strong>Temps MO par véhicule manquant</strong><span>Dès réception, le moteur distinguera automatiquement dossiers longs et RUN.</span></div>}
+          </div>
         </article>
       </section>
 
       <section className={styles.actionPlan}>
-        <div className={styles.actionTitle}><div><span>LISTE À FAIRE MAINTENANT</span><h2>Ordonnancement recommandé</h2></div><p>FIFO et RUN sont croisés avec le temps MO et le potentiel CA du dossier. La recommandation reste une aide au pilotage terrain.</p></div>
+        <div className={styles.actionTitle}><div><span>LISTE À FAIRE MAINTENANT</span><h2>Ordonnancement recommandé</h2></div><p>FIFO et RUN sont croisés avec le temps disponible et, lorsque le SQL CA sera branché, avec le potentiel financier du dossier. La recommandation reste une aide au pilotage terrain.</p></div>
         {current.recommendation.length ? <div className={styles.actionTable}>
           <div className={styles.actionHeader}><span>#</span><span>Véhicule</span><span>OR / activité</span><span>Ancienneté</span><span>Temps MO</span><span>CA potentiel</span><span>Choix</span><span>Pourquoi</span></div>
           {current.recommendation.map((vehicle) => <div key={`${vehicle.registration}-${vehicle.work_order}`} className={vehicle.strategy === "RUN" ? styles.runRow : styles.fifoRow}>
             <b>{vehicle.rank}</b><strong>{vehicle.registration || "—"}</strong><span>{vehicle.work_order || "—"}<small>{vehicle.primary_activity ? ` · ${vehicle.primary_activity}` : ""}</small></span><span>{vehicle.age_days?.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) ?? "—"} j</span><span>{minutes(vehicle.remaining_minutes)}</span><strong>{euro(vehicle.potential_revenue_total)}</strong><span className={vehicle.strategy === "RUN" ? styles.runPill : styles.fifoPill}>{vehicle.strategy}</span><span>{vehicle.reason}</span>
           </div>)}
         </div> : <div className={styles.emptyPlan}>
-          <strong>{current.gap === 0 ? "Objectif atteint sur ce secteur" : "Détail véhicule en cours d’alimentation"}</strong>
-          <span>{current.gap === 0 ? "Le moteur ne propose aucun véhicule supplémentaire." : "Les totaux sont déjà calculés ; la liste FIFO/RUN nominative se complète avec les lignes de l’encours SQL."}</span>
+          <strong>{current.gap === 0 ? "Objectif atteint sur ce secteur" : "Ordonnancement en cours de calcul"}</strong>
+          <span>{current.gap === 0 ? "Les listes FIFO et RUN restent visibles ci-dessus même quand aucun véhicule supplémentaire n’est nécessaire." : "Les listes FIFO et RUN sont affichées ci-dessus ; l’ordonnancement final utilise l’écart à l’objectif."}</span>
         </div>}
       </section>
     </>}
