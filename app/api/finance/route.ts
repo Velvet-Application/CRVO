@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 
 type FinancialMetrics = Record<string, number | string | null>;
 type FinancialSnapshot = { date: string; source: string; filename: string; metrics: FinancialMetrics; importedAt?: string };
+type InvoiceFact = { invoice_date: string; invoice_number: string; work_order: string | null; revenue_total: number | string | null; labor_revenue: number | string | null; labor_hours: number | string | null };
 
 const verifiedFinance: FinancialSnapshot[] = [
   { date: "2026-08-12", source: "Book CRVO Lens", filename: "Book CRVO Lens - Journée du 12.08.2026.xlsx", metrics: { vop: 638, revenue_day: 46079.34, revenue_day_target: 90419.04761904762, revenue_cumulative: 553231.54, revenue_cumulative_target: 1898800, fre_per_vo: 794.4713793103447, mo_per_vop: 9.680548589341704, revenue_per_vop: 867.1340752351095, labor_hours: 6176.19, labor_revenue_cumulative: 279655, invoices_day: 58, invoices_cumulative: 638 } },
@@ -21,14 +22,70 @@ const verifiedFinance: FinancialSnapshot[] = [
 function env() {
   const supabaseUrl = process.env.SUPABASE_URL;
   const secretKey = process.env.SUPABASE_SECRET_KEY;
-  if (!supabaseUrl || !secretKey) return null;
-  return { supabaseUrl, secretKey };
+  return supabaseUrl && secretKey ? { supabaseUrl, secretKey } : null;
+}
+
+function number(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
 }
 
 function mergeSnapshots(live: FinancialSnapshot[]) {
   const byDate = new Map(verifiedFinance.map((row) => [row.date, row]));
   live.forEach((row) => byDate.set(row.date, row));
   return [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function applyInvoices(base: FinancialSnapshot[], facts: InvoiceFact[]) {
+  if (!facts.length) return base;
+  const baseByDate = new Map(base.map((item) => [item.date, item]));
+  const byDate = new Map<string, InvoiceFact[]>();
+  facts.forEach((fact) => {
+    const list = byDate.get(fact.invoice_date) ?? [];
+    list.push(fact);
+    byDate.set(fact.invoice_date, list);
+  });
+
+  let currentMonth = "";
+  let cumulativeRevenue = 0;
+  let cumulativeLabor = 0;
+  let cumulativeHours = 0;
+  let cumulativeInvoices = 0;
+  const sqlSnapshots: FinancialSnapshot[] = [];
+
+  [...byDate.keys()].sort().forEach((date) => {
+    const month = date.slice(0, 7);
+    if (month !== currentMonth) {
+      currentMonth = month;
+      cumulativeRevenue = 0; cumulativeLabor = 0; cumulativeHours = 0; cumulativeInvoices = 0;
+    }
+    const day = byDate.get(date) ?? [];
+    const revenueDay = day.reduce((sum, row) => sum + number(row.revenue_total), 0);
+    const laborDay = day.reduce((sum, row) => sum + number(row.labor_revenue), 0);
+    const hoursDay = day.reduce((sum, row) => sum + number(row.labor_hours), 0);
+    cumulativeRevenue += revenueDay; cumulativeLabor += laborDay; cumulativeHours += hoursDay; cumulativeInvoices += day.length;
+    const baseRow = baseByDate.get(date);
+    const metrics: FinancialMetrics = { ...(baseRow?.metrics ?? {}) };
+    metrics.revenue_day = revenueDay;
+    metrics.revenue_cumulative = cumulativeRevenue;
+    metrics.labor_revenue_day = laborDay;
+    metrics.labor_revenue_cumulative = cumulativeLabor;
+    metrics.labor_hours_day = hoursDay;
+    metrics.labor_hours = cumulativeHours;
+    metrics.invoices_day = day.length;
+    metrics.invoices_cumulative = cumulativeInvoices;
+    metrics.sql_invoice_source = 1;
+    const vop = number(metrics.vop);
+    if (vop > 0) {
+      metrics.revenue_per_vop = cumulativeRevenue / vop;
+      metrics.mo_per_vop = cumulativeHours / vop;
+    }
+    sqlSnapshots.push({ date, source: "SQL Reporting factures CRVO", filename: "Reporting CRVO Lens factures", metrics, importedAt: baseRow?.importedAt });
+  });
+
+  const result = new Map(base.map((row) => [row.date, row]));
+  sqlSnapshots.forEach((row) => result.set(row.date, row));
+  return [...result.values()].sort((a, b) => b.date.localeCompare(a.date));
 }
 
 export async function GET(request: Request) {
@@ -41,21 +98,17 @@ export async function GET(request: Request) {
   }
 
   try {
-    const response = await fetch(`${config.supabaseUrl}/rest/v1/kpi_financial_snapshots?select=snapshot_at,source_name,original_filename,metrics,imported_at&order=snapshot_at.desc&limit=120`, {
-      headers: supabaseRestHeaders(config.secretKey, { Accept: "application/json" }),
-      cache: "no-store",
-    });
-    if (!response.ok) throw new Error(`Supabase ${response.status}`);
-    const rows = await response.json() as Array<Record<string, unknown>>;
-    const live = rows.map((row) => ({
-      date: String(row.snapshot_at ?? ""),
-      source: String(row.source_name ?? "Import Finance CRVO"),
-      filename: String(row.original_filename ?? ""),
-      metrics: (row.metrics ?? {}) as FinancialMetrics,
-      importedAt: row.imported_at ? String(row.imported_at) : undefined,
-    }));
-    const snapshots = mergeSnapshots(live);
-    return NextResponse.json({ connected: true, backend: "supabase+embedded-finance", snapshot: snapshots[0] ?? null, snapshots: history ? snapshots : undefined });
+    const [financeResponse, invoiceResponse] = await Promise.all([
+      fetch(`${config.supabaseUrl}/rest/v1/kpi_financial_snapshots?select=snapshot_at,source_name,original_filename,metrics,imported_at&order=snapshot_at.desc&limit=120`, { headers: supabaseRestHeaders(config.secretKey, { Accept: "application/json" }), cache: "no-store" }),
+      fetch(`${config.supabaseUrl}/rest/v1/kpi_invoice_facts?select=invoice_date,invoice_number,work_order,revenue_total,labor_revenue,labor_hours&source_name=eq.${encodeURIComponent("SQL Reporting factures CRVO")}&order=invoice_date.asc&limit=10000`, { headers: supabaseRestHeaders(config.secretKey, { Accept: "application/json" }), cache: "no-store" }),
+    ]);
+    if (!financeResponse.ok) throw new Error(`Supabase finance ${financeResponse.status}`);
+    const rows = await financeResponse.json() as Array<Record<string, unknown>>;
+    const live = rows.map((row) => ({ date: String(row.snapshot_at ?? ""), source: String(row.source_name ?? "Import Finance CRVO"), filename: String(row.original_filename ?? ""), metrics: (row.metrics ?? {}) as FinancialMetrics, importedAt: row.imported_at ? String(row.imported_at) : undefined }));
+    const base = mergeSnapshots(live);
+    const invoiceFacts = invoiceResponse.ok ? await invoiceResponse.json() as InvoiceFact[] : [];
+    const snapshots = applyInvoices(base, invoiceFacts);
+    return NextResponse.json({ connected: true, backend: invoiceFacts.length ? "supabase+sql-invoices" : "supabase+embedded-finance", sqlInvoices: invoiceFacts.length, snapshot: snapshots[0] ?? null, snapshots: history ? snapshots : undefined });
   } catch (error) {
     console.error(JSON.stringify({ event: "finance_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
     const snapshots = mergeSnapshots([]);
@@ -72,11 +125,7 @@ export async function POST(request: Request) {
   if (!body.snapshotAt || !/^\d{4}-\d{2}-\d{2}$/.test(body.snapshotAt)) return NextResponse.json({ error: "Date financière invalide." }, { status: 400 });
   if (!body.filename || !body.metrics || typeof body.metrics !== "object") return NextResponse.json({ error: "Import financier incomplet." }, { status: 400 });
   const row = { snapshot_at: body.snapshotAt, source_name: "Import Finance CRVO", original_filename: body.filename, sha256: body.sha256 || null, byte_size: Math.max(0, Number(body.byteSize) || 0), metrics: body.metrics, imported_at: new Date().toISOString() };
-  const response = await fetch(`${config.supabaseUrl}/rest/v1/kpi_financial_snapshots?on_conflict=snapshot_at`, {
-    method: "POST",
-    headers: supabaseRestHeaders(config.secretKey, { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }),
-    body: JSON.stringify([row]),
-  });
+  const response = await fetch(`${config.supabaseUrl}/rest/v1/kpi_financial_snapshots?on_conflict=snapshot_at`, { method: "POST", headers: supabaseRestHeaders(config.secretKey, { "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }), body: JSON.stringify([row]) });
   if (!response.ok) return NextResponse.json({ error: `Supabase ${response.status}: ${await response.text()}` }, { status: 502 });
   return NextResponse.json({ saved: true, snapshotAt: body.snapshotAt, identity: identity.method });
 }
