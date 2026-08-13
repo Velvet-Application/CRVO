@@ -3,7 +3,9 @@ name: KPI CRVO - synchronisation SFTP
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 3 * * 1-5"
+    # Plusieurs passages le matin : un fichier déposé après le premier contrôle
+    # est repris automatiquement au passage suivant. Les doublons sont ignorés par SHA-256.
+    - cron: "30 3,5,7,9 * * 1-5"
 
 permissions:
   contents: read
