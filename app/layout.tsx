@@ -18,6 +18,7 @@ import FinanceTrendPanel from "./finance-trend-panel";
 import PilotageNav from "./pilotage-nav";
 import SqlSourcePortal from "./sql-source-portal";
 import FtpTerminologyPatch from "./ftp-terminology-patch";
+import PeriodDefaultPatch from "./period-default-patch";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -35,6 +36,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <FinanceTrendPanel />
     <PilotageNav />
     <FtpTerminologyPatch />
+    <PeriodDefaultPatch />
     {children}
     <a className="global-book-launch" href="/book">BOOK D&apos;ANIMATION PDF</a>
     <style>{`
