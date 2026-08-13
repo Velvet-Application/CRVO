@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "sync": "node src/index.mjs",
-    "check": "node --check src/index.mjs"
+    "check": "node --check src/index.mjs && node --check src/factory-live-sync.mjs && node --check src/operational-live-sync.mjs"
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",
