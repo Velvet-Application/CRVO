@@ -21,8 +21,7 @@ jobs:
           from pathlib import Path
 
           p = Path('app/pilotage/page.tsx')
-          s = p.read_text()
-          s = s.replace('const timer = window.setInterval(() => void refresh(), 20000);', 'const timer = window.setInterval(() => void refresh(), 60000);')
+          s = p.read_text().replace('const timer = window.setInterval(() => void refresh(), 20000);', 'const timer = window.setInterval(() => void refresh(), 60000);')
           p.write_text(s)
 
           p = Path('app/page.tsx')
@@ -30,12 +29,41 @@ jobs:
           s = s.replace('const [start, setStart] = useState(maxDate);\n  const [end, setEnd] = useState(maxDate);\n  useEffect(() => { setStart((value) => value || maxDate); setEnd((value) => value || maxDate); }, [maxDate]);', 'const monthStart = `${maxDate.slice(0, 7)}-01`;\n  const [start, setStart] = useState(monthStart);\n  const [end, setEnd] = useState(maxDate);\n  useEffect(() => {\n    setStart((value) => !value || value === seedSnapshot.date ? monthStart : value);\n    setEnd((value) => !value || value === seedSnapshot.date || value < maxDate ? maxDate : value);\n  }, [maxDate, monthStart]);')
           s = s.replace('return () => controller.abort();\n  }, []);\n  return { snapshots, connected };', 'const timer = window.setInterval(() => {\n      fetch(`/api/dashboard?history=1&_=${Date.now()}`, { cache: "no-store" })\n        .then((response) => response.ok ? response.json() : Promise.reject())\n        .then((payload: { snapshots?: Snapshot[]; snapshot?: Snapshot; connected?: boolean }) => {\n          const rows = payload.snapshots?.length ? payload.snapshots : payload.snapshot ? [payload.snapshot] : [];\n          if (rows.length) { setSnapshots([...rows].sort((a,b) => a.date.localeCompare(b.date))); setConnected(Boolean(payload.connected)); }\n        }).catch(() => undefined);\n    }, 60000);\n    return () => { controller.abort(); window.clearInterval(timer); };\n  }, []);\n  return { snapshots, connected };', 1)
           p.write_text(s)
+
+          p = Path('app/atelier/page.tsx')
+          s = p.read_text()
+          s = s.replace('''type DashboardPayload = {
+  snapshot?: Snapshot;
+  snapshots?: Snapshot[];
+  connected?: boolean;
+  backend?: string;
+};''', '''type DashboardPayload = {
+  snapshot?: Snapshot;
+  snapshots?: Snapshot[];
+  connected?: boolean;
+  backend?: string;
+  sourceMode?: string;
+  liveFreshness?: { sourceModifiedAt?: string | null; factoryModifiedAt?: string | null; parkModifiedAt?: string | null } | null;
+};''')
+          s = s.replace('''      const [dashboardResponse, systemResponse] = await Promise.all([
+        fetch(`/api/dashboard?history=1&_=${Date.now()}`, { cache: "no-store" }),
+        fetch(`/api/system-status?_=${Date.now()}`, { cache: "no-store" }),
+      ]);
+      const dashboard = await dashboardResponse.json() as DashboardPayload;
+      const systemStatus = systemResponse.ok ? await systemResponse.json() as SystemStatusPayload : null;''', '''      const dashboardResponse = await fetch(`/api/dashboard?history=1&_=${Date.now()}`, { cache: "no-store", headers: { "Cache-Control": "no-cache" } });
+      const dashboard = await dashboardResponse.json() as DashboardPayload;''')
+          s = s.replace('setConnected(Boolean(dashboard.connected && objectivePayload.connected));', 'setConnected(Boolean(dashboard.connected && dashboard.sourceMode === "ftp"));')
+          s = s.replace('setFtpLastRefreshAt(systemStatus?.ftpRefresh?.lastRefreshAt ?? null);', 'setFtpLastRefreshAt(dashboard.liveFreshness?.sourceModifiedAt ?? dashboard.liveFreshness?.factoryModifiedAt ?? null);')
+          s = s.replace('setFtpLastDepositAt(systemStatus?.ftpRefresh?.lastDepositAt ?? null);', 'setFtpLastDepositAt(dashboard.liveFreshness?.parkModifiedAt ?? dashboard.liveFreshness?.sourceModifiedAt ?? null);')
+          s = s.replace('const refreshTimer = window.setInterval(() => void refresh(), 20000);', 'const refreshTimer = window.setInterval(() => void refresh(), 60000);')
+          s = s.replace('{connected ? "FTP / SUPABASE CONNECTÉ" : "MODE SECOURS"}', '{connected ? "FTP LIVE CONNECTÉ" : "DERNIÈRE DONNÉE DISPONIBLE"}')
+          p.write_text(s)
           PY
       - name: Commit patch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/page.tsx app/pilotage/page.tsx
+          git add app/page.tsx app/pilotage/page.tsx app/atelier/page.tsx
           git diff --cached --quiet && exit 0
-          git commit -m "Stabilize live UI polling and period defaults"
+          git commit -m "Use live FTP status with efficient polling"
           git push
