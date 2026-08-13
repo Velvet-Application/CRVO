@@ -107,7 +107,7 @@ export default function OperationalSourcePortal(){
 
   if(!host||!host.isConnected) return null;
   return createPortal(<section className="reliable-book-uploader">
-    <div className="reliable-book-copy"><span>IMPORT OPÉRATIONNEL FIABILISÉ</span><h3>Ajouter un Book CRVO complet</h3><p>Un seul import met à jour la production, le stock, le vieillissement, les goulots, les cadences et l’historique daté. En cas d’absence SFTP, ce Book devient automatiquement la référence la plus récente.</p><div><b>30 KPI contrôlés</b><small>12 production/stock · 9 encours · 9 cadences</small></div></div>
+    <div className="reliable-book-copy"><span>IMPORT OPÉRATIONNEL FIABILISÉ</span><h3>Ajouter un Book CRVO complet</h3><p>Un seul import met à jour la production, le stock, le vieillissement, les goulots, les cadences et l’historique daté. En cas d’absence FTP, ce Book devient automatiquement la référence la plus récente.</p><div><b>30 KPI contrôlés</b><small>12 production/stock · 9 encours · 9 cadences</small></div></div>
     <div className="reliable-book-actions"><label className={file?"selected":""}><input type="file" accept=".xlsx,.xls" onChange={(e)=>{setFile(e.target.files?.[0]??null);setStatus("");}}/><strong>{file?.name||"Choisir le Book CRVO"}</strong><small>XLSX/XLS · date détectée dans le nom du fichier</small></label><button disabled={!file||busy} onClick={()=>void upload()}>{busy?"Contrôle en cours…":"Importer et actualiser tous les KPI"}</button>{status&&<p>{status}</p>}</div>
   </section>,host);
 }
