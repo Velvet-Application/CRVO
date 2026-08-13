@@ -1,1 +1,1 @@
-Deploy latest CRVO live FTP UI after atelier, pilotage and bottleneck updates.
+Deploy latest CRVO live FTP UI after direction screen and atelier FTP timestamp updates.
