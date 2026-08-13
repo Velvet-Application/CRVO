@@ -35,6 +35,7 @@ type DashboardPayload = {
   snapshots?: Snapshot[];
   connected?: boolean;
   backend?: string;
+  liveFreshness?: { sourceModifiedAt?: string | null; factoryModifiedAt?: string | null; parkModifiedAt?: string | null } | null;
 };
 
 type SystemStatusPayload = {
@@ -124,8 +125,8 @@ export default function AtelierScreen() {
       setObjectives(objectivePayload.objectives ?? []);
       setExitTargets(objectivePayload.sortieDailyTargets ?? {});
       setConnected(Boolean(dashboard.connected));
-      setFtpLastRefreshAt(systemStatus?.ftpRefresh?.lastRefreshAt ?? null);
-      setFtpLastDepositAt(systemStatus?.ftpRefresh?.lastDepositAt ?? null);
+      setFtpLastRefreshAt(dashboard.liveFreshness?.factoryModifiedAt ?? dashboard.liveFreshness?.sourceModifiedAt ?? systemStatus?.ftpRefresh?.lastRefreshAt ?? null);
+      setFtpLastDepositAt(dashboard.liveFreshness?.parkModifiedAt ?? dashboard.liveFreshness?.sourceModifiedAt ?? systemStatus?.ftpRefresh?.lastDepositAt ?? null);
       setLastRefresh(clock());
       setError("");
     } catch (reason) {
@@ -186,7 +187,7 @@ export default function AtelierScreen() {
 
     <section className={styles.hero}>
       <div className={styles.heroCopy}>
-        <span>SORTIES USINE · RÉALISÉ À L’INSTANT T</span>
+        <span>SORTIES USINE · RÉALISÉ À {ftpClock(ftpLastRefreshAt)}</span>
         <div className={styles.heroNumbers}><strong>{snapshot.exits}</strong><b>/ {exitTarget}</b></div>
         <p>{remaining === 0 ? "Objectif du jour atteint" : `${remaining} véhicule${remaining > 1 ? "s" : ""} à sortir pour atteindre l’objectif`}</p>
         <div className={styles.heroTrack}><i style={{ width: `${Math.min(exitPercent, 100)}%` }}/><span style={{ left: `${Math.min(exitPercent, 100)}%` }}>{exitPercent}%</span></div>
@@ -213,7 +214,7 @@ export default function AtelierScreen() {
       <div><span>ENTRÉES</span><strong>{snapshot.entries}</strong></div>
       <div><span>STOCK USINE</span><strong>{snapshot.stock}</strong></div>
       <div><span>STOCK +20 J</span><strong>{snapshot.over20}</strong></div>
-      <div className={styles.sync}><i className={connected ? styles.syncOk : styles.syncFallback}/><span>{connected ? "FTP LIVE CONNECTÉ" : "DERNIÈRE DONNÉE DISPONIBLE"}</span><small>écran {lastRefresh || now} · FTP {ftpClock(ftpLastRefreshAt)} · dépôt {ftpClock(ftpLastDepositAt)}</small></div>
+      <div className={styles.sync}><i className={connected ? styles.syncOk : styles.syncFallback}/><span>{connected ? "FTP LIVE CONNECTÉ" : "DERNIÈRE DONNÉE DISPONIBLE"}</span><small>écran {lastRefresh || now} · production FTP {ftpClock(ftpLastRefreshAt)} · parc FTP {ftpClock(ftpLastDepositAt)}</small></div>
     </footer>
 
     {error && <div className={styles.error}>{error}</div>}
