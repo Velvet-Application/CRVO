@@ -3,9 +3,8 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 const FUNCTION_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co/functions/v1/kpi-operational-live";
-const PUBLIC_SUPABASE_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co";
-const PUBLIC_SUPABASE_KEY = "sb_publishable_bGCdOoq05alXNTOtouIQcQ_HX9jpKnv";
-const ANON_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJIUzI1NiIsInJlZiI6InR2bWtodmZtZHN0a3Vud3d1enV6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTU4NjQsImV4cCI6MjEwMjAzMTg2NH0.w18MDX_dL1YarUElTeo9ID0Egivav18tVqjjbkCaOxc";
+const FIFO_FUNCTION_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co/functions/v1/kpi-fifo-live";
+const ANON_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2bWtodmZtZHN0a3Vud3d1enV6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTU4NjQsImV4cCI6MjEwMjAzMTg2NH0.w18MDX_dL1YarUElTeo9ID0Egivav18tVqjjbkCaOxc";
 
 type Vehicle = {
   registration: string;
@@ -35,6 +34,7 @@ type FifoRow = {
   factory_age_days: number | string | null;
   fifo_age_days: number | string | null;
 };
+type FifoPayload = { ok: boolean; rows: number; queues: Record<string,{count:number;fifo:FifoRow[]}> };
 type OperationalPayload = {
   ok: boolean;
   snapshot: { date:string; label:string; source:string; exits:number; stock:number; production:Array<{name:string;value:number}> };
@@ -55,7 +55,6 @@ function actualFor(snapshot: OperationalPayload["snapshot"], key: string) {
 function num(value: unknown) { const n = Number(value); return Number.isFinite(n) ? n : null; }
 function vehicleFromFifo(row:FifoRow):Vehicle {
   const age = num(row.fifo_age_days) ?? num(row.factory_age_days) ?? num(row.status_age_days);
-  const factoryAge = num(row.factory_age_days);
   const alert = row.alert ? String(row.alert) : null;
   return {
     registration: String(row.registration ?? ""),
@@ -66,56 +65,34 @@ function vehicleFromFifo(row:FifoRow):Vehicle {
     primary_activity:alert ? `À faire : ${alert}` : row.status ? String(row.status) : null,
     alert,
     urgency:row.urgency ? String(row.urgency) : null,
-    factory_age_days:factoryAge,
+    factory_age_days:num(row.factory_age_days),
     age_days:age,
     remaining_minutes:null,
     estimated_total_minutes:null,
     potential_revenue_total:null,
   };
 }
-
-async function live() {
-  const response = await fetch(FUNCTION_URL, {
-    headers: { Authorization: `Bearer ${ANON_JWT}`, apikey: ANON_JWT, Accept: "application/json" },
-    cache: "no-store",
-  });
-  if (!response.ok) throw new Error(`Operational live ${response.status}`);
-  return response.json() as Promise<OperationalPayload>;
-}
-async function fifoLive() {
-  const response = await fetch(`${PUBLIC_SUPABASE_URL}/rest/v1/kpi_pilotage_fifo_public?select=sector_key,sector_label,registration,work_order,status,alert,urgency,status_age_days,factory_age_days,fifo_age_days&order=fifo_age_days.desc&limit=5000`, {
-    headers: { apikey:PUBLIC_SUPABASE_KEY, Accept:"application/json" },
-    cache:"no-store",
-  });
-  if (!response.ok) throw new Error(`FIFO live ${response.status}`);
-  return response.json() as Promise<FifoRow[]>;
+async function edge<T>(url:string):Promise<T>{
+  const response = await fetch(url,{headers:{Authorization:`Bearer ${ANON_JWT}`,apikey:ANON_JWT,Accept:"application/json"},cache:"no-store"});
+  if(!response.ok) throw new Error(`Edge ${response.status}`);
+  return response.json() as Promise<T>;
 }
 
 export async function GET() {
   try {
-    const data = await live();
-    let fifoRows:FifoRow[] = [];
-    try { fifoRows = await fifoLive(); }
-    catch (error) { console.error(JSON.stringify({ event:"pilotage_fifo_view_failed", message:error instanceof Error?error.message:"unknown" })); }
-
-    const fifoBySector = new Map<string,FifoRow[]>();
-    for (const row of fifoRows) {
-      const list = fifoBySector.get(row.sector_key) ?? [];
-      list.push(row);
-      fifoBySector.set(row.sector_key,list);
-    }
-
+    const [data,fifoData] = await Promise.all([
+      edge<OperationalPayload>(FUNCTION_URL),
+      edge<FifoPayload>(FIFO_FUNCTION_URL),
+    ]);
     const plans = Object.keys(labels).map((sectorKey) => {
       const label = labels[sectorKey];
       const actual = actualFor(data.snapshot, sectorKey);
       const target = targets[sectorKey];
       const gap = Math.max(target - actual, 0);
-      const viewRows = fifoBySector.get(sectorKey) ?? [];
+      const liveFifo = fifoData.queues?.[sectorKey];
       const edgeQueue = data.queues[sectorKey] ?? { fifo: [], run: [], count: 0 };
-      const fifoCandidates = viewRows.length
-        ? viewRows.slice(0,10).map(vehicleFromFifo)
-        : (edgeQueue.fifo ?? []);
-      const queueCount = viewRows.length || edgeQueue.count || fifoCandidates.length;
+      const fifoCandidates = liveFifo?.fifo?.length ? liveFifo.fifo.map(vehicleFromFifo) : (edgeQueue.fifo ?? []);
+      const queueCount = liveFifo?.count ?? edgeQueue.count ?? fifoCandidates.length;
       const runCandidates = edgeQueue.run ?? [];
       const timeReady = runCandidates.some((item) => item.remaining_minutes != null);
       const recommendation = fifoCandidates.slice(0, Math.max(gap, 0)).map((item, index) => ({
@@ -152,45 +129,15 @@ export async function GET() {
       ftpVehicleSnapshot: data.snapshot.date,
       ftpVehicleLoadedAt: data.freshness.vehicleStateLoadedAt,
       productionMode: "ftp",
-      sources: {
-        ftp: true,
-        sftp: false,
-        production: "ftp",
-        workloadFtp: fifoRows.length > 0 || data.operationalCount > 0,
-        workloadSql: false,
-        workloadTime: plans.some((item) => item.timeReady),
-        alertsFtp: data.alertCount > 0,
-        invoicesSql: false,
-        financeBook: false,
-      },
+      sources: { ftp:true,sftp:false,production:"ftp",workloadFtp:fifoData.rows>0,workloadSql:false,workloadTime:plans.some((item)=>item.timeReady),alertsFtp:data.alertCount>0,invoicesSql:false,financeBook:false },
       invoiceToday: { revenue:0, invoices:0, available:false, source:"none" },
       workloadSummary: { workOrders:data.operationalCount, remainingHours:0, potentialRevenue:0 },
       major,
       plans,
-      fifoRowsLoaded: fifoRows.length,
-      ftpRefresh: {
-        lastRefreshAt: data.freshness.refreshAt,
-        lastDepositAt: data.freshness.depositAt,
-        lastDepositFilename: data.freshness.depositFilename,
-      },
-      leadTime: lead ? {
-        available: true,
-        sourceModifiedAt: lead.source_modified_at ?? null,
-        vehicleCount: num(lead.vehicle_count) ?? 0,
-        avgFactoryDays: num(lead.avg_factory_days),
-        medianFactoryDays: num(lead.median_factory_days),
-        avgStorageDays: num(lead.avg_storage_days),
-        avgPartsDays: num(lead.avg_parts_days),
-        vopEffCount: num(lead.vop_eff_count) ?? 0,
-        vopExtCount: num(lead.vop_ext_count) ?? 0,
-        historyReady: true,
-        latestHistoryEventDate: data.snapshot.date,
-        latestHistoryEventTime: null,
-      } : null,
-      methodology: {
-        fifo: "FIFO par secteur issu d'EtatduParc. Les véhicules sont classés par ancienneté usine décroissante ; Alerte alimente le ou les secteurs restant à réaliser.",
-        run: "RUN reste en attente d'un temps fiable par dossier ; aucune durée n'est inventée.",
-      },
+      fifoRowsLoaded: fifoData.rows,
+      ftpRefresh: { lastRefreshAt:data.freshness.refreshAt,lastDepositAt:data.freshness.depositAt,lastDepositFilename:data.freshness.depositFilename },
+      leadTime: lead ? { available:true,sourceModifiedAt:lead.source_modified_at??null,vehicleCount:num(lead.vehicle_count)??0,avgFactoryDays:num(lead.avg_factory_days),medianFactoryDays:num(lead.median_factory_days),avgStorageDays:num(lead.avg_storage_days),avgPartsDays:num(lead.avg_parts_days),vopEffCount:num(lead.vop_eff_count)??0,vopExtCount:num(lead.vop_ext_count)??0,historyReady:true,latestHistoryEventDate:data.snapshot.date,latestHistoryEventTime:null } : null,
+      methodology: { fifo:"FIFO par secteur issu d'EtatduParc, trié sur l'ancienneté usine ; Alerte alimente chaque secteur restant à réaliser.",run:"RUN reste en attente d'un temps fiable par dossier ; aucune durée n'est inventée." },
     }, { headers: { "Cache-Control": "public, max-age=45, stale-while-revalidate=60" } });
   } catch (error) {
     console.error(JSON.stringify({ event:"pilotage_live_failed", message:error instanceof Error?error.message:"unknown" }));
