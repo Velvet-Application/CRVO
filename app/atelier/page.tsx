@@ -37,6 +37,14 @@ type DashboardPayload = {
   backend?: string;
 };
 
+type SystemStatusPayload = {
+  ftpRefresh?: {
+    lastRefreshAt?: string | null;
+    lastDepositAt?: string | null;
+    lastDepositFilename?: string | null;
+  } | null;
+};
+
 const fallbackTargets: Record<string, number> = {
   Expertise: 90,
   Mécanique: 85,
@@ -79,19 +87,32 @@ function clock() {
   return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Europe/Paris" }).format(new Date());
 }
 
+function ftpClock(value?: string | null) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Europe/Paris" }).format(parsed);
+}
+
 export default function AtelierScreen() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [objectives, setObjectives] = useState<Objective[]>([]);
   const [exitTargets, setExitTargets] = useState<Record<string, number>>({});
   const [connected, setConnected] = useState(false);
   const [lastRefresh, setLastRefresh] = useState("");
+  const [ftpLastRefreshAt, setFtpLastRefreshAt] = useState<string | null>(null);
+  const [ftpLastDepositAt, setFtpLastDepositAt] = useState<string | null>(null);
   const [now, setNow] = useState(clock());
   const [error, setError] = useState("");
 
   async function refresh() {
     try {
-      const dashboardResponse = await fetch(`/api/dashboard?history=1&_=${Date.now()}`, { cache: "no-store" });
+      const [dashboardResponse, systemResponse] = await Promise.all([
+        fetch(`/api/dashboard?history=1&_=${Date.now()}`, { cache: "no-store" }),
+        fetch(`/api/system-status?_=${Date.now()}`, { cache: "no-store" }),
+      ]);
       const dashboard = await dashboardResponse.json() as DashboardPayload;
+      const systemStatus = systemResponse.ok ? await systemResponse.json() as SystemStatusPayload : null;
       const rows = dashboard.snapshots ?? (dashboard.snapshot ? [dashboard.snapshot] : []);
       const latest = rows.at(-1) ?? dashboard.snapshot ?? null;
       if (!latest) throw new Error("Aucune donnée de production disponible.");
@@ -103,6 +124,8 @@ export default function AtelierScreen() {
       setObjectives(objectivePayload.objectives ?? []);
       setExitTargets(objectivePayload.sortieDailyTargets ?? {});
       setConnected(Boolean(dashboard.connected && objectivePayload.connected));
+      setFtpLastRefreshAt(systemStatus?.ftpRefresh?.lastRefreshAt ?? null);
+      setFtpLastDepositAt(systemStatus?.ftpRefresh?.lastDepositAt ?? null);
       setLastRefresh(clock());
       setError("");
     } catch (reason) {
@@ -190,7 +213,7 @@ export default function AtelierScreen() {
       <div><span>ENTRÉES</span><strong>{snapshot.entries}</strong></div>
       <div><span>STOCK USINE</span><strong>{snapshot.stock}</strong></div>
       <div><span>STOCK +20 J</span><strong>{snapshot.over20}</strong></div>
-      <div className={styles.sync}><i className={connected ? styles.syncOk : styles.syncFallback}/><span>{connected ? "SUPABASE CONNECTÉ" : "MODE SECOURS"}</span><small>rafraîchi {lastRefresh || now} · toutes les 20 s</small></div>
+      <div className={styles.sync}><i className={connected ? styles.syncOk : styles.syncFallback}/><span>{connected ? "FTP / SUPABASE CONNECTÉ" : "MODE SECOURS"}</span><small>écran {lastRefresh || now} · FTP {ftpClock(ftpLastRefreshAt)} · dépôt {ftpClock(ftpLastDepositAt)}</small></div>
     </footer>
 
     {error && <div className={styles.error}>{error}</div>}
