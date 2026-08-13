@@ -44,3 +44,48 @@ jobs:
         run: npx tsc --noEmit
       - name: Build, deploy and verify production
         run: npm run build
+      - name: Verify live bottlenecks and Pilotage FIFO
+        run: |
+          node <<'NODE'
+          const origin = "https://kpi-crvo.cyril-gay.workers.dev";
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          let last = null;
+          for (let attempt = 1; attempt <= 8; attempt += 1) {
+            try {
+              const stamp = Date.now();
+              const [bottleneckResponse, pilotageResponse] = await Promise.all([
+                fetch(`${origin}/api/bottlenecks?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+                fetch(`${origin}/api/pilotage?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+              ]);
+              const bottlenecks = await bottleneckResponse.json();
+              const pilotage = await pilotageResponse.json();
+              const liveSectors = Array.isArray(bottlenecks.sectors) ? bottlenecks.sectors.filter((sector) => Number(sector.actual) > 0) : [];
+              const fifoSectors = Array.isArray(pilotage.plans) ? pilotage.plans.filter((plan) => Array.isArray(plan.fifoCandidates) && plan.fifoCandidates.length > 0) : [];
+              last = {
+                bottlenecksStatus: bottleneckResponse.status,
+                latestDate: bottlenecks.latestDate,
+                sourceMode: bottlenecks.sourceMode,
+                liveSectors: liveSectors.length,
+                pilotageStatus: pilotageResponse.status,
+                fifoRowsLoaded: pilotage.fifoRowsLoaded,
+                fifoSectors: fifoSectors.length,
+              };
+              console.log(`live verification ${attempt}: ${JSON.stringify(last)}`);
+              if (
+                bottleneckResponse.ok &&
+                pilotageResponse.ok &&
+                bottlenecks.sourceMode === "ftp" &&
+                String(bottlenecks.latestDate || "") >= "2026-08-13" &&
+                liveSectors.length >= 5 &&
+                Number(pilotage.fifoRowsLoaded || 0) > 0 &&
+                fifoSectors.length > 0
+              ) process.exit(0);
+            } catch (error) {
+              last = { error: error instanceof Error ? error.message : String(error) };
+              console.log(`live verification ${attempt}: ${JSON.stringify(last)}`);
+            }
+            await sleep(5000);
+          }
+          console.error(`Production live verification failed: ${JSON.stringify(last)}`);
+          process.exit(1);
+          NODE
