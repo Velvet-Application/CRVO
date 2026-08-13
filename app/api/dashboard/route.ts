@@ -69,7 +69,7 @@ function mergedRows(liveRows: SnapshotRow[]) {
   const byDate = new Map<string, SnapshotRow>();
   verifiedRows.forEach((row) => byDate.set(row.snapshot_at, { ...row, metrics: { ...row.metrics } }));
 
-  const ordered = [...liveRows].sort((a,b) => a.snapshot_at.localeCompare(b.snapshot_at) || priority(a.source_name)-priority(b.source_name));
+  const ordered = [...liveRows].sort((a, b) => a.snapshot_at.localeCompare(b.snapshot_at) || priority(a.source_name) - priority(b.source_name));
   for (const row of ordered) {
     const current = byDate.get(row.snapshot_at);
     if (!current) {
@@ -91,7 +91,13 @@ function responseFor(rows: SnapshotRow[], wantsHistory: boolean, requestedDate: 
   const selected = requestedDate ? all.find((row) => row.snapshot_at === requestedDate) : all.at(-1);
   const source = selected ?? all.at(-1) ?? verifiedRows.at(-1)!;
   const snapshot = formatSnapshot(source);
-  return NextResponse.json({ connected, backend, sourceMode: sourceMode(source.source_name), latestSource: source.source_name, snapshot, snapshots: wantsHistory ? all.map(formatSnapshot) : undefined }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ connected, backend, sourceMode: sourceMode(source.source_name), latestSource: source.source_name, snapshot, snapshots: wantsHistory ? all.map(formatSnapshot) : undefined }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
+}
+
+async function readRows(baseUrl: string, secretKey: string, path: string) {
+  const response = await fetch(`${baseUrl}/rest/v1/${path}`, { headers: supabaseRestHeaders(secretKey, { Accept: "application/json" }), cache: "no-store" });
+  if (!response.ok) throw new Error(`Supabase ${response.status}`);
+  return response.json() as Promise<SnapshotRow[]>;
 }
 
 export async function GET(request: Request) {
@@ -105,11 +111,13 @@ export async function GET(request: Request) {
 
   try {
     const select = "select=snapshot_at,source_name,metrics";
-    const query = wantsHistory ? `${select}&order=snapshot_at.asc&limit=180` : requestedDate ? `${select}&snapshot_at=eq.${encodeURIComponent(requestedDate)}&limit=20` : `${select}&order=snapshot_at.desc&limit=180`;
-    const response = await fetch(`${supabaseUrl}/rest/v1/kpi_dashboard_snapshots?${query}`, { headers: supabaseRestHeaders(secretKey, { Accept: "application/json" }), cache: "no-store" });
-    if (!response.ok) throw new Error(`Supabase ${response.status}`);
-    const rows = await response.json() as SnapshotRow[];
-    return responseFor(rows, wantsHistory, requestedDate, true, "supabase+embedded-history");
+    const snapshotQuery = wantsHistory ? `${select}&order=snapshot_at.asc&limit=180` : requestedDate ? `${select}&snapshot_at=eq.${encodeURIComponent(requestedDate)}&limit=20` : `${select}&order=snapshot_at.desc&limit=180`;
+    const ftpQuery = requestedDate ? `${select}&snapshot_at=eq.${encodeURIComponent(requestedDate)}&limit=1` : `${select}&limit=1`;
+    const [rows, ftpRows] = await Promise.all([
+      readRows(supabaseUrl, secretKey, `kpi_dashboard_snapshots?${snapshotQuery}`),
+      readRows(supabaseUrl, secretKey, `kpi_ftp_live_dashboard?${ftpQuery}`).catch(() => []),
+    ]);
+    return responseFor([...rows, ...ftpRows], wantsHistory, requestedDate, true, "supabase+ftp-live+embedded-history");
   } catch (error) {
     console.error(JSON.stringify({ event: "dashboard_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
     return responseFor([], wantsHistory, requestedDate, false, "embedded-history");
