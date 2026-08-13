@@ -103,11 +103,14 @@ async function readRows(baseUrl: string, secretKey: string, path: string) {
   return response.json() as Promise<SnapshotRow[]>;
 }
 
-async function readPublicEdgeRows(wantsHistory: boolean, requestedDate: string | null) {
-  const params = new URLSearchParams();
-  if (wantsHistory) params.set("history", "1");
-  if (requestedDate) params.set("date", requestedDate);
-  const response = await fetch(`${PUBLIC_SUPABASE_URL}/functions/v1/kpi-public-dashboard?${params.toString()}`, {
+async function readPublicRows(wantsHistory: boolean, requestedDate: string | null) {
+  const select = "select=snapshot_at,source_name,metrics";
+  const query = wantsHistory
+    ? `${select}&order=snapshot_at.asc&limit=180`
+    : requestedDate
+      ? `${select}&snapshot_at=eq.${encodeURIComponent(requestedDate)}&limit=20`
+      : `${select}&order=snapshot_at.desc&limit=180`;
+  const response = await fetch(`${PUBLIC_SUPABASE_URL}/rest/v1/kpi_public_dashboard_snapshots?${query}`, {
     headers: {
       apikey: PUBLIC_SUPABASE_ANON_KEY,
       Authorization: `Bearer ${PUBLIC_SUPABASE_ANON_KEY}`,
@@ -115,7 +118,7 @@ async function readPublicEdgeRows(wantsHistory: boolean, requestedDate: string |
     },
     cache: "no-store",
   });
-  if (!response.ok) throw new Error(`Supabase edge ${response.status}`);
+  if (!response.ok) throw new Error(`Supabase public ${response.status}`);
   return response.json() as Promise<SnapshotRow[]>;
 }
 
@@ -128,10 +131,10 @@ export async function GET(request: Request) {
 
   if (!supabaseUrl || !secretKey) {
     try {
-      const rows = await readPublicEdgeRows(wantsHistory, requestedDate);
-      return responseFor(rows, wantsHistory, requestedDate, true, "supabase-edge-live+embedded-history");
+      const rows = await readPublicRows(wantsHistory, requestedDate);
+      return responseFor(rows, wantsHistory, requestedDate, true, "supabase-public-live+embedded-history");
     } catch (error) {
-      console.error(JSON.stringify({ event: "dashboard_edge_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
+      console.error(JSON.stringify({ event: "dashboard_public_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
       return responseFor([], wantsHistory, requestedDate, false, "embedded-history");
     }
   }
@@ -148,8 +151,8 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error(JSON.stringify({ event: "dashboard_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
     try {
-      const rows = await readPublicEdgeRows(wantsHistory, requestedDate);
-      return responseFor(rows, wantsHistory, requestedDate, true, "supabase-edge-live+embedded-history");
+      const rows = await readPublicRows(wantsHistory, requestedDate);
+      return responseFor(rows, wantsHistory, requestedDate, true, "supabase-public-live+embedded-history");
     } catch {
       return responseFor([], wantsHistory, requestedDate, false, "embedded-history");
     }
