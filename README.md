@@ -38,18 +38,24 @@ Serveur FTP (lecture seule, port 21)
         |
         v
 GitHub Action planifiée / bridge Node
+        |-- connexion FTP + téléchargement en mémoire
         |-- empreinte SHA-256 et anti-doublon
-        |-- archive originale privée Supabase Storage
-        `-- indicateurs normalisés dans PostgreSQL
-                    |
-                    v
-          API serveur Cloudflare
-                    |
-                    v
-       Dashboard + Sources + Studio + Paramètres
+        v
+Passerelle sécurisée Supabase Edge Function
+        |-- journal des synchronisations
+        |-- URL d'archive privée à durée limitée
+        |-- validation des mappings
+        v
+Supabase Storage + PostgreSQL
+        |
+        v
+API serveur Cloudflare
+        |
+        v
+Dashboard + Sources + Studio + Paramètres
 ```
 
-Le pont FTP est séparé du Worker public : aucun mot de passe FTP ni aucune clé Supabase privilégiée n'est envoyé au navigateur. Le répertoire distant `\` fourni par le serveur est normalisé en `/`, la racine FTP standard.
+Le pont FTP est séparé du Worker public : aucun mot de passe FTP ni aucune clé Supabase privilégiée n'est envoyé au navigateur. Le bridge GitHub ne possède plus de clé Supabase privilégiée : les opérations sensibles transitent par une Edge Function dédiée qui utilise la clé serveur uniquement dans l'environnement Supabase. Le répertoire distant `\` fourni par le serveur est normalisé en `/`, la racine FTP standard.
 
 ## Développement local
 
@@ -75,19 +81,20 @@ npx wrangler deploy --dry-run --config wrangler.jsonc
 Projet cible : `tvmkhvfmdstkunwwuzuz`.
 
 1. Appliquer [supabase/schema.sql](supabase/schema.sql) dans l'éditeur SQL du projet.
-2. Créer ou laisser le bridge créer le bucket privé `kpi-raw-archive` via l'API Storage.
-3. Définir dans Cloudflare :
+2. Conserver le bucket privé `kpi-raw-archive`.
+3. La fonction `kpi-ftp-bridge-gateway` assure les opérations privilégiées du bridge FTP.
+4. Définir dans Cloudflare :
    - `SUPABASE_URL=https://tvmkhvfmdstkunwwuzuz.supabase.co`
-   - `SUPABASE_SECRET_KEY` comme secret serveur.
-4. Ne jamais créer de variable publique contenant la secret key ou la legacy `service_role` key.
+   - `SUPABASE_SECRET_KEY` comme secret serveur pour les API du dashboard qui en ont besoin.
+5. Ne jamais créer de variable publique contenant la secret key ou la legacy `service_role` key.
 
-Toutes les tables exposées ont RLS activé. Les rôles `anon` et `authenticated` n'ont aucun accès direct aux tables KPI. Le Worker serveur et le bridge utilisent seuls une clé privilégiée.
+Toutes les tables exposées ont RLS activé. Les rôles `anon` et `authenticated` n'ont aucun accès direct aux tables KPI. Les clés privilégiées restent côté serveur.
 
 ## Passerelle FTP
 
 Le bridge se trouve dans `bridge/` et s'exécute automatiquement via `.github/workflows/kpi-sftp-sync.yml` les jours ouvrés. Le nom historique du fichier de workflow est conservé pour ne pas casser la planification existante ; le workflow lui-même s'appelle désormais `KPI CRVO - synchronisation FTP`.
 
-Secrets GitHub Actions cibles :
+Secrets GitHub Actions requis :
 
 - `FTP_HOST`
 - `FTP_PORT`
@@ -95,15 +102,15 @@ Secrets GitHub Actions cibles :
 - `FTP_PASSWORD`
 - `FTP_REMOTE_DIR`
 - `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SERVICE_KEY` ou `SUPABASE_SECRET_KEY` avec une **clé serveur privilégiée**
+
+Le bridge n'a besoin d'aucune clé `service_role` ou `secret` Supabase.
 
 Pour assurer la transition, le workflow accepte encore les anciens secrets `SFTP_HOST`, `SFTP_PORT`, `SFTP_USERNAME`, `SFTP_PASSWORD` et `SFTP_REMOTE_DIR` comme fallback. Les anciennes notions de clé privée SSH et d'empreinte SFTP ne sont plus utilisées.
 
 Variables GitHub Actions optionnelles :
 
 - `FTP_SECURE=false` pour le FTP classique ; passer à `true` si le serveur active l'Explicit FTPS ;
-- `FTP_FILE_PATTERN=\\.(csv|xls|xlsx)$` ;
-- `SUPABASE_ARCHIVE_BUCKET=kpi-raw-archive`.
+- `FTP_FILE_PATTERN=\\.(csv|xls|xlsx)$`.
 
 Le compte FTP est utilisé uniquement en lecture. Le pont liste et télécharge les fichiers correspondant au motif ; il n'appelle aucune opération d'écriture, de déplacement ou de suppression sur le serveur source.
 
@@ -115,7 +122,7 @@ Les règles sont stockées dans `kpi_field_mappings`. Pour une cellule Excel, `s
 Nom de la feuille!B12
 ```
 
-Le pont archive toujours le fichier avant de lancer les règles. Si aucune règle ne correspond, le fichier reste archivé avec le statut `archived` et peut être traité plus tard sans perdre l'original.
+Le pont archive toujours le fichier avant de lancer les règles. Les fichiers déjà vérifiés sont ignorés automatiquement grâce à leur empreinte SHA-256.
 
 ## Déploiement Cloudflare
 
