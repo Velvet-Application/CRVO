@@ -24,20 +24,25 @@ export default function PeriodDefaultPatch() {
 
         const maxDate = end.max || start.max || end.value || start.value;
         const monthStart = firstDayOfMonth(maxDate);
-        if (monthStart && start.min !== monthStart) start.min = monthStart;
+        if (!monthStart || !maxDate) return;
 
-        if (container.dataset.monthDefaultApplied === "1") return;
-        if (!monthStart) return;
-        container.dataset.monthDefaultApplied = "1";
+        start.min = monthStart;
+
+        // Le dashboard démarre avec une valeur de secours puis reçoit la date live en asynchrone.
+        // On réapplique donc le défaut uniquement lorsque le max disponible change (ex. 07 -> 13),
+        // sans écraser ensuite un filtre modifié manuellement par l'utilisateur.
+        if (container.dataset.monthDefaultFor === maxDate) return;
+        container.dataset.monthDefaultFor = maxDate;
         setReactInputValue(start, monthStart);
-        if (maxDate) setReactInputValue(end, maxDate);
+        setReactInputValue(end, maxDate);
       });
     };
 
     apply();
     const observer = new MutationObserver(apply);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["min", "max"] });
-    return () => observer.disconnect();
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["min", "max", "value"] });
+    const timer = window.setInterval(apply, 1000);
+    return () => { observer.disconnect(); window.clearInterval(timer); };
   }, []);
 
   return null;
