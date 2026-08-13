@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import ClientNavLink from "./client-nav-link";
 
 export default function PilotageNav() {
   useEffect(() => {
@@ -22,7 +23,7 @@ export default function PilotageNav() {
     return () => observer.disconnect();
   }, []);
 
-  return <style>{`
+  return <><ClientNavLink/><style>{`
     .sidebar nav .pilotage-nav-link{
       min-height:50px;
       padding:0 13px;
@@ -69,5 +70,5 @@ export default function PilotageNav() {
       background:#85ddff;
       opacity:.9;
     }
-  `}</style>;
+  `}</style></>;
 }
