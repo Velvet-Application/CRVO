@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { Writable } from "node:stream";
 import { Client as FtpClient } from "basic-ftp";
 import * as XLSX from "@e965/xlsx";
+import { computeSectorBacklog, parseEtatduParcVehicleState } from "./ftp-vehicle-state.mjs";
 
 const password = process.env.FTP_PASSWORD ?? process.env.SFTP_PASSWORD;
 const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "");
@@ -133,6 +134,17 @@ try {
       await post(spec.action, { sha256: fileSha, rows: chunk, reset: spec.action === "lead-time" && offset === 0, complete: offset + spec.chunkSize >= parsed.length, totalRows: parsed.length });
     }
     log("operational_source_loaded", { filename: spec.filename, rows: parsed.length, sourceModifiedAt });
+  }
+
+  const parkFile = byName.get("EtatduParc.csv");
+  if (parkFile) {
+    const buffer = await download(ftp, connection.remoteDir, "EtatduParc.csv");
+    const sourceModifiedAt = (parkFile.modifiedAt instanceof Date ? parkFile.modifiedAt : new Date()).toISOString();
+    const snapshotAt = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const vehicleRows = parseEtatduParcVehicleState(buffer, { snapshotAt, sourceModifiedAt });
+    const sectorRows = computeSectorBacklog(vehicleRows);
+    const result = await post("bottleneck-live-update", { source_modified_at: sourceModifiedAt, rows: sectorRows });
+    log("bottleneck_live_loaded", { snapshotAt, sourceModifiedAt, updated: result.updated, counts: Object.fromEntries(sectorRows.map((row) => [row.sector_key, row.vehicle_count])) });
   }
 } finally {
   ftp.close();
