@@ -11,7 +11,6 @@ import "./sector-colors.css";
 import "./finance-source-portal.css";
 import "./finance-trend-panel.css";
 import "./sql-source-portal.css";
-import "./data-freshness-guard.css";
 import UploadArchiveGuard from "./upload-archive-guard";
 import ObjectivesDailyPatch from "./objectives-daily-patch";
 import FinanceSourcePortal from "./finance-source-portal";
@@ -20,7 +19,6 @@ import PilotageNav from "./pilotage-nav";
 import SqlSourcePortal from "./sql-source-portal";
 import FtpTerminologyPatch from "./ftp-terminology-patch";
 import PeriodDefaultPatch from "./period-default-patch";
-import DataFreshnessGuard from "./data-freshness-guard";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -39,9 +37,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <PilotageNav />
     <FtpTerminologyPatch />
     <PeriodDefaultPatch />
-    <DataFreshnessGuard />
     {children}
-    <script src="/live-dashboard-bootstrap.js"></script>
     <a className="global-book-launch" href="/book">BOOK D&apos;ANIMATION PDF</a>
     <style>{`
       .global-book-launch {
