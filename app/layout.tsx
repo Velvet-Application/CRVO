@@ -11,6 +11,7 @@ import "./sector-colors.css";
 import "./finance-source-portal.css";
 import "./finance-trend-panel.css";
 import "./sql-source-portal.css";
+import "./bottleneck-live-panel.css";
 import UploadArchiveGuard from "./upload-archive-guard";
 import ObjectivesDailyPatch from "./objectives-daily-patch";
 import FinanceSourcePortal from "./finance-source-portal";
@@ -19,6 +20,7 @@ import PilotageNav from "./pilotage-nav";
 import SqlSourcePortal from "./sql-source-portal";
 import FtpTerminologyPatch from "./ftp-terminology-patch";
 import PeriodDefaultPatch from "./period-default-patch";
+import BottleneckLivePanel from "./bottleneck-live-panel";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -37,6 +39,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <PilotageNav />
     <FtpTerminologyPatch />
     <PeriodDefaultPatch />
+    <BottleneckLivePanel />
     {children}
     <a className="global-book-launch" href="/book">BOOK D&apos;ANIMATION PDF</a>
     <style>{`
