@@ -89,3 +89,20 @@ jobs:
           console.error(`Production live verification failed: ${JSON.stringify(last)}`);
           process.exit(1);
           NODE
+      - name: Verify client park dashboard
+        run: |
+          node <<'NODE'
+          const origin = "https://kpi-crvo.cyril-gay.workers.dev";
+          const listResponse = await fetch(`${origin}/api/clients?_=${Date.now()}`, { headers: { "Cache-Control": "no-cache" } });
+          const list = await listResponse.json();
+          const first = Array.isArray(list.clients) ? list.clients[0] : null;
+          console.log(`clients status=${listResponse.status} clients=${list.totalClients} vehicles=${list.totalVehicles} first=${first?.client || "none"}`);
+          if (!listResponse.ok || !first?.client || Number(list.totalVehicles || 0) <= 0) process.exit(1);
+          const detailResponse = await fetch(`${origin}/api/clients?client=${encodeURIComponent(first.client)}&_=${Date.now()}`, { headers: { "Cache-Control": "no-cache" } });
+          const detail = await detailResponse.json();
+          console.log(`client detail status=${detailResponse.status} client=${detail.client} vehicles=${detail.vehicles?.length || 0}`);
+          if (!detailResponse.ok || !Array.isArray(detail.vehicles) || detail.vehicles.length <= 0) process.exit(2);
+          const pageResponse = await fetch(`${origin}/clients?_=${Date.now()}`, { headers: { "Cache-Control": "no-cache" } });
+          console.log(`client page status=${pageResponse.status}`);
+          if (!pageResponse.ok) process.exit(3);
+          NODE
