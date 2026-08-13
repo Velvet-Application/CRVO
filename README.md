@@ -8,7 +8,7 @@ Dashboard décisionnel CRVO connecté à des instantanés de données historisé
 - importer un historique CSV, XLS ou XLSX ;
 - transformer les champs sources en mesures métier modifiables ;
 - créer des visuels depuis le Studio ;
-- synchroniser un serveur SFTP en lecture seule.
+- synchroniser un serveur FTP en lecture seule.
 
 ## Donnée affichée aujourd'hui
 
@@ -34,7 +34,7 @@ L'API `/api/dashboard` utilise automatiquement la dernière ligne Supabase dès 
 ## Architecture
 
 ```text
-Serveur SFTP (lecture seule)
+Serveur FTP (lecture seule, port 21)
         |
         v
 GitHub Action planifiée / bridge Node
@@ -49,7 +49,7 @@ GitHub Action planifiée / bridge Node
        Dashboard + Sources + Studio + Paramètres
 ```
 
-Le pont SFTP est séparé du Worker public : aucun mot de passe, aucune clé privée et aucune clé Supabase privilégiée n'est envoyée au navigateur.
+Le pont FTP est séparé du Worker public : aucun mot de passe FTP ni aucune clé Supabase privilégiée n'est envoyé au navigateur. Le répertoire distant `\` fourni par le serveur est normalisé en `/`, la racine FTP standard.
 
 ## Développement local
 
@@ -81,31 +81,31 @@ Projet cible : `tvmkhvfmdstkunwwuzuz`.
    - `SUPABASE_SECRET_KEY` comme secret serveur.
 4. Ne jamais créer de variable publique contenant la secret key ou la legacy `service_role` key.
 
-Toutes les tables exposées ont RLS activé. Les rôles `anon` et `authenticated` n'ont aucun accès direct aux tables KPI. Le Worker serveur et le bridge utilisent seuls la clé privilégiée.
+Toutes les tables exposées ont RLS activé. Les rôles `anon` et `authenticated` n'ont aucun accès direct aux tables KPI. Le Worker serveur et le bridge utilisent seuls une clé privilégiée.
 
-## Passerelle SFTP
+## Passerelle FTP
 
-Le bridge se trouve dans `bridge/` et s'exécute automatiquement via `.github/workflows/kpi-sftp-sync.yml` les jours ouvrés.
+Le bridge se trouve dans `bridge/` et s'exécute automatiquement via `.github/workflows/kpi-sftp-sync.yml` les jours ouvrés. Le nom historique du fichier de workflow est conservé pour ne pas casser la planification existante ; le workflow lui-même s'appelle désormais `KPI CRVO - synchronisation FTP`.
 
-Secrets GitHub Actions requis :
+Secrets GitHub Actions cibles :
 
-- `SFTP_HOST`
-- `SFTP_PORT`
-- `SFTP_USERNAME`
-- `SFTP_PASSWORD` ou `SFTP_PRIVATE_KEY`
-- `SFTP_PRIVATE_KEY_PASSPHRASE` si nécessaire
-- `SFTP_HOST_FINGERPRINT_SHA256`
-- `SFTP_REMOTE_DIR`
+- `FTP_HOST`
+- `FTP_PORT`
+- `FTP_USERNAME`
+- `FTP_PASSWORD`
+- `FTP_REMOTE_DIR`
 - `SUPABASE_URL`
-- `SUPABASE_SECRET_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SERVICE_KEY` ou `SUPABASE_SECRET_KEY` avec une **clé serveur privilégiée**
 
-Variables GitHub Actions :
+Pour assurer la transition, le workflow accepte encore les anciens secrets `SFTP_HOST`, `SFTP_PORT`, `SFTP_USERNAME`, `SFTP_PASSWORD` et `SFTP_REMOTE_DIR` comme fallback. Les anciennes notions de clé privée SSH et d'empreinte SFTP ne sont plus utilisées.
 
-- `KPI_SOURCE_ID=dfbb57cc-8771-4e53-b52b-38defa389b64`
-- `SUPABASE_ARCHIVE_BUCKET=kpi-raw-archive`
-- `SFTP_FILE_PATTERN=\\.(csv|xls|xlsx)$`
+Variables GitHub Actions optionnelles :
 
-Le compte SFTP doit être limité à la lecture du répertoire d'exports. Le pont n'appelle aucune opération d'écriture, de déplacement ou de suppression sur le serveur source.
+- `FTP_SECURE=false` pour le FTP classique ; passer à `true` si le serveur active l'Explicit FTPS ;
+- `FTP_FILE_PATTERN=\\.(csv|xls|xlsx)$` ;
+- `SUPABASE_ARCHIVE_BUCKET=kpi-raw-archive`.
+
+Le compte FTP est utilisé uniquement en lecture. Le pont liste et télécharge les fichiers correspondant au motif ; il n'appelle aucune opération d'écriture, de déplacement ou de suppression sur le serveur source.
 
 ## Règles de mapping
 
