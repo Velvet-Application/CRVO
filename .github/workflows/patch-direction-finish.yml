@@ -1,0 +1,54 @@
+name: Finalize direction screen
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/patch-direction-finish.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch atelier FTP time and direction chrome
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('app/atelier/page.tsx')
+          s = p.read_text()
+          s = s.replace(
+            '  backend?: string;\n};',
+            '  backend?: string;\n  liveFreshness?: { sourceModifiedAt?: string | null; factoryModifiedAt?: string | null; parkModifiedAt?: string | null } | null;\n};'
+          )
+          s = s.replace(
+            'setFtpLastRefreshAt(systemStatus?.ftpRefresh?.lastRefreshAt ?? null);',
+            'setFtpLastRefreshAt(dashboard.liveFreshness?.factoryModifiedAt ?? dashboard.liveFreshness?.sourceModifiedAt ?? systemStatus?.ftpRefresh?.lastRefreshAt ?? null);'
+          )
+          s = s.replace(
+            'setFtpLastDepositAt(systemStatus?.ftpRefresh?.lastDepositAt ?? null);',
+            'setFtpLastDepositAt(dashboard.liveFreshness?.parkModifiedAt ?? dashboard.liveFreshness?.sourceModifiedAt ?? systemStatus?.ftpRefresh?.lastDepositAt ?? null);'
+          )
+          s = s.replace('SORTIES USINE · RÉALISÉ À L’INSTANT T', 'SORTIES USINE · RÉALISÉ À {ftpClock(ftpLastRefreshAt)}')
+          s = s.replace('· FTP {ftpClock(ftpLastRefreshAt)} · dépôt {ftpClock(ftpLastDepositAt)}', '· production FTP {ftpClock(ftpLastRefreshAt)} · parc FTP {ftpClock(ftpLastDepositAt)}')
+          p.write_text(s)
+
+          css = Path('app/direction/direction.module.css')
+          c = css.read_text()
+          marker = ':global(.global-book-launch){display:none!important}'
+          if marker not in c:
+            c += '\n' + marker + '\n'
+          css.write_text(c)
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/atelier/page.tsx app/direction/direction.module.css
+          git diff --cached --quiet && exit 0
+          git commit -m "Finalize direction screen and FTP timestamps"
+          git push
