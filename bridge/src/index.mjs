@@ -128,15 +128,67 @@ function extractMetrics(buffer, filename, mappings) {
   });
 }
 
-function inspectCsvSchema(buffer) {
+function csvWorkbook(buffer) {
   const workbook = XLSX.read(buffer, { type: "buffer", raw: true, dense: false });
   const sheetName = workbook.SheetNames[0];
   const sheet = sheetName ? workbook.Sheets[sheetName] : undefined;
+  return { workbook, sheet };
+}
+
+function inspectCsvSchema(buffer) {
+  const { sheet } = csvWorkbook(buffer);
   if (!sheet) return { headers: [], rowCount: 0 };
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, blankrows: false });
   const first = Array.isArray(rows[0]) ? rows[0] : [];
   const headers = first.map((value) => String(value ?? "").trim()).filter(Boolean).slice(0, 120);
   return { headers, rowCount: Math.max(0, rows.length - 1) };
+}
+
+function csvObjects(buffer) {
+  const { sheet } = csvWorkbook(buffer);
+  if (!sheet) return [];
+  return XLSX.utils.sheet_to_json(sheet, { raw: false, defval: "", blankrows: false });
+}
+
+function topCounts(rows, key, limit = 25) {
+  const counts = new Map();
+  for (const row of rows) {
+    const value = String(row[key] ?? "").trim();
+    if (!value) continue;
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([value, count]) => ({ value, count }));
+}
+
+function businessDiagnostics(buffer, filename) {
+  const rows = csvObjects(buffer);
+  if (!rows.length) return null;
+
+  if (/^Factory-j\+1\.csv$/i.test(filename)) {
+    const safeFields = ["CAL_DATE", "RDT_LIBELLE", "En attente de transport", "Réceptionnés", "Expertises Dynamiques", "Lavages", "Expertises", "Mecaniques", "Carrosseries", "Fixline 1", "Fixline 2", "Fixline 3", "DSP", "Préparations", "Photos", "Qualités", "Jantes", "Restor-FX", "CT", "Disponibles"];
+    return { type: "factory_today", rows: rows.slice(0, 50).map((row) => Object.fromEntries(safeFields.map((field) => [field, row[field] ?? ""]))) };
+  }
+
+  if (/^EtatduParc\.csv$/i.test(filename)) {
+    const flags = ["Mécanique", "Carrosserie", "CT", "DSP", "Jantes", "Pièce disponible", "Pièce commandée (Durée Jours Ou"];
+    return {
+      type: "park_live",
+      statusCounts: topCounts(rows, "Dernier statut"),
+      alertCounts: topCounts(rows, "Alerte"),
+      urgencyCounts: topCounts(rows, "Urgence"),
+      flagCounts: Object.fromEntries(flags.map((field) => [field, rows.filter((row) => String(row[field] ?? "").trim() !== "").length])),
+    };
+  }
+
+  if (/^LeadTimeFactoryBI\.csv$/i.test(filename)) {
+    return { type: "lead_time", fluxCounts: topCounts(rows, "Flux"), stateCounts: topCounts(rows, "Etat actuel") };
+  }
+
+  if (/^Analyse-Temps-Bruts\.csv$/i.test(filename)) {
+    return { type: "status_history", fluxCounts: topCounts(rows, "Flux"), statusCounts: topCounts(rows, "Statut", 40) };
+  }
+
+  return null;
 }
 
 function snapshotDate(file) {
@@ -211,7 +263,11 @@ async function run() {
       const file = { name: remoteFile.name, size: remoteFile.size || buffer.length, modifyTime: modifiedTimestamp(remoteFile), remotePath };
       const date = snapshotDate(file);
       const csvSchema = /\.csv$/i.test(remoteFile.name) ? inspectCsvSchema(buffer) : null;
-      if (csvSchema) log("csv_schema_detected", { filename: remoteFile.name, rowCount: csvSchema.rowCount, headers: csvSchema.headers });
+      if (csvSchema) {
+        log("csv_schema_detected", { filename: remoteFile.name, rowCount: csvSchema.rowCount, headers: csvSchema.headers });
+        const diagnostics = businessDiagnostics(buffer, remoteFile.name);
+        if (diagnostics) log("csv_business_diagnostics", { filename: remoteFile.name, diagnostics });
+      }
 
       const prepared = await prepareImport(file, buffer, fileHash, date);
       if (prepared.duplicate) {
