@@ -17,6 +17,7 @@ const verifiedRows: SnapshotRow[] = [
   { snapshot_at: "2026-08-07", source_name: "Book CRVO Lens - Journée du 07.08.2026.xlsx", metrics: { entries_vop: 78, exits_vop: 86, factory_stock: 1097, stock_over_15d: 494, stock_over_20d: 399, production_expertise: 80, production_mechanics: 96, production_dsp: 24, production_bodywork: 11, production_preparation: 89, production_quality: 88, production_factory_exit: 86 } },
   { snapshot_at: "2026-08-10", source_name: "Book CRVO Lens - Journée du 10.08.2026.xlsx", metrics: { entries_vop: 62, exits_vop: 92, factory_stock: 1092, stock_over_15d: 467, stock_over_20d: 391, production_expertise: 76, production_mechanics: 77, production_dsp: 28, production_bodywork: 5, production_preparation: 87, production_quality: 93, production_factory_exit: 92 } },
   { snapshot_at: "2026-08-11", source_name: "Book CRVO Lens - Journée du 11.08.2026.xlsx", metrics: { entries_vop: 42, exits_vop: 108, factory_stock: 1069, stock_over_15d: 470, stock_over_20d: 379, production_expertise: 68, production_mechanics: 82, production_dsp: 31, production_bodywork: 14, production_preparation: 87, production_quality: 91, production_factory_exit: 108 } },
+  { snapshot_at: "2026-08-12", source_name: "Book CRVO Lens - Journée du 12.08.2026.xlsx", metrics: { entries_vop: 8, exits_vop: 94, factory_stock: 1064, stock_over_15d: 477, stock_over_20d: 382, production_expertise: 65, production_mechanics: 75, production_dsp: 27, production_bodywork: 10, production_preparation: 83, production_quality: 87, production_factory_exit: 94 } },
 ];
 
 function numberValue(metrics: SnapshotRow["metrics"], key: string, fallback: number) {
@@ -58,12 +59,7 @@ function responseFor(rows: SnapshotRow[], wantsHistory: boolean, requestedDate: 
   const all = mergedRows(rows);
   const selected = requestedDate ? all.find((row) => row.snapshot_at === requestedDate) : all.at(-1);
   const snapshot = formatSnapshot(selected ?? all.at(-1) ?? verifiedRows.at(-1)!);
-  return NextResponse.json({
-    connected,
-    backend,
-    snapshot,
-    snapshots: wantsHistory ? all.map(formatSnapshot) : undefined,
-  });
+  return NextResponse.json({ connected, backend, snapshot, snapshots: wantsHistory ? all.map(formatSnapshot) : undefined });
 }
 
 export async function GET(request: Request) {
@@ -73,22 +69,12 @@ export async function GET(request: Request) {
   const wantsHistory = url.searchParams.get("history") === "1";
   const requestedDate = url.searchParams.get("date")?.match(/^\d{4}-\d{2}-\d{2}$/)?.[0] ?? null;
 
-  if (!supabaseUrl || !secretKey) {
-    return responseFor([], wantsHistory, requestedDate, false, "embedded-history");
-  }
+  if (!supabaseUrl || !secretKey) return responseFor([], wantsHistory, requestedDate, false, "embedded-history");
 
   try {
     const select = "select=snapshot_at,source_name,metrics";
-    const query = wantsHistory
-      ? `${select}&order=snapshot_at.asc&limit=120`
-      : requestedDate
-        ? `${select}&snapshot_at=eq.${encodeURIComponent(requestedDate)}&limit=1`
-        : `${select}&order=snapshot_at.desc&limit=120`;
-
-    const response = await fetch(`${supabaseUrl}/rest/v1/kpi_dashboard_snapshots?${query}`, {
-      headers: supabaseRestHeaders(secretKey, { Accept: "application/json" }),
-      cache: "no-store",
-    });
+    const query = wantsHistory ? `${select}&order=snapshot_at.asc&limit=120` : requestedDate ? `${select}&snapshot_at=eq.${encodeURIComponent(requestedDate)}&limit=1` : `${select}&order=snapshot_at.desc&limit=120`;
+    const response = await fetch(`${supabaseUrl}/rest/v1/kpi_dashboard_snapshots?${query}`, { headers: supabaseRestHeaders(secretKey, { Accept: "application/json" }), cache: "no-store" });
     if (!response.ok) throw new Error(`Supabase ${response.status}`);
     const rows = await response.json() as SnapshotRow[];
     return responseFor(rows, wantsHistory, requestedDate, true, "supabase+embedded-history");
