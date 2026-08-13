@@ -123,7 +123,7 @@ export default function AtelierScreen() {
       setSnapshot(latest);
       setObjectives(objectivePayload.objectives ?? []);
       setExitTargets(objectivePayload.sortieDailyTargets ?? {});
-      setConnected(Boolean(dashboard.connected && objectivePayload.connected));
+      setConnected(Boolean(dashboard.connected));
       setFtpLastRefreshAt(systemStatus?.ftpRefresh?.lastRefreshAt ?? null);
       setFtpLastDepositAt(systemStatus?.ftpRefresh?.lastDepositAt ?? null);
       setLastRefresh(clock());
@@ -136,7 +136,7 @@ export default function AtelierScreen() {
 
   useEffect(() => {
     void refresh();
-    const refreshTimer = window.setInterval(() => void refresh(), 20000);
+    const refreshTimer = window.setInterval(() => void refresh(), 60000);
     const clockTimer = window.setInterval(() => setNow(clock()), 1000);
     return () => { window.clearInterval(refreshTimer); window.clearInterval(clockTimer); };
   }, []);
@@ -213,7 +213,7 @@ export default function AtelierScreen() {
       <div><span>ENTRÉES</span><strong>{snapshot.entries}</strong></div>
       <div><span>STOCK USINE</span><strong>{snapshot.stock}</strong></div>
       <div><span>STOCK +20 J</span><strong>{snapshot.over20}</strong></div>
-      <div className={styles.sync}><i className={connected ? styles.syncOk : styles.syncFallback}/><span>{connected ? "FTP / SUPABASE CONNECTÉ" : "MODE SECOURS"}</span><small>écran {lastRefresh || now} · FTP {ftpClock(ftpLastRefreshAt)} · dépôt {ftpClock(ftpLastDepositAt)}</small></div>
+      <div className={styles.sync}><i className={connected ? styles.syncOk : styles.syncFallback}/><span>{connected ? "FTP LIVE CONNECTÉ" : "DERNIÈRE DONNÉE DISPONIBLE"}</span><small>écran {lastRefresh || now} · FTP {ftpClock(ftpLastRefreshAt)} · dépôt {ftpClock(ftpLastDepositAt)}</small></div>
     </footer>
 
     {error && <div className={styles.error}>{error}</div>}
