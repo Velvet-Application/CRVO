@@ -44,6 +44,7 @@ jobs:
           FTP_SECURE: ${{ vars.FTP_SECURE || 'false' }}
           FTP_FILE_PATTERN: ${{ vars.FTP_FILE_PATTERN || '\\.(csv|xls|xlsx)$' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          # Le bridge nécessite une clé serveur (secret/service_role), jamais une clé publishable/anon.
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY || secrets.SUPABASE_SECRET_KEY }}
           SUPABASE_ARCHIVE_BUCKET: kpi-raw-archive
           KPI_SOURCE_ID: dfbb57cc-8771-4e53-b52b-38defa389b64
