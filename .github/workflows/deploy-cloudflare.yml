@@ -48,3 +48,41 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN" || (echo "CLOUDFLARE_API_TOKEN / CF_API_TOKEN absent" && exit 1)
       - name: Deploy production Worker
         run: npx wrangler deploy --config wrangler.jsonc
+      - name: Verify live FTP dashboard
+        run: |
+          node <<'NODE'
+          const base = "https://kpi-crvo.cyril-gay.workers.dev/api/dashboard?history=1";
+          let last = null;
+          for (let attempt = 1; attempt <= 8; attempt += 1) {
+            try {
+              const response = await fetch(`${base}&_=${Date.now()}`, {
+                headers: { "Cache-Control": "no-cache" },
+              });
+              const payload = await response.json();
+              last = {
+                status: response.status,
+                connected: payload.connected,
+                backend: payload.backend,
+                latestSource: payload.latestSource,
+                date: payload.snapshot?.date,
+                sourceMode: payload.sourceMode,
+              };
+              console.log(`attempt ${attempt}: ${JSON.stringify(last)}`);
+              if (
+                response.ok &&
+                payload.connected === true &&
+                payload.sourceMode === "ftp" &&
+                String(payload.latestSource || "").toLowerCase().includes("ftp") &&
+                String(payload.snapshot?.date || "") >= "2026-08-13"
+              ) {
+                process.exit(0);
+              }
+            } catch (error) {
+              last = { error: error instanceof Error ? error.message : String(error) };
+              console.log(`attempt ${attempt}: ${JSON.stringify(last)}`);
+            }
+            await new Promise((resolve) => setTimeout(resolve, 5000));
+          }
+          console.error(`Live dashboard verification failed: ${JSON.stringify(last)}`);
+          process.exit(1);
+          NODE
