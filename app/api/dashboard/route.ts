@@ -22,7 +22,7 @@ const verifiedRows: SnapshotRow[] = [
 
 function priority(source: string) {
   const value = source.toLowerCase();
-  if (value.includes("sftp")) return 30;
+  if (value.includes("ftp") || value.includes("sftp")) return 30;
   if (value.includes("manuel") || value.includes("book")) return 20;
   if (value.includes("seed") || value.includes("classeur")) return 10;
   return 0;
@@ -30,7 +30,7 @@ function priority(source: string) {
 
 function sourceMode(source: string) {
   const value = source.toLowerCase();
-  if (value.includes("sftp")) return "sftp";
+  if (value.includes("ftp") || value.includes("sftp")) return "ftp";
   if (value.includes("manuel") || value.includes("book")) return "book";
   return "embedded";
 }
@@ -91,14 +91,7 @@ function responseFor(rows: SnapshotRow[], wantsHistory: boolean, requestedDate: 
   const selected = requestedDate ? all.find((row) => row.snapshot_at === requestedDate) : all.at(-1);
   const source = selected ?? all.at(-1) ?? verifiedRows.at(-1)!;
   const snapshot = formatSnapshot(source);
-  return NextResponse.json({
-    connected,
-    backend,
-    sourceMode: sourceMode(source.source_name),
-    latestSource: source.source_name,
-    snapshot,
-    snapshots: wantsHistory ? all.map(formatSnapshot) : undefined,
-  }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ connected, backend, sourceMode: sourceMode(source.source_name), latestSource: source.source_name, snapshot, snapshots: wantsHistory ? all.map(formatSnapshot) : undefined }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function GET(request: Request) {
@@ -113,9 +106,7 @@ export async function GET(request: Request) {
   try {
     const select = "select=snapshot_at,source_name,metrics";
     const query = wantsHistory ? `${select}&order=snapshot_at.asc&limit=180` : requestedDate ? `${select}&snapshot_at=eq.${encodeURIComponent(requestedDate)}&limit=20` : `${select}&order=snapshot_at.desc&limit=180`;
-    const response = await fetch(`${supabaseUrl}/rest/v1/kpi_dashboard_snapshots?${query}`, {
-      headers: supabaseRestHeaders(secretKey, { Accept: "application/json" }), cache: "no-store",
-    });
+    const response = await fetch(`${supabaseUrl}/rest/v1/kpi_dashboard_snapshots?${query}`, { headers: supabaseRestHeaders(secretKey, { Accept: "application/json" }), cache: "no-store" });
     if (!response.ok) throw new Error(`Supabase ${response.status}`);
     const rows = await response.json() as SnapshotRow[];
     return responseFor(rows, wantsHistory, requestedDate, true, "supabase+embedded-history");
