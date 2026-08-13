@@ -41,6 +41,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <PeriodDefaultPatch />
     <DataFreshnessGuard />
     {children}
+    <script src="/live-dashboard-bootstrap.js"></script>
     <a className="global-book-launch" href="/book">BOOK D&apos;ANIMATION PDF</a>
     <style>{`
       .global-book-launch {
