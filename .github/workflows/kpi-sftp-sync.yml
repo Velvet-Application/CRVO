@@ -9,9 +9,10 @@ on:
       - "bridge/**"
       - ".github/workflows/kpi-sftp-sync.yml"
   schedule:
-    # Plusieurs passages le matin : un fichier déposé après le premier contrôle
-    # est repris automatiquement au passage suivant. Les doublons sont ignorés par SHA-256.
-    - cron: "30 3,5,7,9 * * 1-5"
+    # Les dépôts opérationnels observés arrivent majoritairement autour de H:00 à H:04.
+    # Contrôle à H:05 puis toutes les 15 min sur la plage opérationnelle (cron en UTC).
+    # Les doublons sont ignorés par SHA-256 : aucun retraitement si le fichier n'a pas changé.
+    - cron: "5,20,35,50 3-21 * * *"
 
 permissions:
   contents: read
