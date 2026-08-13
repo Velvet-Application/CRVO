@@ -2,8 +2,8 @@
 
 import { useEffect } from "react";
 
-function replaceLegacySftpLabels(root: ParentNode) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+function replaceLegacySftpLabels(root: unknown) {
+  const walker = document.createTreeWalker(root as unknown as Node, NodeFilter.SHOW_TEXT);
   const nodes: Text[] = [];
   let current = walker.nextNode();
   while (current) {
