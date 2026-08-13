@@ -12,24 +12,9 @@ Dashboard décisionnel CRVO connecté à des instantanés de données historisé
 
 ## Donnée affichée aujourd'hui
 
-Le dashboard embarque un premier instantané métier réellement vérifié dans le classeur CRVO du 07/08/2026 :
+Le dashboard conserve les Books CRVO validés comme historique de référence. L'API `/api/dashboard` donne maintenant la priorité aux instantanés issus du FTP lorsqu'un lot FTP est **vérifié** et possède des KPI réellement mappés. Un fichier uniquement archivé n'écrase jamais une journée validée.
 
-| Indicateur | Valeur |
-| --- | ---: |
-| Entrées VOP | 78 |
-| Sorties VOP | 86 |
-| Stock usine | 1 097 |
-| Stock > 15 jours | 494 |
-| Stock > 20 jours | 399 |
-| Expertise | 80 |
-| Mécanique | 96 |
-| DSP | 24 |
-| Carrosserie | 11 |
-| Préparation | 89 |
-| Qualité | 88 |
-| Sortie usine | 86 |
-
-L'API `/api/dashboard` utilise automatiquement la dernière ligne Supabase dès que les secrets sont configurés. En l'absence de connexion, elle conserve ce premier instantané vérifié et l'identifie explicitement comme tel.
+L'historique embarqué couvre notamment les journées du 03/08/2026 au 12/08/2026. Le dernier Book embarqué reste donc utilisable tant que le mapping métier des nouveaux CSV FTP n'est pas validé.
 
 ## Architecture
 
@@ -40,11 +25,12 @@ Serveur FTP (lecture seule, port 21)
 GitHub Action planifiée / bridge Node
         |-- connexion FTP + téléchargement en mémoire
         |-- empreinte SHA-256 et anti-doublon
+        |-- détection du schéma des CSV
         v
 Passerelle sécurisée Supabase Edge Function
         |-- journal des synchronisations
         |-- URL d'archive privée à durée limitée
-        |-- validation des mappings
+        |-- validation / archivage des lots
         v
 Supabase Storage + PostgreSQL
         |
@@ -55,7 +41,28 @@ API serveur Cloudflare
 Dashboard + Sources + Studio + Paramètres
 ```
 
-Le pont FTP est séparé du Worker public : aucun mot de passe FTP ni aucune clé Supabase privilégiée n'est envoyé au navigateur. Le bridge GitHub ne possède plus de clé Supabase privilégiée : les opérations sensibles transitent par une Edge Function dédiée qui utilise la clé serveur uniquement dans l'environnement Supabase. Le répertoire distant `\` fourni par le serveur est normalisé en `/`, la racine FTP standard.
+Le pont FTP est séparé du Worker public : aucun mot de passe FTP ni aucune clé Supabase privilégiée n'est envoyé au navigateur. Le bridge GitHub ne possède pas de clé Supabase privilégiée : les opérations sensibles transitent par la fonction `kpi-ftp-bridge-gateway`, qui utilise la clé serveur uniquement dans l'environnement Supabase.
+
+Le répertoire distant `\` fourni par le serveur est normalisé en `/`, la racine FTP standard.
+
+## Flux FTP actuellement détecté
+
+Le contrôle opérationnel du 13/08/2026 a confirmé la connexion au serveur FTP et la présence de **12 fichiers CSV** :
+
+- `Analyse-Temps-Bruts.csv`
+- `LeadTimeDurees.csv`
+- `ETatDeParcClient.csv`
+- `Ctrl-Fact-Trans.csv`
+- `Analyse-Temps-Bruts-Mois.csv`
+- `Factory-j+1.csv`
+- `EtatduParc.csv`
+- `Factory-j-1.csv`
+- `Etat-du-parc.csv`
+- `Factory-Mois.csv`
+- `EtatduParc-Nuit.csv`
+- `LeadTimeFactoryBI.csv`
+
+Le bridge archive les versions nouvelles et ignore les doublons par SHA-256. Les CSV sont actuellement marqués `pending_csv_schema` tant que leur correspondance métier n'est pas explicitement validée. Cette protection évite qu'un ancien mapping Excel soit appliqué par erreur à un CSV et qu'il génère de faux zéros dans le dashboard.
 
 ## Développement local
 
@@ -80,32 +87,27 @@ npx wrangler deploy --dry-run --config wrangler.jsonc
 
 Projet cible : `tvmkhvfmdstkunwwuzuz`.
 
-1. Appliquer [supabase/schema.sql](supabase/schema.sql) dans l'éditeur SQL du projet.
+1. Appliquer [supabase/schema.sql](supabase/schema.sql), puis les migrations du dossier `supabase/migrations/`.
 2. Conserver le bucket privé `kpi-raw-archive`.
 3. La fonction `kpi-ftp-bridge-gateway` assure les opérations privilégiées du bridge FTP.
-4. Définir dans Cloudflare :
+4. La source active `Serveur FTP CRVO` contient les paramètres **non sensibles** de connexion (`host`, `port`, `username`, `remoteDir`, `secure`) dans sa colonne `connection`.
+5. Définir dans Cloudflare :
    - `SUPABASE_URL=https://tvmkhvfmdstkunwwuzuz.supabase.co`
    - `SUPABASE_SECRET_KEY` comme secret serveur pour les API du dashboard qui en ont besoin.
-5. Ne jamais créer de variable publique contenant la secret key ou la legacy `service_role` key.
+6. Ne jamais créer de variable publique contenant la secret key ou la legacy `service_role` key.
 
 Toutes les tables exposées ont RLS activé. Les rôles `anon` et `authenticated` n'ont aucun accès direct aux tables KPI. Les clés privilégiées restent côté serveur.
 
 ## Passerelle FTP
 
-Le bridge se trouve dans `bridge/` et s'exécute automatiquement via `.github/workflows/kpi-sftp-sync.yml` les jours ouvrés. Le nom historique du fichier de workflow est conservé pour ne pas casser la planification existante ; le workflow lui-même s'appelle désormais `KPI CRVO - synchronisation FTP`.
+Le bridge se trouve dans `bridge/` et s'exécute automatiquement via `.github/workflows/kpi-sftp-sync.yml` les jours ouvrés. Le nom historique du fichier de workflow est conservé pour ne pas casser la planification existante ; le workflow lui-même s'appelle `KPI CRVO - synchronisation FTP`.
 
-Secrets GitHub Actions requis :
+Secrets GitHub Actions réellement nécessaires au bridge :
 
-- `FTP_HOST`
-- `FTP_PORT`
-- `FTP_USERNAME`
 - `FTP_PASSWORD`
-- `FTP_REMOTE_DIR`
 - `SUPABASE_URL`
 
-Le bridge n'a besoin d'aucune clé `service_role` ou `secret` Supabase.
-
-Pour assurer la transition, le workflow accepte encore les anciens secrets `SFTP_HOST`, `SFTP_PORT`, `SFTP_USERNAME`, `SFTP_PASSWORD` et `SFTP_REMOTE_DIR` comme fallback. Les anciennes notions de clé privée SSH et d'empreinte SFTP ne sont plus utilisées.
+Les paramètres `FTP_HOST`, `FTP_PORT`, `FTP_USERNAME` et `FTP_REMOTE_DIR` restent acceptés comme fallback, mais la configuration active est lue depuis Supabase. Le workflow accepte également temporairement les anciens secrets `SFTP_*` comme fallback de transition ; aucune connexion SFTP n'est utilisée.
 
 Variables GitHub Actions optionnelles :
 
@@ -116,13 +118,9 @@ Le compte FTP est utilisé uniquement en lecture. Le pont liste et télécharge 
 
 ## Règles de mapping
 
-Les règles sont stockées dans `kpi_field_mappings`. Pour une cellule Excel, `source_field` suit la forme :
+Les 30 règles historiques de `kpi_field_mappings` correspondent aux anciens Books Excel (`Synthèse`, `Tdb Production`, `Goulot`). Elles restent disponibles pour les imports XLS/XLSX.
 
-```text
-Nom de la feuille!B12
-```
-
-Le pont archive toujours le fichier avant de lancer les règles. Les fichiers déjà vérifiés sont ignorés automatiquement grâce à leur empreinte SHA-256.
+Les fichiers CSV FTP suivent des schémas différents. Le bridge détecte leurs en-têtes et les archive sans publier de KPI tant que le mapping propre à chaque CSV n'est pas validé. Les valeurs absentes ne sont jamais transformées en `0` par défaut.
 
 ## Déploiement Cloudflare
 
