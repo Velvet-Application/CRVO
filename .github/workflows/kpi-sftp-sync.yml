@@ -11,7 +11,7 @@ on:
   schedule:
     # Les dépôts opérationnels observés arrivent majoritairement autour de H:00 à H:04.
     # Contrôle à H:05 puis toutes les 15 min sur la plage opérationnelle (cron en UTC).
-    # Les doublons d'archives sont ignorés par SHA-256 ; la photo Factory live est rafraîchie à chaque passage.
+    # Les doublons d'archives sont ignorés par SHA-256 ; les vues live sont idempotentes.
     - cron: "5,20,35,50 3-21 * * *"
 
 permissions:
@@ -45,3 +45,4 @@ jobs:
       - run: npm run check
       - run: npm run sync
       - run: node src/factory-live-sync.mjs
+      - run: node src/operational-live-sync.mjs
