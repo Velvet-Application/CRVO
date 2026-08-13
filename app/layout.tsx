@@ -10,11 +10,13 @@ import "./dashboard-additions.css";
 import "./sector-colors.css";
 import "./finance-source-portal.css";
 import "./finance-trend-panel.css";
+import "./sql-source-portal.css";
 import UploadArchiveGuard from "./upload-archive-guard";
 import ObjectivesDailyPatch from "./objectives-daily-patch";
 import FinanceSourcePortal from "./finance-source-portal";
 import FinanceTrendPanel from "./finance-trend-panel";
 import PilotageNav from "./pilotage-nav";
+import SqlSourcePortal from "./sql-source-portal";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -28,6 +30,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <UploadArchiveGuard />
     <ObjectivesDailyPatch />
     <FinanceSourcePortal />
+    <SqlSourcePortal />
     <FinanceTrendPanel />
     <PilotageNav />
     {children}
