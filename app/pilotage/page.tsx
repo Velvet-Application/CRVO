@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import styles from "./pilotage.module.css";
+import ProactiveDriftPanel from "./ProactiveDriftPanel";
 
 type Vehicle = {
   registration: string;
@@ -144,6 +145,8 @@ export default function PilotagePage() {
 
       <article className={styles.dayCard}><span>SYNTHÈSE DU JOUR</span><div><small>Sorties usine</small><strong>{data.snapshot.exits}</strong></div><div><small>Stock usine</small><strong>{data.snapshot.stock.toLocaleString("fr-FR")}</strong></div><div><small>Lead Time usine moy.</small><strong>{leadTime?.available ? days(leadTime.avgFactoryDays) : "—"}</strong></div><div><small>Lead Time médian</small><strong>{leadTime?.available ? days(leadTime.medianFactoryDays) : "—"}</strong></div><div><small>CA facturé</small><strong>{data.invoiceToday.available ? euro(data.invoiceToday.revenue) : "—"}</strong></div><div><small>Factures / avoirs</small><strong>{data.invoiceToday.available && data.invoiceToday.invoices ? data.invoiceToday.invoices : "—"}</strong></div><div><small>CA potentiel encours</small><strong>{data.sources.workloadSql ? euro(data.workloadSummary.potentialRevenue) : "—"}</strong></div><div><small>Heures MO encours</small><strong>{data.sources.workloadTime ? Math.round(data.workloadSummary.remainingHours).toLocaleString("fr-FR") : "—"}</strong></div><div><small>OR / dossiers en cours</small><strong>{data.sources.workloadFtp || data.sources.workloadSql ? data.workloadSummary.workOrders.toLocaleString("fr-FR") : "—"}</strong></div>{!data.invoiceToday.available && <p>Le CA instantané apparaîtra ici dès que le branchement SQL factures sera disponible.</p>}</article>
     </section>
+
+    <ProactiveDriftPanel />
 
     {current && <>
       <section className={styles.sectorHead}><div><span>PLAN D’ACTION · {current.label.toUpperCase()}</span><h2>{current.gap > 0 ? `${current.gap} véhicules à sécuriser` : "Objectif atteint"}</h2><p>{current.queue ? `${current.queue} dossiers identifiés. Le FIFO utilise l’ancienneté EtatduParc et affiche clairement l’alerte « à faire » quand elle existe.` : "La file véhicule n’est pas encore alimentée."}</p></div><div className={styles.sectorMetrics}><div><span>RÉALISÉ</span><strong>{current.actual}</strong></div><div><span>OBJECTIF</span><strong>{current.target}</strong></div><div><span>RESTE</span><strong>{current.gap}</strong></div><div><span>RUN</span><strong>{current.timeReady ? current.runPool : "—"}</strong></div><div><span>HEURES ENCOURS</span><strong>{current.timeReady ? Math.round(current.remainingHours).toLocaleString("fr-FR") : "—"}</strong></div><div><span>CA POTENTIEL</span><strong>{data.sources.workloadSql ? euro(current.potentialRevenue) : "—"}</strong></div></div></section>
