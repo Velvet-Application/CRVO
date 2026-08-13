@@ -20,8 +20,9 @@ function hash(value) {
 }
 
 const cfg = {
-  // FTP_* est la configuration cible. Les anciens secrets SFTP_* restent acceptés
-  // pendant la transition pour ne pas casser la planification déjà en place.
+  // Le mot de passe reste exclusivement dans GitHub Actions. Les paramètres
+  // non sensibles de connexion sont pilotés côté Supabase pour éviter de figer
+  // une ancienne adresse de serveur dans le workflow.
   host: process.env.FTP_HOST ?? process.env.SFTP_HOST,
   port: Number(process.env.FTP_PORT ?? process.env.SFTP_PORT ?? "21"),
   username: process.env.FTP_USERNAME ?? process.env.SFTP_USERNAME,
@@ -34,16 +35,12 @@ const cfg = {
 };
 
 const required = {
-  FTP_HOST: cfg.host,
-  FTP_USERNAME: cfg.username,
   FTP_PASSWORD: cfg.password,
-  FTP_REMOTE_DIR: cfg.remoteDir,
   SUPABASE_URL: cfg.supabaseUrl,
   KPI_SOURCE_ID: cfg.sourceId,
 };
 const missing = Object.entries(required).filter(([, value]) => !value).map(([name]) => name);
 if (missing.length) throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
-if (!Number.isFinite(cfg.port) || cfg.port <= 0) throw new Error("FTP_PORT must be a valid positive port number");
 
 const gatewayUrl = `${cfg.supabaseUrl}/functions/v1/kpi-ftp-bridge-gateway`;
 // Jeton dédié au bridge : il est dérivé du mot de passe FTP et ne réutilise jamais
@@ -71,6 +68,22 @@ async function gateway(action, { method = "POST", body, params = {}, allowedStat
     throw new Error(`KPI gateway ${response.status}: ${payload.error ?? "unknown error"}`);
   }
   return { status: response.status, payload };
+}
+
+async function readConnection() {
+  const { payload } = await gateway("connection", { method: "GET", params: { sourceId: cfg.sourceId } });
+  const connection = {
+    host: String(payload.host || cfg.host || "").trim(),
+    port: Number(payload.port || cfg.port || 21),
+    username: String(payload.username || cfg.username || "").trim(),
+    password: cfg.password,
+    remoteDir: normalizeRemoteDir(payload.remoteDir || cfg.remoteDir || "/"),
+    secure: typeof payload.secure === "boolean" ? payload.secure : cfg.secure,
+  };
+  if (!connection.host) throw new Error("FTP host is missing from the active source configuration");
+  if (!connection.username) throw new Error("FTP username is missing from the active source configuration");
+  if (!Number.isFinite(connection.port) || connection.port <= 0) throw new Error("FTP port must be a valid positive port number");
+  return connection;
 }
 
 async function sha256(buffer) {
@@ -176,29 +189,31 @@ async function run() {
   let runId = null;
   let filesSeen = 0;
   let filesImported = 0;
+  let connection = null;
 
   try {
-    const started = await gateway("start-run", { body: { details: { protocol: cfg.secure ? "ftps" : "ftp", remote_dir: cfg.remoteDir } } });
+    connection = await readConnection();
+    const started = await gateway("start-run", { body: { details: { protocol: connection.secure ? "ftps" : "ftp", remote_dir: connection.remoteDir } } });
     runId = started.payload.runId ?? null;
 
     await ftp.access({
-      host: cfg.host,
-      port: cfg.port,
-      user: cfg.username,
-      password: cfg.password,
-      secure: cfg.secure,
+      host: connection.host,
+      port: connection.port,
+      user: connection.username,
+      password: connection.password,
+      secure: connection.secure,
     });
-    log("ftp_connected", { host: cfg.host, port: cfg.port, secure: cfg.secure, remoteDir: cfg.remoteDir });
+    log("ftp_connected", { host: connection.host, port: connection.port, secure: connection.secure, remoteDir: connection.remoteDir });
 
     const mappings = await readMappings();
     log("mappings_loaded", { count: mappings.length });
 
-    const remoteFiles = (await ftp.list(cfg.remoteDir)).filter((file) => cfg.pattern.test(file.name));
+    const remoteFiles = (await ftp.list(connection.remoteDir)).filter((file) => cfg.pattern.test(file.name));
     filesSeen = remoteFiles.length;
     log("ftp_files_listed", { count: filesSeen });
 
     for (const remoteFile of remoteFiles) {
-      const remotePath = path.posix.join(cfg.remoteDir, remoteFile.name);
+      const remotePath = path.posix.join(connection.remoteDir, remoteFile.name);
       const buffer = await downloadToBuffer(ftp, remotePath);
       const fileHash = await sha256(buffer);
       const file = {
@@ -221,7 +236,7 @@ async function run() {
       log("file_imported", { filename: remoteFile.name, snapshotAt: date, metrics: finalized.payload.metrics ?? metrics.length, sha256: fileHash });
     }
 
-    if (runId) await gateway("finish-run", { body: { runId, status: "success", filesSeen, filesImported, details: { protocol: cfg.secure ? "ftps" : "ftp", remote_dir: cfg.remoteDir } } });
+    if (runId) await gateway("finish-run", { body: { runId, status: "success", filesSeen, filesImported, details: { protocol: connection.secure ? "ftps" : "ftp", remote_dir: connection.remoteDir } } });
     log("sync_completed", { filesSeen, filesImported });
   } catch (error) {
     if (runId) {
@@ -231,7 +246,7 @@ async function run() {
           status: "failed",
           filesSeen,
           filesImported,
-          details: { protocol: cfg.secure ? "ftps" : "ftp", remote_dir: cfg.remoteDir, error: error instanceof Error ? error.message : "unknown" },
+          details: { protocol: connection?.secure ? "ftps" : "ftp", remote_dir: connection?.remoteDir ?? "/", error: error instanceof Error ? error.message : "unknown" },
         },
       }).catch(() => undefined);
     }
