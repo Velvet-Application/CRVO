@@ -218,7 +218,15 @@ function useDashboardData() {
         setSnapshots([...rows].sort((a,b) => a.date.localeCompare(b.date)));
         setConnected(Boolean(payload.connected));
       }).catch(() => undefined);
-    return () => controller.abort();
+    const timer = window.setInterval(() => {
+      fetch(`/api/dashboard?history=1&_=${Date.now()}`, { cache: "no-store" })
+        .then((response) => response.ok ? response.json() : Promise.reject())
+        .then((payload: { snapshots?: Snapshot[]; snapshot?: Snapshot; connected?: boolean }) => {
+          const rows = payload.snapshots?.length ? payload.snapshots : payload.snapshot ? [payload.snapshot] : [];
+          if (rows.length) { setSnapshots([...rows].sort((a,b) => a.date.localeCompare(b.date))); setConnected(Boolean(payload.connected)); }
+        }).catch(() => undefined);
+    }, 60000);
+    return () => { controller.abort(); window.clearInterval(timer); };
   }, []);
   return { snapshots, connected };
 }
@@ -251,9 +259,13 @@ function TodayView({ snapshots, connected, objectiveMap }: { snapshots: Snapshot
   const stockGap = previous ? snapshot.stock - previous.stock : 0;
   const minDate = snapshots[0]?.date ?? snapshot.date;
   const maxDate = snapshot.date;
-  const [start, setStart] = useState(maxDate);
+  const monthStart = `${maxDate.slice(0, 7)}-01`;
+  const [start, setStart] = useState(monthStart);
   const [end, setEnd] = useState(maxDate);
-  useEffect(() => { setStart((value) => value || maxDate); setEnd((value) => value || maxDate); }, [maxDate]);
+  useEffect(() => {
+    setStart((value) => !value || value === seedSnapshot.date ? monthStart : value);
+    setEnd((value) => !value || value === seedSnapshot.date || value < maxDate ? maxDate : value);
+  }, [maxDate, monthStart]);
   const period = useMemo(() => snapshots.filter((item) => item.date >= start && item.date <= end), [snapshots, start, end]);
   const days = Math.max(period.length, 1);
   const cumulative = snapshot.production.map((item) => ({
