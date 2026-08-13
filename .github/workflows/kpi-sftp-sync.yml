@@ -54,8 +54,8 @@ jobs:
             echo "Outside 20h Paris window - no daily bottleneck freeze."
             exit 0
           fi
-          node <<'NODE'
-          const crypto = require('node:crypto');
+          node --input-type=module <<'NODE'
+          import crypto from 'node:crypto';
           const password = process.env.FTP_PASSWORD || process.env.SFTP_PASSWORD;
           const base = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
           if (!password || !base) throw new Error('Missing freeze configuration');
