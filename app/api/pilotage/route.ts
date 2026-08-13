@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 const FUNCTION_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co/functions/v1/kpi-operational-live";
-const ANON_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXAiLCJyZWYiOiJ0dm1raHZmbWRzdGt1bnd3dXp1eiIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzg2NDU1ODY0LCJleHAiOjIxMDIwMzE4NjR9.w18MDX_dL1YarUElTeo9ID0Egivav18tVqjjbkCaOxc";
+const ANON_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2bWtodmZtZHN0a3Vud3d1enV6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTU4NjQsImV4cCI6MjEwMjAzMTg2NH0.w18MDX_dL1YarUElTeo9ID0Egivav18tVqjjbkCaOxc";
 
 type Vehicle = {
   registration: string;
@@ -29,7 +29,7 @@ type OperationalPayload = {
   operationalCount: number;
   alertCount: number;
   queues: Record<string, Queue>;
-  leadTime: { avg_factory_days?:number|string|null; median_factory_days?:number|string|null } | null;
+  leadTime: { source_modified_at?:string|null; vehicle_count?:number|string|null; avg_factory_days?:number|string|null; median_factory_days?:number|string|null; avg_storage_days?:number|string|null; avg_parts_days?:number|string|null; vop_eff_count?:number|string|null; vop_ext_count?:number|string|null } | null;
 };
 
 const targets: Record<string, number> = { expertise:90, dsp:48, mecanique:85, carrosserie:63, preparation:90, qualite:90, sortie_usine:92 };
@@ -39,6 +39,7 @@ function actualFor(snapshot: OperationalPayload["snapshot"], key: string) {
   const label = labels[key];
   return snapshot.production.find((item) => item.name === label)?.value ?? (key === "sortie_usine" ? snapshot.exits : 0);
 }
+function num(value: unknown) { const n = Number(value); return Number.isFinite(n) ? n : null; }
 
 async function live() {
   const response = await fetch(FUNCTION_URL, {
@@ -86,6 +87,7 @@ export async function GET() {
       };
     });
     const major = plans.filter((item) => item.gap > 0).sort((a,b) => a.attainment - b.attainment || b.gap - a.gap).slice(0,5);
+    const lead = data.leadTime;
 
     return NextResponse.json({
       snapshot: data.snapshot,
@@ -114,7 +116,20 @@ export async function GET() {
         lastDepositAt: data.freshness.depositAt,
         lastDepositFilename: data.freshness.depositFilename,
       },
-      leadTime: data.leadTime,
+      leadTime: lead ? {
+        available: true,
+        sourceModifiedAt: lead.source_modified_at ?? null,
+        vehicleCount: num(lead.vehicle_count) ?? 0,
+        avgFactoryDays: num(lead.avg_factory_days),
+        medianFactoryDays: num(lead.median_factory_days),
+        avgStorageDays: num(lead.avg_storage_days),
+        avgPartsDays: num(lead.avg_parts_days),
+        vopEffCount: num(lead.vop_eff_count) ?? 0,
+        vopExtCount: num(lead.vop_ext_count) ?? 0,
+        historyReady: true,
+        latestHistoryEventDate: data.snapshot.date,
+        latestHistoryEventTime: null,
+      } : null,
       methodology: {
         fifo: "FIFO calculé depuis EtatduParc sur l’ancienneté usine ; l’alerte FTP indique le prochain passage attendu.",
         run: "RUN affiché uniquement lorsqu’une durée explicite <= 60 min est présente dans l’alerte FTP ; le temps SQL complètera ce calcul.",
