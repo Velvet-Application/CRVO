@@ -39,7 +39,7 @@ export async function GET() {
   }
 
   try {
-    const query = "select=registration,work_order,vin,client,model,flow,status,status_age_days,factory_age_days,alert,urgency,sample_count,median_days,p75_days,p90_days,proactive_level,abnormality_ratio,snapshot_at,source_modified_at&proactive_level=in.(CRITIQUE,SURVEILLANCE)&order=proactive_level.asc,abnormality_ratio.desc.nullslast,status_age_days.desc.nullslast&limit=80";
+    const query = "select=registration,work_order,vin,client,model,flow,status,status_age_days,factory_age_days,alert,urgency,sample_count,median_days,p75_days,p90_days,proactive_level,abnormality_ratio,snapshot_at,source_modified_at&proactive_level=in.(CRITIQUE,SURVEILLANCE)&order=proactive_level.asc,abnormality_ratio.desc.nullslast,status_age_days.desc.nullslast&limit=500";
     const response = await fetch(`${supabaseUrl}/rest/v1/kpi_ftp_proactive_drift?${query}`, {
       headers: supabaseRestHeaders(secretKey, { Accept: "application/json" }),
       cache: "no-store",
