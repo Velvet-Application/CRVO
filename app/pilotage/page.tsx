@@ -39,11 +39,12 @@ type Plan = {
 };
 
 type Payload = {
-  snapshot: { date: string; label: string; exits: number; stock: number };
+  snapshot: { date: string; label: string; source: string; exits: number; stock: number };
   dataConnected: boolean;
   workloadSnapshot: string | null;
-  sources: { sftp: boolean; workloadSql: boolean; workloadTime: boolean; invoicesSql: boolean };
-  invoiceToday: { revenue: number; invoices: number };
+  productionMode: "sftp" | "book";
+  sources: { sftp: boolean; production: "sftp" | "book"; workloadSql: boolean; workloadTime: boolean; invoicesSql: boolean; financeBook: boolean };
+  invoiceToday: { revenue: number; invoices: number; available: boolean; source: "none" | "sql" | "book" };
   workloadSummary: { workOrders: number; remainingHours: number; potentialRevenue: number };
   major: Plan[];
   plans: Plan[];
@@ -74,11 +75,11 @@ export default function PilotagePage() {
 
   async function refresh() {
     try {
-      const response = await fetch(`/api/pilotage?_=${Date.now()}`, { cache: "no-store" });
+      const response = await fetch(`/api/pilotage?_=${Date.now()}`, { cache: "no-store", headers: { "Cache-Control": "no-cache" } });
       const payload = await response.json() as Payload & { error?: string };
       if (!response.ok) throw new Error(payload.error || "Pilotage indisponible.");
       setData(payload);
-      setSelected((current) => current || payload.major[0]?.sectorKey || payload.plans[0]?.sectorKey || "");
+      setSelected((current) => payload.plans.some((item) => item.sectorKey === current) ? current : payload.major[0]?.sectorKey || payload.plans[0]?.sectorKey || "");
       setUpdated(new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date()));
       setError("");
     } catch (reason) {
@@ -88,8 +89,11 @@ export default function PilotagePage() {
 
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 30000);
-    return () => window.clearInterval(timer);
+    const timer = window.setInterval(() => void refresh(), 20000);
+    const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", onVisible); };
   }, []);
 
   const current = useMemo(() => data?.plans.find((item) => item.sectorKey === selected) ?? data?.major[0] ?? null, [data, selected]);
@@ -107,15 +111,15 @@ export default function PilotagePage() {
       <div className={styles.headerStatus}>
         <span>DERNIÈRE PRODUCTION</span>
         <strong>{data.snapshot.label}</strong>
-        <small>Actualisé {updated} · toutes les 30 s</small>
+        <small>{data.productionMode === "sftp" ? "SFTP" : "Dernier Book CRVO"} · actualisé {updated} · toutes les 20 s</small>
       </div>
     </header>
 
     <section className={styles.sourceStrip}>
-      <div className={data.sources.sftp ? styles.ready : styles.missing}><i/><span>SFTP production</span><strong>{data.sources.sftp ? "PRÊT" : "ABSENT"}</strong></div>
-      <div className={data.sources.workloadSql ? styles.ready : styles.missing}><i/><span>SQL encours dossier</span><strong>{data.sources.workloadSql ? "PRÊT" : "À BRANCHER"}</strong></div>
+      <div className={styles.ready}><i/><span>Production du jour</span><strong>{data.productionMode === "sftp" ? "SFTP" : "BOOK"}</strong></div>
+      <div className={data.sources.workloadSql ? styles.ready : styles.missing}><i/><span>SQL encours dossier</span><strong>{data.sources.workloadSql ? shortDate(data.workloadSnapshot).toUpperCase() : "À BRANCHER"}</strong></div>
       <div className={data.sources.workloadTime ? styles.ready : styles.missing}><i/><span>Temps MO / véhicule</span><strong>{data.sources.workloadTime ? "PRÊT" : "À FOURNIR"}</strong></div>
-      <div className={data.sources.invoicesSql ? styles.ready : styles.missing}><i/><span>SQL factures</span><strong>{data.sources.invoicesSql ? "PRÊT" : "À BRANCHER"}</strong></div>
+      <div className={data.sources.invoicesSql || data.sources.financeBook ? styles.ready : styles.missing}><i/><span>Chiffre d’affaires</span><strong>{data.sources.invoicesSql ? "SQL FACTURES" : data.sources.financeBook ? "BOOK" : "À BRANCHER"}</strong></div>
     </section>
 
     <section className={styles.topGrid}>
@@ -128,7 +132,7 @@ export default function PilotagePage() {
             <div><strong>{item.label}</strong><span>{item.gap} véhicule{item.gap > 1 ? "s" : ""} à passer · {Math.round(item.remainingHours).toLocaleString("fr-FR")} h en encours · {euro(item.potentialRevenue)} potentiel</span></div>
             <div className={styles.majorScore}><strong>{item.actual}</strong><span>/ {item.target}</span><small>{item.attainment}%</small></div>
           </button>)}
-          {!data.major.length && <div className={styles.allGood}><strong>Objectifs sécurisés</strong><span>Aucun secteur n’est actuellement sous son objectif.</span></div>}
+          {!data.major.length && <div className={styles.allGood}><strong>Objectifs sécurisés</strong><span>Aucun secteur suivi n’est actuellement sous son objectif.</span></div>}
         </div>
       </article>
 
@@ -136,12 +140,12 @@ export default function PilotagePage() {
         <span>SYNTHÈSE DU JOUR</span>
         <div><small>Sorties usine</small><strong>{data.snapshot.exits}</strong></div>
         <div><small>Stock usine</small><strong>{data.snapshot.stock.toLocaleString("fr-FR")}</strong></div>
-        <div><small>CA facturé</small><strong>{data.sources.invoicesSql ? euro(data.invoiceToday.revenue) : "—"}</strong></div>
-        <div><small>Factures / avoirs</small><strong>{data.sources.invoicesSql ? data.invoiceToday.invoices : "—"}</strong></div>
+        <div><small>CA facturé</small><strong>{data.invoiceToday.available ? euro(data.invoiceToday.revenue) : "—"}</strong></div>
+        <div><small>Factures / avoirs</small><strong>{data.invoiceToday.available && data.invoiceToday.invoices ? data.invoiceToday.invoices : "—"}</strong></div>
         <div><small>CA potentiel encours</small><strong>{data.sources.workloadSql ? euro(data.workloadSummary.potentialRevenue) : "—"}</strong></div>
         <div><small>Heures MO encours</small><strong>{data.sources.workloadTime ? Math.round(data.workloadSummary.remainingHours).toLocaleString("fr-FR") : "—"}</strong></div>
         <div><small>OR en cours</small><strong>{data.sources.workloadSql ? data.workloadSummary.workOrders.toLocaleString("fr-FR") : "—"}</strong></div>
-        {!data.sources.invoicesSql && <p>Le CA instantané apparaîtra ici dès que le reporting factures SQL sera importé ou branché.</p>}
+        {!data.invoiceToday.available && <p>Le CA instantané apparaîtra ici dès qu’un Book financier ou le reporting factures SQL est disponible.</p>}
       </article>
     </section>
 
@@ -150,7 +154,7 @@ export default function PilotagePage() {
         <div>
           <span>PLAN D’ACTION · {current.label.toUpperCase()}</span>
           <h2>{current.gap > 0 ? `${current.gap} véhicules à sécuriser` : "Objectif atteint"}</h2>
-          <p>{current.queue ? `${current.queue} dossiers disponibles dans l’encours du ${shortDate(data.workloadSnapshot)}.` : "La file véhicule n’est pas encore alimentée par le SQL encours."}</p>
+          <p>{current.queue ? `${current.queue} dossiers/activités disponibles dans l’encours du ${shortDate(data.workloadSnapshot)}.` : "La file véhicule n’est pas encore alimentée par le SQL encours."}</p>
         </div>
         <div className={styles.sectorMetrics}>
           <div><span>RÉALISÉ</span><strong>{current.actual}</strong></div>
@@ -168,7 +172,7 @@ export default function PilotagePage() {
           <h3>Les 10 plus vieux dossiers</h3>
           {current.oldest.length ? <div className={styles.oldList}>{current.oldest.map((vehicle, index) => <div key={`${vehicle.registration}-${vehicle.work_order}`}>
             <b>{index + 1}</b><div><strong>{vehicle.registration || vehicle.work_order}</strong><span>{vehicle.primary_activity || vehicle.status || vehicle.work_order || "Dossier"}</span></div><div><strong>{vehicle.age_days?.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) ?? "—"} j</strong><span>{minutes(vehicle.remaining_minutes)} · {euro(vehicle.potential_revenue_total)}</span></div>
-          </div>)}</div> : <div className={styles.dataNeeded}><strong>Flux SQL encours requis</strong><span>Immatriculation, OR, activité, ancienneté, temps MO et potentiel CA.</span></div>}
+          </div>)}</div> : <div className={styles.dataNeeded}><strong>Détail véhicule en attente</strong><span>Les totaux d’encours sont disponibles ; la liste FIFO détaillée sera alimentée par les lignes OR.</span></div>}
         </article>
 
         <article className={styles.logicCard}>
@@ -178,7 +182,7 @@ export default function PilotagePage() {
             <div><strong>{Math.round(current.fifoShare * 100)}%</strong><span>FIFO cible</span></div>
             <div><strong>≤ {Math.round(current.runMaxMinutes)} min</strong><span>définition RUN</span></div>
             <div><strong>{current.highTimeOld}</strong><span>dossiers lourds dans le top 10</span></div>
-            <p>{current.highTimeOld > 0 ? `${current.highTimeOld} dossiers parmi les plus anciens dépassent le seuil RUN. Le moteur complète le FIFO avec des dossiers courts pour sécuriser le volume sans perdre de vue les dossiers les plus anciens.` : "Le FIFO est compatible avec le volume cible : aucune injection RUN particulière n’est nécessaire."}</p>
+            <p>{current.oldest.length ? (current.highTimeOld > 0 ? `${current.highTimeOld} dossiers parmi les plus anciens dépassent le seuil RUN. Le moteur complète le FIFO avec des dossiers courts pour sécuriser le volume sans perdre de vue les dossiers les plus anciens.` : "Le FIFO est compatible avec le volume cible : aucune injection RUN particulière n’est nécessaire.") : "Les agrégats temps et RUN sont disponibles. La recommandation nominative apparaîtra dès que les lignes véhicule sont chargées."}</p>
           </div> : <div className={styles.dataNeeded}><strong>Temps MO par véhicule manquant</strong><span>Dès réception, le moteur distinguera automatiquement dossiers longs et RUN.</span></div>}
         </article>
       </section>
@@ -191,8 +195,8 @@ export default function PilotagePage() {
             <b>{vehicle.rank}</b><strong>{vehicle.registration || "—"}</strong><span>{vehicle.work_order || "—"}<small>{vehicle.primary_activity ? ` · ${vehicle.primary_activity}` : ""}</small></span><span>{vehicle.age_days?.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) ?? "—"} j</span><span>{minutes(vehicle.remaining_minutes)}</span><strong>{euro(vehicle.potential_revenue_total)}</strong><span className={vehicle.strategy === "RUN" ? styles.runPill : styles.fifoPill}>{vehicle.strategy}</span><span>{vehicle.reason}</span>
           </div>)}
         </div> : <div className={styles.emptyPlan}>
-          <strong>{current.gap === 0 ? "Objectif atteint sur ce secteur" : "Liste véhicule en attente de la donnée SQL"}</strong>
-          <span>{current.gap === 0 ? "Le moteur ne propose aucun véhicule supplémentaire." : "La liste sera générée automatiquement dès que l’encours dossier sera importé dans Sources & connexion."}</span>
+          <strong>{current.gap === 0 ? "Objectif atteint sur ce secteur" : "Détail véhicule en cours d’alimentation"}</strong>
+          <span>{current.gap === 0 ? "Le moteur ne propose aucun véhicule supplémentaire." : "Les totaux sont déjà calculés ; la liste FIFO/RUN nominative se complète avec les lignes de l’encours SQL."}</span>
         </div>}
       </section>
     </>}
