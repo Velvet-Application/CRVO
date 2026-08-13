@@ -8,6 +8,7 @@ on:
     paths:
       - "app/**"
       - "public/**"
+      - "worker/**"
       - "scripts/**"
       - "package.json"
       - "package-lock.json"
@@ -41,70 +42,5 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: TypeScript
         run: npx tsc --noEmit
-      - name: Build
+      - name: Build, deploy and verify production
         run: npm run build
-      - name: Verify Cloudflare credentials
-        run: |
-          test -n "$CLOUDFLARE_API_TOKEN" || (echo "CLOUDFLARE_API_TOKEN / CF_API_TOKEN absent" && exit 1)
-      - name: Deploy production Worker
-        run: npx wrangler deploy --config wrangler.jsonc
-      - name: Verify live FTP dashboard
-        run: |
-          node <<'NODE'
-          const base = "https://kpi-crvo.cyril-gay.workers.dev/api/dashboard?history=1";
-          let last = null;
-          for (let attempt = 1; attempt <= 8; attempt += 1) {
-            try {
-              const response = await fetch(`${base}&_=${Date.now()}`, {
-                headers: { "Cache-Control": "no-cache" },
-              });
-              const payload = await response.json();
-              last = {
-                status: response.status,
-                connected: payload.connected,
-                backend: payload.backend,
-                latestSource: payload.latestSource,
-                date: payload.snapshot?.date,
-                sourceMode: payload.sourceMode,
-              };
-              console.log(`attempt ${attempt}: ${JSON.stringify(last)}`);
-              if (
-                response.ok &&
-                payload.connected === true &&
-                payload.sourceMode === "ftp" &&
-                String(payload.latestSource || "").toLowerCase().includes("ftp") &&
-                String(payload.snapshot?.date || "") >= "2026-08-13"
-              ) {
-                break;
-              }
-            } catch (error) {
-              last = { error: error instanceof Error ? error.message : String(error) };
-              console.log(`attempt ${attempt}: ${JSON.stringify(last)}`);
-            }
-            if (attempt === 8) {
-              console.error(`Live dashboard verification failed: ${JSON.stringify(last)}`);
-              process.exit(1);
-            }
-            await new Promise((resolve) => setTimeout(resolve, 5000));
-          }
-          NODE
-      - name: Verify client hydration assets
-        run: |
-          node <<'NODE'
-          const origin = "https://kpi-crvo.cyril-gay.workers.dev";
-          const response = await fetch(`${origin}/?_=${Date.now()}`, { headers: { "Cache-Control": "no-cache" } });
-          const html = await response.text();
-          console.log(`root status=${response.status} html_bytes=${html.length}`);
-          const scripts = [...html.matchAll(/<script[^>]+src=["']([^"']+)["']/g)].map((match) => match[1]);
-          console.log(`script_count=${scripts.length}`);
-          if (!scripts.length) {
-            console.error("No client script tags found in the production HTML.");
-            process.exit(1);
-          }
-          for (const src of scripts.slice(0, 20)) {
-            const url = new URL(src, origin).toString();
-            const asset = await fetch(url, { headers: { "Cache-Control": "no-cache" } });
-            console.log(`asset ${asset.status} ${asset.headers.get("content-type") || ""} ${url}`);
-            if (!asset.ok) process.exitCode = 2;
-          }
-          NODE
