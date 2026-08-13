@@ -12,7 +12,7 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,35 +29,38 @@ jobs:
           (async () => {
             const browser = await chromium.launch({ headless: true });
             const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+            const api=[];
             page.on('console', m => console.log('CONSOLE', m.type(), m.text()));
             page.on('pageerror', e => console.log('PAGEERROR', e.message));
             page.on('requestfailed', r => console.log('REQUESTFAILED', r.url(), r.failure()?.errorText));
-            const api=[];
             page.on('response', async r => {
               if (r.url().includes('/api/dashboard')) {
                 let body=''; try { body=await r.text(); } catch {}
-                api.push({status:r.status(), url:r.url(), body:body.slice(0,1000)});
+                api.push({status:r.status(), url:r.url(), body:body.slice(0,800)});
               }
             });
             const nav=await page.goto('https://kpi-crvo.cyril-gay.workers.dev/?diag='+Date.now(), { waitUntil:'domcontentloaded', timeout:60000 });
             console.log('NAV', nav?.status());
-            await page.waitForTimeout(8000);
-            const state=await page.evaluate(() => ({
-              title: document.title,
-              date: document.querySelector('.topbar-date strong')?.textContent,
-              freshness: document.querySelector('.freshness strong')?.textContent,
-              freshnessSmall: document.querySelector('.freshness small')?.textContent,
-              nav: Array.from(document.querySelectorAll('nav button, .sidebar button, .sidebar a')).map(e=>e.textContent?.trim()).filter(Boolean),
-              hero: Array.from(document.querySelectorAll('.day-hero-stats strong')).map(e=>e.textContent),
-              prod: Array.from(document.querySelectorAll('.performance-board:not(.cumulative-board) .performance-column')).map(e => [e.querySelector('h3')?.textContent,e.querySelector('.performance-main strong')?.textContent]),
-              range: Array.from(document.querySelectorAll('.cumulative-board input[type=date]')).map(e=>e.value),
-              live: document.documentElement.dataset.crvoLive || null,
-              scripts: Array.from(document.scripts).map(s=>s.src).filter(Boolean),
-              body: document.body.innerText.slice(0,3000),
-            }));
+            await page.waitForTimeout(6000);
+            const state=await Promise.race([
+              page.evaluate(() => ({
+                title: document.title,
+                date: document.querySelector('.topbar-date strong')?.textContent,
+                freshness: document.querySelector('.freshness strong')?.textContent,
+                freshnessSmall: document.querySelector('.freshness small')?.textContent,
+                nav: Array.from(document.querySelectorAll('nav button, .sidebar button, .sidebar a')).map(e=>e.textContent?.trim()).filter(Boolean),
+                hero: Array.from(document.querySelectorAll('.day-hero-stats strong')).map(e=>e.textContent),
+                prod: Array.from(document.querySelectorAll('.performance-board:not(.cumulative-board) .performance-column')).map(e => [e.querySelector('h3')?.textContent,e.querySelector('.performance-main strong')?.textContent]),
+                range: Array.from(document.querySelectorAll('.cumulative-board input[type=date]')).map(e=>e.value),
+                live: document.documentElement.dataset.crvoLive || null,
+                scripts: Array.from(document.scripts).map(s=>s.src).filter(Boolean),
+              })),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('evaluate timeout')), 15000)),
+            ]);
             console.log('STATE', JSON.stringify(state));
             console.log('API', JSON.stringify(api));
             await browser.close();
+            if (!String(state.date || '').includes('13') || !state.nav.some(v => v.includes('Dashboard de la veille')) || state.range[0] !== '2026-08-01' || state.range[1] !== '2026-08-13') process.exitCode=2;
           })().catch(e=>{console.error(e);process.exitCode=1});
           NODE
           node check.cjs
