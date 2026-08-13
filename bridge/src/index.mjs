@@ -25,18 +25,18 @@ const cfg = {
 
 if (!cfg.password && !cfg.privateKey) throw new Error("Set SFTP_PASSWORD or SFTP_PRIVATE_KEY");
 
-const apiHeaders = {
-  apikey: cfg.secretKey,
-  Authorization: `Bearer ${cfg.secretKey}`,
-  "Content-Type": "application/json",
-};
+function apiHeaders(extra = {}) {
+  const headers = { apikey: cfg.secretKey, "Content-Type": "application/json", ...extra };
+  if (cfg.secretKey.startsWith("eyJ")) headers.Authorization = `Bearer ${cfg.secretKey}`;
+  return headers;
+}
 
 function log(event, details = {}) {
   process.stdout.write(`${JSON.stringify({ timestamp: new Date().toISOString(), event, ...details })}\n`);
 }
 
 async function supabase(pathname, init = {}) {
-  const response = await fetch(`${cfg.supabaseUrl}${pathname}`, { ...init, headers: { ...apiHeaders, ...(init.headers ?? {}) } });
+  const response = await fetch(`${cfg.supabaseUrl}${pathname}`, { ...init, headers: apiHeaders(init.headers ?? {}) });
   if (!response.ok) throw new Error(`Supabase ${response.status}: ${await response.text()}`);
   if (response.status === 204) return null;
   const contentType = response.headers.get("content-type") ?? "";
@@ -64,7 +64,7 @@ async function createBatch(file, hash, snapshotAt) {
       byte_size: file.size,
       status: "received",
       archive_status: "pending",
-      metadata: { remote_path: file.remotePath, modified_at: file.modifyTime },
+      metadata: { remote_path: file.remotePath, modified_at: file.modifyTime, source_priority: "sftp" },
     }),
   });
   return batch;
@@ -83,7 +83,7 @@ async function archiveOriginal(buffer, objectPath, contentType) {
 }
 
 async function ensureArchiveBucket() {
-  const response = await fetch(`${cfg.supabaseUrl}/storage/v1/bucket/${cfg.archiveBucket}`, { headers: apiHeaders });
+  const response = await fetch(`${cfg.supabaseUrl}/storage/v1/bucket/${cfg.archiveBucket}`, { headers: apiHeaders() });
   if (response.ok) return;
   if (response.status !== 404) throw new Error(`Bucket lookup failed: ${response.status} ${await response.text()}`);
   await supabase("/storage/v1/bucket", { method: "POST", body: JSON.stringify({ id: cfg.archiveBucket, name: cfg.archiveBucket, public: false }) });
@@ -93,22 +93,29 @@ async function readMappings() {
   return supabase(`/rest/v1/kpi_field_mappings?source_id=eq.${cfg.sourceId}&is_active=eq.true&select=source_field,target_metric_key,target_metric_label,aggregation`, { method: "GET" });
 }
 
-function cellValue(workbook, sourceField) {
-  const separator = sourceField.lastIndexOf("!");
+function rawCellValue(workbook, reference) {
+  const separator = reference.lastIndexOf("!");
   if (separator <= 0) return undefined;
-  const sheetName = sourceField.slice(0, separator);
-  const cell = sourceField.slice(separator + 1).toUpperCase();
+  const sheetName = reference.slice(0, separator).trim();
+  const cell = reference.slice(separator + 1).trim().toUpperCase();
   return workbook.Sheets[sheetName]?.[cell]?.v;
 }
 
+function cellValue(workbook, sourceField) {
+  const expressions = sourceField.split("+").map((part) => part.trim()).filter(Boolean);
+  if (expressions.length === 1) return rawCellValue(workbook, expressions[0]);
+  const values = expressions.map((reference) => Number(rawCellValue(workbook, reference)));
+  return values.every(Number.isFinite) ? values.reduce((sum, value) => sum + value, 0) : undefined;
+}
+
 function extractMetrics(buffer, filename, mappings) {
-  if (!mappings.length) return [];
+  if (!mappings.length) throw new Error("No active SFTP field mappings configured");
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true, dense: false });
   return mappings.flatMap((mapping) => {
     const raw = cellValue(workbook, mapping.source_field);
     const value = typeof raw === "number" ? raw : Number(String(raw ?? "").replace(",", "."));
     if (!Number.isFinite(value)) {
-      log("mapping_skipped", { filename, sourceField: mapping.source_field, reason: "not_numeric" });
+      log("mapping_skipped", { filename, sourceField: mapping.source_field, metric: mapping.target_metric_key, reason: "not_numeric" });
       return [];
     }
     return [{ metric_key: mapping.target_metric_key, metric_label: mapping.target_metric_label, metric_value: value, unit: "count", dimensions: {} }];
@@ -116,8 +123,11 @@ function extractMetrics(buffer, filename, mappings) {
 }
 
 function snapshotDate(file) {
-  const match = file.name.match(/(20\d{2})[-_.]?(\d{2})[-_.]?(\d{2})/);
-  if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+  const iso = file.name.match(/(20\d{2})[-_.](\d{2})[-_.](\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const french = file.name.match(/(\d{2})[-_.](\d{2})[-_.](20\d{2})/);
+  if (french) return `${french[3]}-${french[2]}-${french[1]}`;
+  log("snapshot_date_fallback", { filename: file.name, modifiedAt: file.modifyTime });
   return new Date(file.modifyTime || Date.now()).toISOString().slice(0, 10);
 }
 
@@ -140,6 +150,7 @@ async function run() {
     });
     await ensureArchiveBucket();
     const mappings = await readMappings();
+    log("mappings_loaded", { count: mappings.length });
     const remoteFiles = (await sftp.list(cfg.remoteDir)).filter((file) => file.type === "-" && cfg.pattern.test(file.name));
     filesSeen = remoteFiles.length;
     for (const remoteFile of remoteFiles) {
