@@ -75,14 +75,36 @@ jobs:
                 String(payload.latestSource || "").toLowerCase().includes("ftp") &&
                 String(payload.snapshot?.date || "") >= "2026-08-13"
               ) {
-                process.exit(0);
+                break;
               }
             } catch (error) {
               last = { error: error instanceof Error ? error.message : String(error) };
               console.log(`attempt ${attempt}: ${JSON.stringify(last)}`);
             }
+            if (attempt === 8) {
+              console.error(`Live dashboard verification failed: ${JSON.stringify(last)}`);
+              process.exit(1);
+            }
             await new Promise((resolve) => setTimeout(resolve, 5000));
           }
-          console.error(`Live dashboard verification failed: ${JSON.stringify(last)}`);
-          process.exit(1);
+          NODE
+      - name: Verify client hydration assets
+        run: |
+          node <<'NODE'
+          const origin = "https://kpi-crvo.cyril-gay.workers.dev";
+          const response = await fetch(`${origin}/?_=${Date.now()}`, { headers: { "Cache-Control": "no-cache" } });
+          const html = await response.text();
+          console.log(`root status=${response.status} html_bytes=${html.length}`);
+          const scripts = [...html.matchAll(/<script[^>]+src=["']([^"']+)["']/g)].map((match) => match[1]);
+          console.log(`script_count=${scripts.length}`);
+          if (!scripts.length) {
+            console.error("No client script tags found in the production HTML.");
+            process.exit(1);
+          }
+          for (const src of scripts.slice(0, 20)) {
+            const url = new URL(src, origin).toString();
+            const asset = await fetch(url, { headers: { "Cache-Control": "no-cache" } });
+            console.log(`asset ${asset.status} ${asset.headers.get("content-type") || ""} ${url}`);
+            if (!asset.ok) process.exitCode = 2;
+          }
           NODE
