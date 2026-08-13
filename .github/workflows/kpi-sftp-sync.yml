@@ -11,7 +11,7 @@ on:
   schedule:
     # Les dépôts opérationnels observés arrivent majoritairement autour de H:00 à H:04.
     # Contrôle à H:05 puis toutes les 15 min sur la plage opérationnelle (cron en UTC).
-    # Les doublons sont ignorés par SHA-256 : aucun retraitement si le fichier n'a pas changé.
+    # Les doublons d'archives sont ignorés par SHA-256 ; la photo Factory live est rafraîchie à chaque passage.
     - cron: "5,20,35,50 3-21 * * *"
 
 permissions:
@@ -44,6 +44,4 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run check
       - run: npm run sync
-      # Contrôle temporaire sans donnée véhicule : permet de rapprocher les agrégats
-      # Factory clôturés du Book avant d'activer le mapping CSV de production.
-      - run: node src/factory-diagnostics.mjs
+      - run: node src/factory-live-sync.mjs
