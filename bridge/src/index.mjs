@@ -43,8 +43,6 @@ const missing = Object.entries(required).filter(([, value]) => !value).map(([nam
 if (missing.length) throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
 
 const gatewayUrl = `${cfg.supabaseUrl}/functions/v1/kpi-ftp-bridge-gateway`;
-// Jeton dédié au bridge : il est dérivé du mot de passe FTP et ne réutilise jamais
-// ce mot de passe lui-même comme authentifiant HTTP.
 const gatewayToken = hash(`kpi-crvo-ftp-bridge:v1:${cfg.password}`);
 
 function log(event, details = {}) {
@@ -126,13 +124,7 @@ function extractMetrics(buffer, filename, mappings) {
       log("mapping_skipped", { filename, sourceField: mapping.source_field, metric: mapping.target_metric_key, reason: "not_numeric" });
       return [];
     }
-    return [{
-      metric_key: mapping.target_metric_key,
-      metric_label: mapping.target_metric_label,
-      metric_value: value,
-      unit: "count",
-      dimensions: {},
-    }];
+    return [{ metric_key: mapping.target_metric_key, metric_label: mapping.target_metric_label, metric_value: value, unit: "count", dimensions: {} }];
   });
 }
 
@@ -143,10 +135,7 @@ function inspectCsvSchema(buffer) {
   if (!sheet) return { headers: [], rowCount: 0 };
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, blankrows: false });
   const first = Array.isArray(rows[0]) ? rows[0] : [];
-  const headers = first
-    .map((value) => String(value ?? "").trim())
-    .filter(Boolean)
-    .slice(0, 120);
+  const headers = first.map((value) => String(value ?? "").trim()).filter(Boolean).slice(0, 120);
   return { headers, rowCount: Math.max(0, rows.length - 1) };
 }
 
@@ -178,28 +167,16 @@ function modifiedTimestamp(remoteFile) {
 
 async function prepareImport(file, buffer, fileHash, snapshotAt) {
   const { status, payload } = await gateway("init", {
-    body: {
-      sourceId: cfg.sourceId,
-      filename: file.name,
-      byteSize: file.size || buffer.length,
-      sha256: fileHash,
-      snapshotAt,
-      remotePath: file.remotePath,
-      modifiedAt: file.modifyTime,
-    },
+    body: { sourceId: cfg.sourceId, filename: file.name, byteSize: file.size || buffer.length, sha256: fileHash, snapshotAt, remotePath: file.remotePath, modifiedAt: file.modifyTime },
     allowedStatuses: [409],
   });
-  if (status === 409 && payload.duplicate) return { duplicate: true, batchId: payload.batchId };
-  if (!payload.batchId || !payload.signedUrl) throw new Error("KPI gateway returned an incomplete FTP import preparation");
-  return { duplicate: false, batchId: payload.batchId, signedUrl: payload.signedUrl };
+  if (status === 409 && payload.duplicate) return { duplicate: true, batchId: payload.batchId, signedUrl: null, archivePresent: true };
+  if (!payload.batchId || (!payload.signedUrl && !payload.archivePresent)) throw new Error("KPI gateway returned an incomplete FTP import preparation");
+  return { duplicate: false, batchId: payload.batchId, signedUrl: payload.signedUrl ?? null, archivePresent: Boolean(payload.archivePresent) };
 }
 
 async function uploadArchive(signedUrl, buffer) {
-  const response = await fetch(signedUrl, {
-    method: "PUT",
-    headers: { "Content-Type": "application/octet-stream", "x-upsert": "false" },
-    body: buffer,
-  });
+  const response = await fetch(signedUrl, { method: "PUT", headers: { "Content-Type": "application/octet-stream", "x-upsert": "false" }, body: buffer });
   if (!response.ok) throw new Error(`Archive upload failed: ${response.status} ${await response.text()}`);
 }
 
@@ -217,13 +194,7 @@ async function run() {
     const started = await gateway("start-run", { body: { details: { protocol: connection.secure ? "ftps" : "ftp", remote_dir: connection.remoteDir } } });
     runId = started.payload.runId ?? null;
 
-    await ftp.access({
-      host: connection.host,
-      port: connection.port,
-      user: connection.username,
-      password: connection.password,
-      secure: connection.secure,
-    });
+    await ftp.access({ host: connection.host, port: connection.port, user: connection.username, password: connection.password, secure: connection.secure });
     log("ftp_connected", { host: connection.host, port: connection.port, secure: connection.secure, remoteDir: connection.remoteDir });
 
     const mappings = await readMappings();
@@ -237,35 +208,22 @@ async function run() {
       const remotePath = path.posix.join(connection.remoteDir, remoteFile.name);
       const buffer = await downloadToBuffer(ftp, remotePath);
       const fileHash = await sha256(buffer);
-      const file = {
-        name: remoteFile.name,
-        size: remoteFile.size || buffer.length,
-        modifyTime: modifiedTimestamp(remoteFile),
-        remotePath,
-      };
+      const file = { name: remoteFile.name, size: remoteFile.size || buffer.length, modifyTime: modifiedTimestamp(remoteFile), remotePath };
       const date = snapshotDate(file);
+      const csvSchema = /\.csv$/i.test(remoteFile.name) ? inspectCsvSchema(buffer) : null;
+      if (csvSchema) log("csv_schema_detected", { filename: remoteFile.name, rowCount: csvSchema.rowCount, headers: csvSchema.headers });
+
       const prepared = await prepareImport(file, buffer, fileHash, date);
       if (prepared.duplicate) {
         log("duplicate_skipped", { filename: remoteFile.name, sha256: fileHash });
         continue;
       }
 
-      await uploadArchive(prepared.signedUrl, buffer);
+      if (prepared.signedUrl) await uploadArchive(prepared.signedUrl, buffer);
 
-      if (/\.csv$/i.test(remoteFile.name)) {
-        const schema = inspectCsvSchema(buffer);
-        await gateway("archive-only", {
-          body: {
-            batchId: prepared.batchId,
-            metadata: {
-              mapping_status: "pending_csv_schema",
-              csv_headers: schema.headers,
-              csv_row_count: schema.rowCount,
-            },
-          },
-        });
+      if (csvSchema) {
+        await gateway("archive-only", { body: { batchId: prepared.batchId, metadata: { mapping_status: "pending_csv_schema", csv_headers: csvSchema.headers, csv_row_count: csvSchema.rowCount } } });
         filesArchivedPendingMapping += 1;
-        log("csv_schema_detected", { filename: remoteFile.name, rowCount: schema.rowCount, headers: schema.headers });
         continue;
       }
 
@@ -282,29 +240,12 @@ async function run() {
       log("file_imported", { filename: remoteFile.name, snapshotAt: date, metrics: finalized.payload.metrics ?? metrics.length, sha256: fileHash });
     }
 
-    const details = {
-      protocol: connection.secure ? "ftps" : "ftp",
-      remote_dir: connection.remoteDir,
-      files_archived_pending_mapping: filesArchivedPendingMapping,
-    };
+    const details = { protocol: connection.secure ? "ftps" : "ftp", remote_dir: connection.remoteDir, files_archived_pending_mapping: filesArchivedPendingMapping };
     if (runId) await gateway("finish-run", { body: { runId, status: "success", filesSeen, filesImported, details } });
     log("sync_completed", { filesSeen, filesImported, filesArchivedPendingMapping });
   } catch (error) {
     if (runId) {
-      await gateway("finish-run", {
-        body: {
-          runId,
-          status: "failed",
-          filesSeen,
-          filesImported,
-          details: {
-            protocol: connection?.secure ? "ftps" : "ftp",
-            remote_dir: connection?.remoteDir ?? "/",
-            files_archived_pending_mapping: filesArchivedPendingMapping,
-            error: error instanceof Error ? error.message : "unknown",
-          },
-        },
-      }).catch(() => undefined);
+      await gateway("finish-run", { body: { runId, status: "failed", filesSeen, filesImported, details: { protocol: connection?.secure ? "ftps" : "ftp", remote_dir: connection?.remoteDir ?? "/", files_archived_pending_mapping: filesArchivedPendingMapping, error: error instanceof Error ? error.message : "unknown" } } }).catch(() => undefined);
     }
     throw error;
   } finally {
