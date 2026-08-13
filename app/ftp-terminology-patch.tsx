@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import LiveBottlenecksPatch from "./live-bottlenecks-patch";
 
 function replaceLegacySftpLabels(root: unknown) {
   const walker = document.createTreeWalker(root as unknown as Node, NodeFilter.SHOW_TEXT);
@@ -30,5 +31,5 @@ export default function FtpTerminologyPatch() {
     observer.observe(document.body, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, []);
-  return null;
+  return <LiveBottlenecksPatch />;
 }
