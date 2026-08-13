@@ -1,29 +1,48 @@
 import crypto from "node:crypto";
 import path from "node:path";
-import SftpClient from "ssh2-sftp-client";
+import { Writable } from "node:stream";
+import { Client as FtpClient } from "basic-ftp";
 import * as XLSX from "@e965/xlsx";
 
-const required = ["SFTP_HOST", "SFTP_USERNAME", "SFTP_REMOTE_DIR", "SFTP_HOST_FINGERPRINT_SHA256", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "KPI_SOURCE_ID"];
-const missing = required.filter((name) => !process.env[name]);
-if (missing.length) throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
+function normalizeRemoteDir(value) {
+  const normalized = String(value ?? "/").trim().replaceAll("\\", "/").replace(/\/{2,}/g, "/");
+  if (!normalized || normalized === ".") return "/";
+  return normalized.startsWith("/") ? normalized : `/${normalized}`;
+}
+
+function boolEnv(value, fallback = false) {
+  if (value == null || value === "") return fallback;
+  return /^(1|true|yes|on)$/i.test(String(value));
+}
 
 const cfg = {
-  host: process.env.SFTP_HOST,
-  port: Number(process.env.SFTP_PORT ?? "22"),
-  username: process.env.SFTP_USERNAME,
-  password: process.env.SFTP_PASSWORD,
-  privateKey: process.env.SFTP_PRIVATE_KEY?.replaceAll("\\n", "\n"),
-  passphrase: process.env.SFTP_PRIVATE_KEY_PASSPHRASE,
-  remoteDir: process.env.SFTP_REMOTE_DIR,
-  fingerprint: process.env.SFTP_HOST_FINGERPRINT_SHA256,
-  pattern: new RegExp(process.env.SFTP_FILE_PATTERN ?? "\\.(csv|xls|xlsx)$", "i"),
-  supabaseUrl: process.env.SUPABASE_URL.replace(/\/$/, ""),
+  // FTP_* est la configuration cible. Les anciens secrets SFTP_* restent acceptés
+  // temporairement pour assurer une bascule sans interruption du job GitHub Actions.
+  host: process.env.FTP_HOST ?? process.env.SFTP_HOST,
+  port: Number(process.env.FTP_PORT ?? process.env.SFTP_PORT ?? "21"),
+  username: process.env.FTP_USERNAME ?? process.env.SFTP_USERNAME,
+  password: process.env.FTP_PASSWORD ?? process.env.SFTP_PASSWORD,
+  remoteDir: normalizeRemoteDir(process.env.FTP_REMOTE_DIR ?? process.env.SFTP_REMOTE_DIR ?? "/"),
+  secure: boolEnv(process.env.FTP_SECURE, false),
+  pattern: new RegExp(process.env.FTP_FILE_PATTERN ?? process.env.SFTP_FILE_PATTERN ?? "\\.(csv|xls|xlsx)$", "i"),
+  supabaseUrl: process.env.SUPABASE_URL?.replace(/\/$/, ""),
   secretKey: process.env.SUPABASE_SECRET_KEY,
   sourceId: process.env.KPI_SOURCE_ID,
   archiveBucket: process.env.SUPABASE_ARCHIVE_BUCKET ?? "kpi-raw-archive",
 };
 
-if (!cfg.password && !cfg.privateKey) throw new Error("Set SFTP_PASSWORD or SFTP_PRIVATE_KEY");
+const required = {
+  FTP_HOST: cfg.host,
+  FTP_USERNAME: cfg.username,
+  FTP_PASSWORD: cfg.password,
+  FTP_REMOTE_DIR: cfg.remoteDir,
+  SUPABASE_URL: cfg.supabaseUrl,
+  SUPABASE_SECRET_KEY: cfg.secretKey,
+  KPI_SOURCE_ID: cfg.sourceId,
+};
+const missing = Object.entries(required).filter(([, value]) => !value).map(([name]) => name);
+if (missing.length) throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
+if (!Number.isFinite(cfg.port) || cfg.port <= 0) throw new Error("FTP_PORT must be a valid positive port number");
 
 function apiHeaders(extra = {}) {
   const headers = { apikey: cfg.secretKey, "Content-Type": "application/json", ...extra };
@@ -64,7 +83,7 @@ async function createBatch(file, hash, snapshotAt) {
       byte_size: file.size,
       status: "received",
       archive_status: "pending",
-      metadata: { remote_path: file.remotePath, modified_at: file.modifyTime, source_priority: "sftp" },
+      metadata: { remote_path: file.remotePath, modified_at: file.modifyTime, source_priority: "ftp" },
     }),
   });
   return batch;
@@ -109,7 +128,7 @@ function cellValue(workbook, sourceField) {
 }
 
 function extractMetrics(buffer, filename, mappings) {
-  if (!mappings.length) throw new Error("No active SFTP field mappings configured");
+  if (!mappings.length) throw new Error("No active FTP field mappings configured");
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true, dense: false });
   return mappings.flatMap((mapping) => {
     const raw = cellValue(workbook, mapping.source_field);
@@ -131,38 +150,61 @@ function snapshotDate(file) {
   return new Date(file.modifyTime || Date.now()).toISOString().slice(0, 10);
 }
 
+async function downloadToBuffer(client, remotePath) {
+  const chunks = [];
+  const sink = new Writable({
+    write(chunk, _encoding, callback) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      callback();
+    },
+  });
+  await client.downloadTo(sink, remotePath);
+  return Buffer.concat(chunks);
+}
+
+function modifiedTimestamp(remoteFile) {
+  if (remoteFile.modifiedAt instanceof Date && Number.isFinite(remoteFile.modifiedAt.getTime())) return remoteFile.modifiedAt.getTime();
+  return Date.now();
+}
+
 async function run() {
-  const sftp = new SftpClient("kpi-crvo-readonly");
-  const run = await supabase("/rest/v1/kpi_bridge_runs", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ status: "running" }) });
+  const ftp = new FtpClient(30_000);
+  ftp.ftp.verbose = false;
+  const run = await supabase("/rest/v1/kpi_bridge_runs", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ status: "running", details: { protocol: cfg.secure ? "ftps" : "ftp", remote_dir: cfg.remoteDir } }) });
   const runId = run[0].id;
   let filesSeen = 0;
   let filesImported = 0;
   try {
-    await sftp.connect({
+    await ftp.access({
       host: cfg.host,
       port: cfg.port,
-      username: cfg.username,
+      user: cfg.username,
       password: cfg.password,
-      privateKey: cfg.privateKey,
-      passphrase: cfg.passphrase,
-      hostVerifier: cfg.fingerprint ? (key) => crypto.createHash("sha256").update(key).digest("base64") === cfg.fingerprint.replace(/^SHA256:/, "") : undefined,
-      readyTimeout: 20_000,
+      secure: cfg.secure,
     });
+    log("ftp_connected", { host: cfg.host, port: cfg.port, secure: cfg.secure, remoteDir: cfg.remoteDir });
+
     await ensureArchiveBucket();
     const mappings = await readMappings();
     log("mappings_loaded", { count: mappings.length });
-    const remoteFiles = (await sftp.list(cfg.remoteDir)).filter((file) => file.type === "-" && cfg.pattern.test(file.name));
+
+    const remoteFiles = (await ftp.list(cfg.remoteDir)).filter((file) => cfg.pattern.test(file.name));
     filesSeen = remoteFiles.length;
+
     for (const remoteFile of remoteFiles) {
       const remotePath = path.posix.join(cfg.remoteDir, remoteFile.name);
-      const buffer = await sftp.get(remotePath);
-      if (!Buffer.isBuffer(buffer)) throw new Error(`Unexpected stream response for ${remoteFile.name}`);
+      const buffer = await downloadToBuffer(ftp, remotePath);
       const hash = await sha256(buffer);
-      if (await existingBatch(hash)) { log("duplicate_skipped", { filename: remoteFile.name, sha256: hash }); continue; }
-      const file = { name: remoteFile.name, size: remoteFile.size, modifyTime: remoteFile.modifyTime, remotePath };
+      if (await existingBatch(hash)) {
+        log("duplicate_skipped", { filename: remoteFile.name, sha256: hash });
+        continue;
+      }
+
+      const file = { name: remoteFile.name, size: remoteFile.size || buffer.length, modifyTime: modifiedTimestamp(remoteFile), remotePath };
       const date = snapshotDate(file);
       const batch = await createBatch(file, hash, date);
       const objectPath = `${date}/${hash}-${remoteFile.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+
       try {
         await archiveOriginal(buffer, objectPath, "application/octet-stream");
         await updateBatch(batch.id, { status: "processing", archive_status: "stored", archive_object_path: objectPath });
@@ -172,17 +214,18 @@ async function run() {
         filesImported += 1;
         log("file_imported", { filename: remoteFile.name, snapshotAt: date, metrics: metrics.length, sha256: hash });
       } catch (error) {
-        await updateBatch(batch.id, { status: "failed", metadata: { remote_path: remotePath, error: error instanceof Error ? error.message : "unknown" } });
+        await updateBatch(batch.id, { status: "failed", metadata: { remote_path: remotePath, source_priority: "ftp", error: error instanceof Error ? error.message : "unknown" } });
         throw error;
       }
     }
-    await supabase(`/rest/v1/kpi_bridge_runs?id=eq.${runId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ finished_at: new Date().toISOString(), status: "success", files_seen: filesSeen, files_imported: filesImported }) });
+
+    await supabase(`/rest/v1/kpi_bridge_runs?id=eq.${runId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ finished_at: new Date().toISOString(), status: "success", files_seen: filesSeen, files_imported: filesImported, details: { protocol: cfg.secure ? "ftps" : "ftp", remote_dir: cfg.remoteDir } }) });
     log("sync_completed", { filesSeen, filesImported });
   } catch (error) {
-    await supabase(`/rest/v1/kpi_bridge_runs?id=eq.${runId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ finished_at: new Date().toISOString(), status: "failed", files_seen: filesSeen, files_imported: filesImported, details: { error: error instanceof Error ? error.message : "unknown" } }) }).catch(() => undefined);
+    await supabase(`/rest/v1/kpi_bridge_runs?id=eq.${runId}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ finished_at: new Date().toISOString(), status: "failed", files_seen: filesSeen, files_imported: filesImported, details: { protocol: cfg.secure ? "ftps" : "ftp", remote_dir: cfg.remoteDir, error: error instanceof Error ? error.message : "unknown" } }) }).catch(() => undefined);
     throw error;
   } finally {
-    await sftp.end().catch(() => undefined);
+    ftp.close();
   }
 }
 
