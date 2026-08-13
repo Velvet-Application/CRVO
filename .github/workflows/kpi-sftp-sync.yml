@@ -35,8 +35,6 @@ jobs:
           SFTP_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SFTP_PRIVATE_KEY_PASSPHRASE }}
           SFTP_HOST_FINGERPRINT_SHA256: ${{ secrets.SFTP_HOST_FINGERPRINT_SHA256 }}
           SFTP_REMOTE_DIR: ${{ secrets.SFTP_REMOTE_DIR }}
-          SFTP_FILE_PATTERN: ${{ vars.SFTP_FILE_PATTERN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          SUPABASE_ARCHIVE_BUCKET: ${{ vars.SUPABASE_ARCHIVE_BUCKET }}
-          KPI_SOURCE_ID: ${{ vars.KPI_SOURCE_ID }}
+          KPI_SOURCE_ID: dfbb57cc-8771-4e53-b52b-38defa389b64
