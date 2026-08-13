@@ -106,7 +106,9 @@ function rawCellValue(workbook, reference) {
 function cellValue(workbook, sourceField) {
   const expressions = sourceField.split("+").map((part) => part.trim()).filter(Boolean);
   if (expressions.length === 1) return rawCellValue(workbook, expressions[0]);
-  const values = expressions.map((reference) => Number(rawCellValue(workbook, reference)));
+  const rawValues = expressions.map((reference) => rawCellValue(workbook, reference));
+  if (rawValues.some((value) => value === undefined || value === null || String(value).trim() === "")) return undefined;
+  const values = rawValues.map((value) => Number(value));
   return values.every(Number.isFinite) ? values.reduce((sum, value) => sum + value, 0) : undefined;
 }
 
@@ -115,7 +117,11 @@ function extractMetrics(buffer, filename, mappings) {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true, dense: false });
   return mappings.flatMap((mapping) => {
     const raw = cellValue(workbook, mapping.source_field);
-    const value = typeof raw === "number" ? raw : Number(String(raw ?? "").replace(",", "."));
+    if (raw === undefined || raw === null || String(raw).trim() === "") {
+      log("mapping_skipped", { filename, sourceField: mapping.source_field, metric: mapping.target_metric_key, reason: "missing" });
+      return [];
+    }
+    const value = typeof raw === "number" ? raw : Number(String(raw).replace(",", "."));
     if (!Number.isFinite(value)) {
       log("mapping_skipped", { filename, sourceField: mapping.source_field, metric: mapping.target_metric_key, reason: "not_numeric" });
       return [];
@@ -128,6 +134,20 @@ function extractMetrics(buffer, filename, mappings) {
       dimensions: {},
     }];
   });
+}
+
+function inspectCsvSchema(buffer) {
+  const workbook = XLSX.read(buffer, { type: "buffer", raw: true, dense: false });
+  const sheetName = workbook.SheetNames[0];
+  const sheet = sheetName ? workbook.Sheets[sheetName] : undefined;
+  if (!sheet) return { headers: [], rowCount: 0 };
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, blankrows: false });
+  const first = Array.isArray(rows[0]) ? rows[0] : [];
+  const headers = first
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .slice(0, 120);
+  return { headers, rowCount: Math.max(0, rows.length - 1) };
 }
 
 function snapshotDate(file) {
@@ -189,6 +209,7 @@ async function run() {
   let runId = null;
   let filesSeen = 0;
   let filesImported = 0;
+  let filesArchivedPendingMapping = 0;
   let connection = null;
 
   try {
@@ -230,14 +251,44 @@ async function run() {
       }
 
       await uploadArchive(prepared.signedUrl, buffer);
+
+      if (/\.csv$/i.test(remoteFile.name)) {
+        const schema = inspectCsvSchema(buffer);
+        await gateway("archive-only", {
+          body: {
+            batchId: prepared.batchId,
+            metadata: {
+              mapping_status: "pending_csv_schema",
+              csv_headers: schema.headers,
+              csv_row_count: schema.rowCount,
+            },
+          },
+        });
+        filesArchivedPendingMapping += 1;
+        log("csv_schema_detected", { filename: remoteFile.name, rowCount: schema.rowCount, headers: schema.headers });
+        continue;
+      }
+
       const metrics = extractMetrics(buffer, remoteFile.name, mappings);
+      if (!metrics.length) {
+        await gateway("archive-only", { body: { batchId: prepared.batchId, metadata: { mapping_status: "no_matching_excel_metrics" } } });
+        filesArchivedPendingMapping += 1;
+        log("file_archived_without_metrics", { filename: remoteFile.name, snapshotAt: date });
+        continue;
+      }
+
       const finalized = await gateway("finalize", { body: { batchId: prepared.batchId, metrics } });
       filesImported += 1;
       log("file_imported", { filename: remoteFile.name, snapshotAt: date, metrics: finalized.payload.metrics ?? metrics.length, sha256: fileHash });
     }
 
-    if (runId) await gateway("finish-run", { body: { runId, status: "success", filesSeen, filesImported, details: { protocol: connection.secure ? "ftps" : "ftp", remote_dir: connection.remoteDir } } });
-    log("sync_completed", { filesSeen, filesImported });
+    const details = {
+      protocol: connection.secure ? "ftps" : "ftp",
+      remote_dir: connection.remoteDir,
+      files_archived_pending_mapping: filesArchivedPendingMapping,
+    };
+    if (runId) await gateway("finish-run", { body: { runId, status: "success", filesSeen, filesImported, details } });
+    log("sync_completed", { filesSeen, filesImported, filesArchivedPendingMapping });
   } catch (error) {
     if (runId) {
       await gateway("finish-run", {
@@ -246,7 +297,12 @@ async function run() {
           status: "failed",
           filesSeen,
           filesImported,
-          details: { protocol: connection?.secure ? "ftps" : "ftp", remote_dir: connection?.remoteDir ?? "/", error: error instanceof Error ? error.message : "unknown" },
+          details: {
+            protocol: connection?.secure ? "ftps" : "ftp",
+            remote_dir: connection?.remoteDir ?? "/",
+            files_archived_pending_mapping: filesArchivedPendingMapping,
+            error: error instanceof Error ? error.message : "unknown",
+          },
         },
       }).catch(() => undefined);
     }
