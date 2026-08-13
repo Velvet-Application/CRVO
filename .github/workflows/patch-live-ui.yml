@@ -2,6 +2,10 @@ name: Patch live UI
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/patch-live-ui.yml"
 
 permissions:
   contents: write
