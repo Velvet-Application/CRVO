@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 const FUNCTION_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co/functions/v1/kpi-operational-live";
-const ANON_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR2bWtodmZtZHN0a3Vud3d1enV6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTU4NjQsImV4cCI6MjEwMjAzMTg2NH0.w18MDX_dL1YarUElTeo9ID0Egivav18tVqjjbkCaOxc";
+const PUBLIC_SUPABASE_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co";
+const PUBLIC_SUPABASE_KEY = "sb_publishable_bGCdOoq05alXNTOtouIQcQ_HX9jpKnv";
+const ANON_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJIUzI1NiIsInJlZiI6InR2bWtodmZtZHN0a3Vud3d1enV6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTU4NjQsImV4cCI6MjEwMjAzMTg2NH0.w18MDX_dL1YarUElTeo9ID0Egivav18tVqjjbkCaOxc";
 
 type Vehicle = {
   registration: string;
@@ -20,8 +22,19 @@ type Vehicle = {
   estimated_total_minutes: null;
   potential_revenue_total: null;
 };
-
 type Queue = { fifo: Vehicle[]; run: Vehicle[]; count: number };
+type FifoRow = {
+  sector_key: string;
+  sector_label: string;
+  registration: string | null;
+  work_order: string | null;
+  status: string | null;
+  alert: string | null;
+  urgency: string | null;
+  status_age_days: number | string | null;
+  factory_age_days: number | string | null;
+  fifo_age_days: number | string | null;
+};
 type OperationalPayload = {
   ok: boolean;
   snapshot: { date:string; label:string; source:string; exits:number; stock:number; production:Array<{name:string;value:number}> };
@@ -40,6 +53,26 @@ function actualFor(snapshot: OperationalPayload["snapshot"], key: string) {
   return snapshot.production.find((item) => item.name === label)?.value ?? (key === "sortie_usine" ? snapshot.exits : 0);
 }
 function num(value: unknown) { const n = Number(value); return Number.isFinite(n) ? n : null; }
+function vehicleFromFifo(row:FifoRow):Vehicle {
+  const age = num(row.fifo_age_days) ?? num(row.factory_age_days) ?? num(row.status_age_days);
+  const factoryAge = num(row.factory_age_days);
+  const alert = row.alert ? String(row.alert) : null;
+  return {
+    registration: String(row.registration ?? ""),
+    work_order: row.work_order ? String(row.work_order) : null,
+    client:null,
+    vin:null,
+    status:row.status ? String(row.status) : null,
+    primary_activity:alert ? `À faire : ${alert}` : row.status ? String(row.status) : null,
+    alert,
+    urgency:row.urgency ? String(row.urgency) : null,
+    factory_age_days:factoryAge,
+    age_days:age,
+    remaining_minutes:null,
+    estimated_total_minutes:null,
+    potential_revenue_total:null,
+  };
+}
 
 async function live() {
   const response = await fetch(FUNCTION_URL, {
@@ -49,33 +82,56 @@ async function live() {
   if (!response.ok) throw new Error(`Operational live ${response.status}`);
   return response.json() as Promise<OperationalPayload>;
 }
+async function fifoLive() {
+  const response = await fetch(`${PUBLIC_SUPABASE_URL}/rest/v1/kpi_pilotage_fifo_public?select=sector_key,sector_label,registration,work_order,status,alert,urgency,status_age_days,factory_age_days,fifo_age_days&order=fifo_age_days.desc&limit=5000`, {
+    headers: { apikey:PUBLIC_SUPABASE_KEY, Accept:"application/json" },
+    cache:"no-store",
+  });
+  if (!response.ok) throw new Error(`FIFO live ${response.status}`);
+  return response.json() as Promise<FifoRow[]>;
+}
 
 export async function GET() {
   try {
     const data = await live();
+    let fifoRows:FifoRow[] = [];
+    try { fifoRows = await fifoLive(); }
+    catch (error) { console.error(JSON.stringify({ event:"pilotage_fifo_view_failed", message:error instanceof Error?error.message:"unknown" })); }
+
+    const fifoBySector = new Map<string,FifoRow[]>();
+    for (const row of fifoRows) {
+      const list = fifoBySector.get(row.sector_key) ?? [];
+      list.push(row);
+      fifoBySector.set(row.sector_key,list);
+    }
+
     const plans = Object.keys(labels).map((sectorKey) => {
       const label = labels[sectorKey];
       const actual = actualFor(data.snapshot, sectorKey);
       const target = targets[sectorKey];
       const gap = Math.max(target - actual, 0);
-      const queue = data.queues[sectorKey] ?? { fifo: [], run: [], count: 0 };
-      const fifoCandidates = queue.fifo ?? [];
-      const runCandidates = queue.run ?? [];
+      const viewRows = fifoBySector.get(sectorKey) ?? [];
+      const edgeQueue = data.queues[sectorKey] ?? { fifo: [], run: [], count: 0 };
+      const fifoCandidates = viewRows.length
+        ? viewRows.slice(0,10).map(vehicleFromFifo)
+        : (edgeQueue.fifo ?? []);
+      const queueCount = viewRows.length || edgeQueue.count || fifoCandidates.length;
+      const runCandidates = edgeQueue.run ?? [];
       const timeReady = runCandidates.some((item) => item.remaining_minutes != null);
       const recommendation = fifoCandidates.slice(0, Math.max(gap, 0)).map((item, index) => ({
         ...item,
         strategy: "FIFO" as const,
-        reason: `FIFO FTP · ${item.age_days?.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) ?? "?"} j${item.alert ? ` · ${item.alert}` : ""}`,
+        reason: `FIFO EtatduParc · ${item.age_days?.toLocaleString("fr-FR", { maximumFractionDigits: 1 }) ?? "?"} j${item.alert ? ` · ${item.alert}` : ""}`,
         rank: index + 1,
       }));
       return {
         sectorKey, label, actual, target, gap,
         attainment: target > 0 ? Math.round(actual / target * 100) : 0,
-        queue: queue.count ?? fifoCandidates.length,
-        workloadReady: (queue.count ?? 0) > 0,
+        queue: queueCount,
+        workloadReady: queueCount > 0,
         timeReady,
         runMaxMinutes: 60,
-        fifoShare: .7,
+        fifoShare: 1,
         highTimeOld: 0,
         runPool: runCandidates.length,
         remainingHours: runCandidates.reduce((sum, item) => sum + (item.remaining_minutes ?? 0), 0) / 60,
@@ -100,7 +156,7 @@ export async function GET() {
         ftp: true,
         sftp: false,
         production: "ftp",
-        workloadFtp: true,
+        workloadFtp: fifoRows.length > 0 || data.operationalCount > 0,
         workloadSql: false,
         workloadTime: plans.some((item) => item.timeReady),
         alertsFtp: data.alertCount > 0,
@@ -111,6 +167,7 @@ export async function GET() {
       workloadSummary: { workOrders:data.operationalCount, remainingHours:0, potentialRevenue:0 },
       major,
       plans,
+      fifoRowsLoaded: fifoRows.length,
       ftpRefresh: {
         lastRefreshAt: data.freshness.refreshAt,
         lastDepositAt: data.freshness.depositAt,
@@ -131,12 +188,12 @@ export async function GET() {
         latestHistoryEventTime: null,
       } : null,
       methodology: {
-        fifo: "FIFO calculé depuis EtatduParc sur l’ancienneté usine ; l’alerte FTP indique le prochain passage attendu.",
-        run: "RUN affiché uniquement lorsqu’une durée explicite <= 60 min est présente dans l’alerte FTP ; le temps SQL complètera ce calcul.",
+        fifo: "FIFO par secteur issu d'EtatduParc. Les véhicules sont classés par ancienneté usine décroissante ; Alerte alimente le ou les secteurs restant à réaliser.",
+        run: "RUN reste en attente d'un temps fiable par dossier ; aucune durée n'est inventée.",
       },
     }, { headers: { "Cache-Control": "public, max-age=45, stale-while-revalidate=60" } });
   } catch (error) {
-    console.error(JSON.stringify({ event:"pilotage_live_failed", message:error instanceof Error ? error.message : "unknown" }));
+    console.error(JSON.stringify({ event:"pilotage_live_failed", message:error instanceof Error?error.message:"unknown" }));
     return NextResponse.json({ error:"Pilotage live indisponible." }, { status:503, headers:{ "Cache-Control":"no-store" } });
   }
 }
