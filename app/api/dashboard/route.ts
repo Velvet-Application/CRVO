@@ -17,6 +17,14 @@ type LiveRow = SnapshotRow & {
   park_modified_at: string | null;
 };
 
+type DirectionLiveFlowRow = {
+  snapshot_at: string;
+  park_modified_at: string | null;
+  preparation_remaining: number | string;
+  quality_remaining: number | string;
+  photo_remaining: number | string;
+};
+
 const verifiedRows: SnapshotRow[] = [
   { snapshot_at: "2026-08-03", source_name: "Book CRVO Lens - Journée du 03.08.2026.xlsx", metrics: { entries_vop: 50, exits_vop: 87, factory_stock: 1146, stock_over_15d: 508, stock_over_20d: 418, production_expertise: 83, production_mechanics: 83, production_dsp: 25, production_bodywork: 13, production_preparation: 85, production_quality: 91, production_factory_exit: 87 } },
   { snapshot_at: "2026-08-04", source_name: "Book CRVO Lens - Journée du 04.08.2026.xlsx", metrics: { entries_vop: 54, exits_vop: 91, factory_stock: 1139, stock_over_15d: 476, stock_over_20d: 392, production_expertise: 86, production_mechanics: 91, production_dsp: 26, production_bodywork: 17, production_preparation: 91, production_quality: 91, production_factory_exit: 91 } },
@@ -147,13 +155,16 @@ export async function GET(request: Request) {
   const requestedDate = url.searchParams.get("date")?.match(/^\d{4}-\d{2}-\d{2}$/)?.[0] ?? null;
 
   try {
-    const [historyRows, liveRows] = await Promise.all([
+    const [historyRows, liveRows, directionRows] = await Promise.all([
       publicRest<SnapshotRow[]>("kpi_public_dashboard_snapshots?select=snapshot_at,source_name,metrics&order=snapshot_at.asc&limit=180"),
       publicRest<LiveRow[]>("kpi_ftp_live_dashboard?select=snapshot_at,source_name,metrics,source_modified_at,factory_modified_at,park_modified_at&limit=1"),
+      publicRest<DirectionLiveFlowRow[]>("kpi_ftp_direction_live_flow?select=snapshot_at,park_modified_at,preparation_remaining,quality_remaining,photo_remaining&limit=1").catch(() => []),
     ]);
     const all = foldSaturdayIntoFriday(mergeRows([...historyRows, ...liveRows]));
     const source = (requestedDate ? all.find((row) => row.snapshot_at === requestedDate) : all.at(-1)) ?? all.at(-1) ?? verifiedRows.at(-1)!;
     const live = liveRows[0] ?? null;
+    const direction = directionRows[0] ?? null;
+    const liveMetrics = live?.metrics ?? {};
     return NextResponse.json({
       connected: true,
       backend: "supabase-public-live",
@@ -161,6 +172,16 @@ export async function GET(request: Request) {
       latestSource: source.source_name,
       snapshot: formatSnapshot(source),
       snapshots: wantsHistory ? all.map(formatSnapshot) : undefined,
+      liveFlow: live ? {
+        date: live.snapshot_at,
+        received: numberValue(liveMetrics, "entries_vop"),
+        preparationRemaining: Number(direction?.preparation_remaining ?? 0) || 0,
+        qualityRemaining: Number(direction?.quality_remaining ?? 0) || 0,
+        photoRemaining: Number(direction?.photo_remaining ?? 0) || 0,
+        exits: numberValue(liveMetrics, "production_factory_exit", numberValue(liveMetrics, "exits_vop")),
+        stock: numberValue(liveMetrics, "factory_stock"),
+        parkModifiedAt: direction?.park_modified_at ?? live.park_modified_at,
+      } : null,
       liveFreshness: live ? {
         sourceModifiedAt: live.source_modified_at,
         factoryModifiedAt: live.factory_modified_at,
@@ -171,6 +192,6 @@ export async function GET(request: Request) {
     console.error(JSON.stringify({ event: "dashboard_public_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
     const all = foldSaturdayIntoFriday(mergeRows([]));
     const source = (requestedDate ? all.find((row) => row.snapshot_at === requestedDate) : all.at(-1)) ?? verifiedRows.at(-1)!;
-    return NextResponse.json({ connected: false, backend: "embedded-history", sourceMode: sourceMode(source.source_name), latestSource: source.source_name, snapshot: formatSnapshot(source), snapshots: wantsHistory ? all.map(formatSnapshot) : undefined, liveFreshness: null }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
+    return NextResponse.json({ connected: false, backend: "embedded-history", sourceMode: sourceMode(source.source_name), latestSource: source.source_name, snapshot: formatSnapshot(source), snapshots: wantsHistory ? all.map(formatSnapshot) : undefined, liveFlow: null, liveFreshness: null }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
   }
 }
