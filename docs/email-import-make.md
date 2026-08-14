@@ -20,9 +20,9 @@ Endpoint CRVO :
 
 Authentification :
 
-`x-crvo-ingest-token: <CRVO_INGEST_TOKEN>`
+`x-crvo-ingest-token: <CLE_GENEREE_DANS_DATA_RH>`
 
-Le secret doit rester uniquement dans Make / Cloudflare et ne doit jamais être placé dans un fichier utilisateur ou dans le navigateur.
+La clé se génère depuis `Paramètre > Data RH > Connexion Make -> CRVO`. Seul son SHA-256 est conservé dans Supabase. La valeur en clair n'est affichée qu'au moment de sa création et une nouvelle génération invalide immédiatement l'ancienne.
 
 ## Corps HTTP attendu
 
@@ -38,15 +38,16 @@ Chaque pièce jointe doit être envoyée séparément à l'endpoint. Le routeur 
 
 ## Scénario Make
 
-1. `Webhooks > Custom mailhook` : créer l'adresse de réception.
-2. Envoyer un mail de test contenant les trois exports.
-3. Utiliser `Flow control > Iterator` sur les pièces jointes reçues.
-4. Ajouter `HTTP > Make a request`.
-5. Méthode `POST`, URL de l'endpoint CRVO ci-dessus.
-6. Ajouter le header `x-crvo-ingest-token` avec le secret Cloudflare existant.
-7. Choisir `multipart/form-data` et mapper le nom + les données binaires de chaque pièce jointe dans le champ `file`.
-8. Mapper l'expéditeur, l'objet et l'identifiant du message si disponibles.
-9. Activer le scénario seulement après un test réussi des trois fichiers.
+1. Dans KPI CRVO, ouvrir `Paramètre > Data RH`, générer la clé Make et la copier.
+2. Dans Make, ajouter `Webhooks > Custom mailhook` et créer l'adresse de réception.
+3. Envoyer un mail de test contenant les trois exports.
+4. Utiliser `Flow control > Iterator` sur les pièces jointes reçues.
+5. Ajouter `HTTP > Make a request`.
+6. Méthode `POST`, URL de l'endpoint CRVO ci-dessus.
+7. Ajouter le header `x-crvo-ingest-token` et coller la clé générée depuis KPI CRVO.
+8. Choisir `multipart/form-data` et mapper le nom + les données binaires de chaque pièce jointe dans le champ `file`.
+9. Mapper l'expéditeur, l'objet et l'identifiant du message si disponibles.
+10. Activer le scénario seulement après un test réussi des trois fichiers.
 
 ## Comportement de sécurité et d'intégration
 
