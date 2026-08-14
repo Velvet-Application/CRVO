@@ -21,6 +21,11 @@ function makeSlot(nav: HTMLElement, id: string) {
   return slot;
 }
 
+function relabel(id:string,label:string){
+  const node=document.getElementById(id)?.querySelector("span");
+  if(node&&node.textContent!==label)node.textContent=label;
+}
+
 export default function PilotageNav() {
   const [hosts, setHosts] = useState<Hosts | null>(null);
 
@@ -42,8 +47,12 @@ export default function PilotageNav() {
       const sources = document.getElementById("nav-sources");
       if (!today || !yesterday || !finance || !objectives || !sources) return;
 
-      const todayLabel = today.querySelector("span");
-      if (todayLabel && todayLabel.textContent !== "Performance") todayLabel.textContent = "Performance";
+      relabel("nav-today","Performance");
+      relabel("nav-bottlenecks","Goulot");
+      relabel("nav-walking","Walking DEAD");
+      relabel("nav-finance","Chiffre d'affaire");
+      relabel("nav-objectives","Objectif & seuil");
+      relabel("nav-sources","Source & Connexion");
 
       const performance = makeSlot(nav, "architecture-performance-label");
       if (performance.nextSibling !== today) nav.insertBefore(performance, today);
