@@ -52,13 +52,13 @@ export default function PilotageNav() {
       if (book.nextSibling !== yesterday) nav.insertBefore(book, yesterday);
 
       const middle = makeSlot(nav, "architecture-middle-root");
-      if (finance.nextSibling !== middle) finance.after(middle);
+      if (finance.nextSibling !== middle) nav.insertBefore(middle, finance.nextSibling);
 
       const settings = makeSlot(nav, "architecture-settings-label");
       if (settings.nextSibling !== objectives) nav.insertBefore(settings, objectives);
 
       const settingsExtra = makeSlot(nav, "architecture-settings-extra");
-      if (sources.nextSibling !== settingsExtra) sources.after(settingsExtra);
+      if (sources.nextSibling !== settingsExtra) nav.insertBefore(settingsExtra, sources.nextSibling);
 
       setHosts((current) => current?.performance === performance && current?.book === book && current?.middle === middle && current?.settings === settings && current?.settingsExtra === settingsExtra
         ? current
