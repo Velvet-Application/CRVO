@@ -36,17 +36,16 @@ export async function POST(request: Request) {
   if (!identity) return NextResponse.json({ error: "Accès CRVO requis.", authRequired: true }, { status: 401 });
   const cfg = config();
   if (!cfg) return NextResponse.json({ error: "Base CRVO non configurée." }, { status: 503 });
+
   const token = generateToken();
   const tokenSha256 = await sha256Hex(token);
-  const updatedAt = new Date().toISOString();
   const supabase = createClient(cfg.url, cfg.key, { auth: { persistSession: false, autoRefreshToken: false } });
-  const { error } = await supabase.from("kpi_email_gateway_config").upsert({
-    id: 1,
-    token_sha256: tokenSha256,
-    updated_at: updatedAt,
-    updated_by: identity.email,
-    metadata: { channel: "make_mailhook", token_version: 1 },
-  }, { onConflict: "id" });
+  const { data, error } = await supabase.rpc("kpi_set_email_gateway_token", {
+    p_token_sha256: tokenSha256,
+    p_updated_by: identity.email,
+  });
+
   if (error) return NextResponse.json({ error: "Impossible de créer la clé de passerelle." }, { status: 502 });
+  const updatedAt = typeof data === "string" ? data : new Date().toISOString();
   return NextResponse.json({ configured: true, token, updatedAt, oneTimeDisplay: true }, { headers: { "Cache-Control": "no-store" } });
 }
