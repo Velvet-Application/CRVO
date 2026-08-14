@@ -15,7 +15,7 @@ type GroupKey = "performance" | "book" | "cockpit" | "client" | "settings";
 type OpenGroups = Record<GroupKey, boolean>;
 
 const DEFAULT_OPEN: OpenGroups = {
-  performance: true,
+  performance: false,
   book: false,
   cockpit: false,
   client: false,
@@ -49,7 +49,7 @@ export default function PilotageNav() {
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem("crvo-sidebar-groups");
-      const restored = stored ? { ...DEFAULT_OPEN, ...JSON.parse(stored) } as OpenGroups : DEFAULT_OPEN;
+      const restored = stored ? { ...DEFAULT_OPEN, ...JSON.parse(stored) } as OpenGroups : { ...DEFAULT_OPEN };
       const path = window.location.pathname;
       if (path.startsWith("/cockpit-v2")) restored.cockpit = true;
       if (path.startsWith("/dashboard-client")) restored.client = true;
