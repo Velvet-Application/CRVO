@@ -27,7 +27,7 @@ function env(){const supabaseUrl=process.env.SUPABASE_URL;const secretKey=proces
 
 export async function GET(request:Request){
   const config=env();
-  if(!config)return NextResponse.json({connected:false,error:"Source SQL Présentéisme non configurée."},{status:503,headers:{"Cache-Control":"no-store"}});
+  if(!config)return NextResponse.json({connected:false,error:"Source RH non configurée."},{status:503,headers:{"Cache-Control":"no-store"}});
   const url=new URL(request.url);
   const date=(url.searchParams.get("date")??"").match(/^20\d{2}-\d{2}-\d{2}$/)?.[0]??new Intl.DateTimeFormat("sv-SE",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   const headers=supabaseRestHeaders(config.secretKey,{Accept:"application/json"});
@@ -35,7 +35,7 @@ export async function GET(request:Request){
     fetch(`${config.supabaseUrl}/rest/v1/kpi_sql_presence_sync_runs?select=completed_at,status,sync_mode,rows_saved,min_work_date,max_work_date,error_message&order=started_at.desc&limit=1`,{headers,cache:"no-store"}),
     fetch(`${config.supabaseUrl}/rest/v1/kpi_sql_presence_daily?select=work_date,mechanic_name,time_code,time_description,time_value,source_rows,source_synced_at&work_date=eq.${date}&order=mechanic_name.asc,time_code.asc&limit=5000`,{headers,cache:"no-store"}),
   ]);
-  if(!syncResponse.ok||!presenceResponse.ok)return NextResponse.json({connected:false,error:"Lecture SQL Présentéisme indisponible."},{status:502,headers:{"Cache-Control":"no-store"}});
+  if(!syncResponse.ok||!presenceResponse.ok)return NextResponse.json({connected:false,error:"Lecture de la Data RH indisponible."},{status:502,headers:{"Cache-Control":"no-store"}});
   const sync=(await syncResponse.json() as SyncRun[])[0]??null;
   const rows=await presenceResponse.json() as PresenceRow[];
   const mechanics=new Set(rows.map(row=>row.mechanic_name).filter(Boolean));
