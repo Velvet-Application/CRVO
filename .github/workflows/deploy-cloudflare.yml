@@ -30,6 +30,8 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || secrets.CF_ACCOUNT_ID }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,14 +50,19 @@ jobs:
         run: |
           node <<'NODE'
           const origin = "https://kpi-crvo.cyril-gay.workers.dev";
+          const accessHeaders = process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET ? {
+            "CF-Access-Client-Id": process.env.CF_ACCESS_CLIENT_ID,
+            "CF-Access-Client-Secret": process.env.CF_ACCESS_CLIENT_SECRET,
+          } : {};
+          const headers = { "Cache-Control": "no-cache", ...accessHeaders };
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           let last = null;
           for (let attempt = 1; attempt <= 8; attempt += 1) {
             try {
               const stamp = Date.now();
               const [bottleneckResponse, pilotageResponse] = await Promise.all([
-                fetch(`${origin}/api/bottlenecks?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
-                fetch(`${origin}/api/pilotage?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+                fetch(`${origin}/api/bottlenecks?_=${stamp}`, { headers }),
+                fetch(`${origin}/api/pilotage?_=${stamp}`, { headers }),
               ]);
               const bottlenecks = await bottleneckResponse.json();
               const pilotage = await pilotageResponse.json();
@@ -93,16 +100,21 @@ jobs:
         run: |
           node <<'NODE'
           const origin = "https://kpi-crvo.cyril-gay.workers.dev";
-          const listResponse = await fetch(`${origin}/api/clients?_=${Date.now()}`, { headers: { "Cache-Control": "no-cache" } });
+          const accessHeaders = process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET ? {
+            "CF-Access-Client-Id": process.env.CF_ACCESS_CLIENT_ID,
+            "CF-Access-Client-Secret": process.env.CF_ACCESS_CLIENT_SECRET,
+          } : {};
+          const headers = { "Cache-Control": "no-cache", ...accessHeaders };
+          const listResponse = await fetch(`${origin}/api/clients?_=${Date.now()}`, { headers });
           const list = await listResponse.json();
           const first = Array.isArray(list.clients) ? list.clients[0] : null;
           console.log(`clients status=${listResponse.status} clients=${list.totalClients} vehicles=${list.totalVehicles} first=${first?.client || "none"}`);
           if (!listResponse.ok || !first?.client || Number(list.totalVehicles || 0) <= 0) process.exit(1);
-          const detailResponse = await fetch(`${origin}/api/clients?client=${encodeURIComponent(first.client)}&_=${Date.now()}`, { headers: { "Cache-Control": "no-cache" } });
+          const detailResponse = await fetch(`${origin}/api/clients?client=${encodeURIComponent(first.client)}&_=${Date.now()}`, { headers });
           const detail = await detailResponse.json();
           console.log(`client detail status=${detailResponse.status} client=${detail.client} vehicles=${detail.vehicles?.length || 0}`);
           if (!detailResponse.ok || !Array.isArray(detail.vehicles) || detail.vehicles.length <= 0) process.exit(2);
-          const pageResponse = await fetch(`${origin}/clients?_=${Date.now()}`, { headers: { "Cache-Control": "no-cache" } });
+          const pageResponse = await fetch(`${origin}/clients?_=${Date.now()}`, { headers });
           console.log(`client page status=${pageResponse.status}`);
           if (!pageResponse.ok) process.exit(3);
           NODE
