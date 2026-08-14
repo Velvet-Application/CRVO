@@ -8,6 +8,21 @@ import handler from "vinext/server/app-router-entry";
 // dangerouslyAllowSVG: true in next.config.js and uncomment below:
 // const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
 
+function normalizeEmailImportAuth(request: Request) {
+  const url = new URL(request.url);
+  if (url.pathname !== "/api/email-import") return request;
+  if (request.headers.get("x-crvo-ingest-token")) return request;
+
+  const authorization = request.headers.get("authorization")?.trim();
+  if (!authorization) return request;
+  const token = authorization.replace(/^(Bearer|ApiKey|Token)\s+/i, "").trim();
+  if (!token) return request;
+
+  const headers = new Headers(request.headers);
+  headers.set("x-crvo-ingest-token", token);
+  return new Request(request, { headers });
+}
+
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -24,7 +39,7 @@ const worker = {
       }, allowedWidths);
     }
 
-    return handler.fetch(request, env, ctx);
+    return handler.fetch(normalizeEmailImportAuth(request), env, ctx);
   },
 };
 
