@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getImportIdentity } from "../../import-auth";
 import { supabaseRestHeaders } from "../../supabase-rest";
+import { authRpc, currentSession } from "../../lib/crvo-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -89,12 +90,28 @@ function applyInvoices(base: FinancialSnapshot[], facts: InvoiceFact[]) {
 }
 
 export async function GET(request: Request) {
-  const config = env();
   const url = new URL(request.url);
   const history = url.searchParams.get("history") === "1";
+
+  const current = await currentSession();
+  if (current) {
+    try {
+      const payload = await authRpc<Record<string, unknown>>("kpi_direction_finance", {
+        p_session_hash: current.tokenHash,
+        p_history: history,
+      });
+      return NextResponse.json(payload, {
+        headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
+      });
+    } catch (error) {
+      console.error(JSON.stringify({ event: "finance_rpc_failed", message: error instanceof Error ? error.message : "unknown" }));
+    }
+  }
+
+  const config = env();
   if (!config) {
     const snapshots = mergeSnapshots([]);
-    return NextResponse.json({ connected: false, backend: "embedded-finance", snapshot: snapshots[0] ?? null, snapshots: history ? snapshots : undefined });
+    return NextResponse.json({ connected: false, backend: "embedded-finance", snapshot: snapshots[0] ?? null, snapshots: history ? snapshots : undefined }, { headers: { "Cache-Control": "no-store" } });
   }
 
   try {
@@ -108,11 +125,11 @@ export async function GET(request: Request) {
     const base = mergeSnapshots(live);
     const invoiceFacts = invoiceResponse.ok ? await invoiceResponse.json() as InvoiceFact[] : [];
     const snapshots = applyInvoices(base, invoiceFacts);
-    return NextResponse.json({ connected: true, backend: invoiceFacts.length ? "supabase+sql-invoices" : "supabase+embedded-finance", sqlInvoices: invoiceFacts.length, snapshot: snapshots[0] ?? null, snapshots: history ? snapshots : undefined });
+    return NextResponse.json({ connected: true, backend: invoiceFacts.length ? "supabase+sql-invoices" : "supabase+embedded-finance", sqlInvoices: invoiceFacts.length, snapshot: snapshots[0] ?? null, snapshots: history ? snapshots : undefined }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error(JSON.stringify({ event: "finance_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
     const snapshots = mergeSnapshots([]);
-    return NextResponse.json({ connected: false, backend: "embedded-finance", snapshot: snapshots[0] ?? null, snapshots: history ? snapshots : undefined });
+    return NextResponse.json({ connected: false, backend: "embedded-finance", snapshot: snapshots[0] ?? null, snapshots: history ? snapshots : undefined }, { headers: { "Cache-Control": "no-store" } });
   }
 }
 
