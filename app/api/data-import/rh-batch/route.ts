@@ -32,8 +32,9 @@ type ChunkRow = {
 };
 
 type ChunkBody = { action: "chunk"; batchId?: string; rows?: ChunkRow[] };
+type CommitBody = { action: "commit"; batchId?: string; days?: number };
 type FinishBody = { action: "finish"; batchId?: string };
-type Body = StartBody | ChunkBody | FinishBody;
+type Body = StartBody | ChunkBody | CommitBody | FinishBody;
 
 function noStore(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -84,6 +85,17 @@ export async function POST(request: Request) {
 
     const batchId = String(body.batchId ?? "").trim();
     if (!/^[0-9a-f-]{36}$/i.test(batchId)) return noStore({ error: "Lot RH invalide." }, 400);
+
+    if (body.action === "commit") {
+      const days = Math.max(1, Math.min(Number(body.days ?? 30) || 30, 90));
+      const result = await authRpc<Record<string, unknown>>("kpi_rh_batch_commit_step_admin", {
+        p_session_hash: current.tokenHash,
+        p_batch_id: batchId,
+        p_days: days,
+      });
+      return noStore(result);
+    }
+
     const result = await authRpc<Record<string, unknown>>("kpi_rh_batch_finish_admin", {
       p_session_hash: current.tokenHash,
       p_batch_id: batchId,
