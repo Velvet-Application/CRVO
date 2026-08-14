@@ -66,6 +66,11 @@ function hour(value?:string|null) {
   if (Number.isNaN(date.getTime())) return "—";
   return new Intl.DateTimeFormat("fr-FR", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Paris" }).format(date);
 }
+function parisToday() {
+  const parts = new Intl.DateTimeFormat("fr-CA", { timeZone:"Europe/Paris", year:"numeric", month:"2-digit", day:"2-digit" }).formatToParts(new Date());
+  const get = (type:string) => parts.find(part => part.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
 function compactDate(value:string) {
   return new Intl.DateTimeFormat("fr-FR", { day:"2-digit", month:"short", timeZone:"Europe/Paris" }).format(new Date(`${value}T12:00:00+02:00`));
 }
@@ -143,11 +148,12 @@ export default function DirectionPage() {
   useEffect(() => {
     void loadLive(); void loadFinance();
     const liveTimer = window.setInterval(() => void loadLive(), 60000);
-    const financeTimer = window.setInterval(() => void loadFinance(), 15*60*1000);
-    const onVisible = () => { if (document.visibilityState === "visible") void loadLive(); };
+    const financeTimer = window.setInterval(() => void loadFinance(), 2*60*1000);
+    const refreshAll = () => { void loadLive(); void loadFinance(); };
+    const onVisible = () => { if (document.visibilityState === "visible") refreshAll(); };
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", loadLive);
-    return () => { window.clearInterval(liveTimer); window.clearInterval(financeTimer); document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", loadLive); };
+    window.addEventListener("focus", refreshAll);
+    return () => { window.clearInterval(liveTimer); window.clearInterval(financeTimer); document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", refreshAll); };
   }, []);
 
   const snapshots = dashboard?.snapshots?.length ? dashboard.snapshots : dashboard?.snapshot ? [dashboard.snapshot] : [];
@@ -157,12 +163,14 @@ export default function DirectionPage() {
   const factoryTime = hour(dashboard?.liveFreshness?.factoryModifiedAt ?? dashboard?.liveFreshness?.sourceModifiedAt);
   const parkTime = hour(dashboard?.liveFreshness?.parkModifiedAt ?? dashboard?.liveFreshness?.sourceModifiedAt);
 
-  const financeRows = useMemo(() => (finance?.snapshots ?? []).filter(row => row.date.slice(0,7) === live?.date.slice(0,7)), [finance, live?.date]);
-  const financeLatest = financeRows.length ? [...financeRows].sort((a,b) => a.date.localeCompare(b.date)).at(-1)! : finance?.snapshot ?? null;
+  const today = parisToday();
+  const currentMonth = today.slice(0,7);
+  const financeRows = useMemo(() => (finance?.snapshots ?? []).filter(row => row.date.slice(0,7) === currentMonth && row.date <= today), [finance, currentMonth, today]);
+  const financeLatest = financeRows.length ? [...financeRows].sort((a,b) => a.date.localeCompare(b.date)).at(-1)! : finance?.snapshot && finance.snapshot.date <= today ? finance.snapshot : null;
   const cumulativeRevenue = financeLatest ? num(financeLatest.metrics.revenue_cumulative) : 0;
   const budget = financeLatest ? num(financeLatest.metrics.revenue_cumulative_target) : 0;
   const businessDays = financeLatest ? workingDaysInMonth(financeLatest.date) : [];
-  const elapsed = financeLatest ? businessDays.filter(day => day <= financeLatest.date).length : 0;
+  const elapsed = financeLatest ? businessDays.filter(day => day <= today).length : 0;
   const projection = elapsed > 0 ? cumulativeRevenue / elapsed * businessDays.length : 0;
   const projectionPct = budget > 0 ? Math.round(projection / budget * 100) : 0;
 
@@ -222,9 +230,9 @@ export default function DirectionPage() {
       </article>
 
       <article className={styles.financeCard}>
-        <div className={styles.sectionHead}><div><span>FACTURATION · MOIS EN COURS</span><h2>Réalisé & projection vs budget</h2></div>{financeLatest && <small>arrêté au {compactDate(financeLatest.date)}</small>}</div>
+        <div className={styles.sectionHead}><div><span>FACTURATION · MOIS EN COURS</span><h2>Réalisé & projection vs budget</h2></div>{financeLatest && <small>CA à date · {compactDate(financeLatest.date)}</small>}</div>
         <div className={styles.financeNumbers}>
-          <div><span>CA cumulé</span><strong>{shortEuro(cumulativeRevenue)}</strong></div>
+          <div><span>CA cumulé à date</span><strong>{shortEuro(cumulativeRevenue)}</strong></div>
           <div className={projectionPct >= 100 ? styles.positive : styles.negative}><span>Projection fin de mois</span><strong>{shortEuro(projection)}</strong><small>{projectionPct}% du budget</small></div>
         </div>
         <FinanceChart rows={financeRows} budget={budget} projection={projection}/>
@@ -253,6 +261,6 @@ export default function DirectionPage() {
       <div className={styles.stockSignal}><span>PARC &gt; 15 J</span><strong>{live.over15}</strong><i/><span>PARC &gt; 20 J</span><strong>{live.over20}</strong></div>
     </section>
 
-    <footer className={styles.footer}><span>CRVO Lens · écran direction</span><span>Écran {screenRefresh || "—"} · production FTP {factoryTime} · parc FTP {parkTime}</span></footer>
+    <footer className={styles.footer}><span>CRVO Lens · écran direction</span><span>Écran {screenRefresh || "—"} · CA {financeLatest ? compactDate(financeLatest.date) : "—"} · production FTP {factoryTime} · parc FTP {parkTime}</span></footer>
   </main>;
 }
