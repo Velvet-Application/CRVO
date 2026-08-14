@@ -1,0 +1,60 @@
+name: Verify CRVO COCKPIT V2
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/intelligence/**"
+      - "app/api/cockpit-v2/**"
+      - ".github/workflows/verify-cockpit-v2.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify managerial cockpit in production
+        run: |
+          node <<'NODE'
+          const origin = "https://kpi-crvo.cyril-gay.workers.dev";
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          let last = null;
+          for (let attempt = 1; attempt <= 12; attempt += 1) {
+            try {
+              const stamp = Date.now();
+              const [apiResponse, pageResponse] = await Promise.all([
+                fetch(`${origin}/api/cockpit-v2?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+                fetch(`${origin}/intelligence?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+              ]);
+              const api = await apiResponse.json().catch(() => ({}));
+              const html = await pageResponse.text();
+              last = {
+                apiStatus: apiResponse.status,
+                connected: api.connected,
+                alerts: Array.isArray(api.managerialAlerts) ? api.managerialAlerts.length : 0,
+                preparation: api.preparation?.current,
+                bodywork: api.bodywork?.pending,
+                bmw: api.bmw?.vehicles,
+                pageStatus: pageResponse.status,
+                pageBuilt: html.includes("CRVO COCKPIT V2"),
+              };
+              console.log(`attempt ${attempt}: ${JSON.stringify(last)}`);
+              if (
+                apiResponse.ok && api.connected === true &&
+                api.preparation && api.bodywork && api.bmw &&
+                pageResponse.ok && last.pageBuilt
+              ) process.exit(0);
+            } catch (error) {
+              last = { error: error instanceof Error ? error.message : String(error) };
+              console.log(`attempt ${attempt}: ${JSON.stringify(last)}`);
+            }
+            await sleep(5000);
+          }
+          console.error(`CRVO COCKPIT V2 production verification failed: ${JSON.stringify(last)}`);
+          process.exit(1);
+          NODE
