@@ -1,4 +1,5 @@
 import styles from "./data-rh.module.css";
+import EmailGatewaySetup from "./email-gateway-setup";
 
 export default function DataRhPage(){
   return <main className={styles.page}>
@@ -12,5 +13,6 @@ export default function DataRhPage(){
       <article><span>H</span><h2>Pointage facturé</h2><p>Temps pointé dans les dossiers facturés, rattaché au numéro de facture ou à l’OR. Les heures alimentent ensuite les indicateurs MO et heures par VOP.</p></article>
     </section>
     <section className={styles.panel}><div><span>RÉCEPTION</span><h2>Une adresse mail, trois fichiers</h2></div><div className={styles.pending}><i/><strong>Adresse Make à générer</strong><p>La réception sécurisée CRVO, l’archivage du fichier original, le contrôle des doublons et l’intégration des trois formats sont prêts. Il reste à créer l’adresse Mailhook dans Make puis à lui transmettre les pièces jointes vers la passerelle CRVO.</p></div></section>
+    <EmailGatewaySetup />
   </main>;
 }
