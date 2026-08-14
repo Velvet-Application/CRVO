@@ -1,0 +1,30 @@
+name: Temporary RH v2 smoke test
+on:
+  push:
+    paths:
+      - '.github/workflows/tmp-rh-v2-smoke.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test RH v2 import
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/rh-v2.csv <<'EOF'
+          date;codet;type_temps;nombre_heures;nom_prenom
+          14/08/2026;PRES;Présence;7,50;TEST RH V2 A
+          14/08/2026;PRES;Présence;7,25;TEST RH V2 B
+          EOF
+          code=$(curl -sS -o /tmp/body.txt -w '%{http_code}' \
+            -X POST 'https://tvmkhvfmdstkunwwuzuz.supabase.co/functions/v1/kpi-rh-direct-import-v2' \
+            -H 'x-crvo-ingest-token: b6e79e1d7de09323f935bf1166beeefb29a3ed16c8267184f3ff6c2e673ca1a9' \
+            -F 'source=rh' \
+            -F 'sender=debug-rh-v2' \
+            -F 'messageId=debug-rh-v2-1' \
+            -F 'originalFilename=debug-rh-v2.csv' \
+            -F 'file=@/tmp/rh-v2.csv;type=text/csv')
+          echo "HTTP $code"
+          cat /tmp/body.txt
+          test "$code" = "200"
+          grep -q '"imported":true' /tmp/body.txt
