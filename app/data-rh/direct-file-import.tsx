@@ -3,88 +3,23 @@
 import { DragEvent, useRef, useState } from "react";
 import styles from "./data-rh.module.css";
 
-type SourceKey = "rh" | "finance" | "billed_time";
-type ImportResult = {
-  imported?: boolean;
-  duplicate?: boolean;
-  rows?: number;
-  updatedInvoices?: number;
-  staffSaved?: number;
-  dateRange?: { min?: string | null; max?: string | null };
-  filename?: string;
-  error?: string;
-  detail?: string;
-  headers?: string[];
-  existing?: { status?: string; original_filename?: string };
-};
-type InitResult = {
-  ready?: boolean;
-  uploadUrl?: string;
-  token?: string;
-  sender?: string;
-  expiresAt?: string;
-  error?: string;
-};
-type RhBatchStart = ImportResult & { ready?: boolean; batchId?: string };
-type RhRow = {
-  row_index: number;
-  work_date: string;
-  mechanic_name: string;
-  time_code: string | null;
-  time_description: string | null;
-  time_value: number;
-  matricule: string | null;
-  service: string | null;
-  team_code: string | null;
-  first_name: string | null;
-  last_name: string | null;
-};
+type SourceKey = "rh" | "billed_time" | "finance" | "workload";
+type ImportResult = { imported?: boolean; duplicate?: boolean; rows?: number; updatedInvoices?: number; staffSaved?: number; committedRows?: number; remainingRows?: number; dateRange?: { min?: string | null; max?: string | null }; filename?: string; error?: string; headers?: string[] };
+type BatchStart = ImportResult & { ready?: boolean; batchId?: string };
+type RhRow = { row_index: number; work_date: string; mechanic_name: string; time_code: string | null; time_description: string | null; time_value: number; matricule: string | null; service: string | null; team_code: string | null; first_name: string | null; last_name: string | null };
+type OpsRow = { row_index: number; data_date: string | null; payload: Record<string, unknown> };
+type Normalized = { rows: OpsRow[]; headers: string[]; minDate: string; maxDate: string; sha256: string };
 type Zone = { source: SourceKey; badge: string; title: string; subtitle: string; detail: string };
 
 const zones: Zone[] = [
-  { source: "rh", badge: "RH", title: "Data RH", subtitle: "Présence & temps", detail: "Date, nom/prénom, service, équipe, matricule, code pointage et durée." },
-  { source: "billed_time", badge: "H", title: "Temps pointé facturé", subtitle: "Heures par dossier", detail: "OR / facture, collaborateur et heures pointées." },
-  { source: "finance", badge: "CA", title: "Factures & chiffre d’affaires", subtitle: "CA réalisé", detail: "Date et numéro de facture, dossier, client et montants." },
+  { source: "rh", badge: "1", title: "Data RH", subtitle: "Temps de présence", detail: "Présence des collaborateurs : date, code métier, durée et identité." },
+  { source: "billed_time", badge: "2", title: "Temps pointé facturé", subtitle: "Productivité", detail: "Temps facturé par intervention et par collaborateur, rattaché à un OR ou une facture." },
+  { source: "finance", badge: "3", title: "Factures & chiffre d’affaires", subtitle: "CA mensuel réalisé", detail: "Factures du mois, clients, OR et composantes du chiffre d’affaires réalisé." },
+  { source: "workload", badge: "4", title: "OR en cours", subtitle: "Charge & CA encours", detail: "Temps restant et chiffre d’affaires potentiel des dossiers en production, ventilés par secteur." },
 ];
 
-function compactDate(value?: string | null) {
-  if (!value) return null;
-  return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T12:00:00`));
-}
-async function readPayload<T extends { error?: string }>(response: Response, fallback: string): Promise<T> {
-  const text = await response.text();
-  if (!text) return { error: `${fallback} (HTTP ${response.status}).` } as T;
-  try { return JSON.parse(text) as T; }
-  catch { return { error: `${fallback} (HTTP ${response.status}) · ${text.slice(0, 180).replace(/\s+/g, " ")}` } as T; }
-}
-
-async function prepareUploadFile(file: File) {
-  if (/\.csv$/i.test(file.name)) return file;
-  if (!/\.(xlsx|xls)$/i.test(file.name)) throw new Error("Format refusé. Utilise CSV, XLSX ou XLS.");
-  const XLSX = await import("@e965/xlsx");
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
-  if (!workbook.SheetNames.length) throw new Error("Le classeur Excel ne contient aucune feuille exploitable.");
-  let bestSheet = workbook.Sheets[workbook.SheetNames[0]];
-  let bestRows = -1;
-  for (const name of workbook.SheetNames) {
-    const sheet = workbook.Sheets[name];
-    if (!sheet) continue;
-    const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: null });
-    const rowCount = grid.filter((row) => Array.isArray(row) && row.some((value) => String(value ?? "").trim())).length;
-    if (rowCount > bestRows) { bestRows = rowCount; bestSheet = sheet; }
-  }
-  if (!bestSheet || bestRows <= 0) throw new Error("Le classeur Excel ne contient aucune donnée exploitable.");
-  const csv = XLSX.utils.sheet_to_csv(bestSheet, { FS: ";", RS: "\n", blankrows: false });
-  if (!csv.trim()) throw new Error("La feuille Excel sélectionnée est vide.");
-  const stem = file.name.replace(/\.(xlsx|xls)$/i, "").replace(/[^a-zA-Z0-9._-]+/g, "_");
-  return new File([csv], `${stem || "export"}.csv`, { type: "text/csv", lastModified: file.lastModified });
-}
-
-function key(value: unknown) {
-  return String(value ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-}
-function text(value: unknown, max = 300) { const valueText = String(value ?? "").trim(); return valueText ? valueText.slice(0, max) : null; }
+function key(value: unknown) { return String(value ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""); }
+function text(value: unknown, max = 300) { const result = String(value ?? "").trim(); return result ? result.slice(0, max) : null; }
 function numberValue(value: unknown) {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   let source = String(value ?? "").trim().replace(/[\s\u00a0€]/g, "").replace(/[^0-9,.-]/g, "");
@@ -92,189 +27,99 @@ function numberValue(value: unknown) {
   const comma = source.lastIndexOf(","), dot = source.lastIndexOf(".");
   if (comma >= 0 && dot >= 0) source = comma > dot ? source.replace(/\./g, "").replace(",", ".") : source.replace(/,/g, "");
   else if (comma >= 0) source = source.replace(",", ".");
-  const result = Number(source);
-  return Number.isFinite(result) ? result : null;
+  const result = Number(source); return Number.isFinite(result) ? result : null;
 }
+function hoursValue(value: unknown) { const raw = String(value ?? "").trim(); const match = raw.match(/^(\d{1,4}):([0-5]\d)(?::([0-5]\d))?$/); if (match) return Number(match[1]) + Number(match[2]) / 60 + Number(match[3] ?? 0) / 3600; return numberValue(value); }
 function dateValue(value: unknown) {
-  const source = String(value ?? "").trim();
-  let match = source.match(/^(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  const source = String(value ?? "").trim(); let match = source.match(/^(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/);
   if (match) return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
-  match = source.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})/);
-  if (match) return `${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`;
+  match = source.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})/); if (match) return `${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`;
   return null;
 }
-function pick(row: Record<string, unknown>, aliases: string[]) {
-  for (const alias of aliases) {
-    const value = row[key(alias)];
-    if (value !== undefined && value !== null && String(value).trim() !== "") return value;
-  }
-  return null;
+function pick(row: Record<string, unknown>, aliases: string[]) { for (const alias of aliases) { const value = row[key(alias)]; if (value !== undefined && value !== null && String(value).trim() !== "") return value; } return null; }
+function pickPair(row: Record<string, unknown>, aliases: string[]) { for (const alias of aliases) { const normalized = key(alias); const value = row[normalized]; if (value !== undefined && value !== null && String(value).trim() !== "") return { key: normalized, value }; } return null; }
+function compactDate(value?: string | null) { if (!value) return null; return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T12:00:00`)); }
+function parisToday() { const parts = new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date()); const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ""; return `${get("year")}-${get("month")}-${get("day")}`; }
+function parseIdentity(raw: unknown) {
+  const full = text(raw, 280) ?? ""; const match = full.match(/^(.*)-([^-]+)-([A-Z])-([0-9]+)$/i);
+  if (!match) return { raw: full, name: full, service: null as string | null, team: null as string | null, matricule: null as string | null };
+  const team = ["A", "B", "C"].includes(match[3].toUpperCase()) ? match[3].toUpperCase() : null;
+  return { raw: full, name: match[1].trim(), service: match[2].trim(), team, matricule: match[4] };
+}
+function inferActivity(...values: unknown[]) {
+  const source = key(values.filter(Boolean).join(" "));
+  if (/fixline|(^|_)fix(_|$)|peinture/.test(source)) return { sectorKey: "carrosserie", sectorLabel: "Carrosserie", workcenterKey: "fixline", workcenterLabel: "Fixline" };
+  if (/\bbox\b|(^|_)box(_|$)/.test(source)) return { sectorKey: "carrosserie", sectorLabel: "Carrosserie", workcenterKey: "box", workcenterLabel: "Box" };
+  if (/toler|tolerie|(^|_)tol(_|$)/.test(source)) return { sectorKey: "carrosserie", sectorLabel: "Carrosserie", workcenterKey: "tolerie", workcenterLabel: "Tôlerie" };
+  if (/carross/.test(source)) return { sectorKey: "carrosserie", sectorLabel: "Carrosserie", workcenterKey: "carrosserie", workcenterLabel: "Carrosserie" };
+  if (/mecani|(^|_)mec(_|$)/.test(source)) return { sectorKey: "mecanique", sectorLabel: "Mécanique", workcenterKey: "mecanique", workcenterLabel: "Mécanique" };
+  if (/deboss|(^|_)dsp(_|$)/.test(source)) return { sectorKey: "dsp", sectorLabel: "DSP", workcenterKey: "dsp", workcenterLabel: "DSP" };
+  if (/expert|(^|_)exp(_|$)|dynamique/.test(source)) return { sectorKey: "expertise", sectorLabel: "Expertise", workcenterKey: "expertise", workcenterLabel: "Expertise" };
+  if (/jant/.test(source)) return { sectorKey: "jantes", sectorLabel: "Jantes", workcenterKey: "jantes", workcenterLabel: "Jantes" };
+  if (/prepar|(^|_)pre(_|$)/.test(source)) return { sectorKey: "preparation", sectorLabel: "Préparation", workcenterKey: "preparation", workcenterLabel: "Préparation" };
+  if (/qual|(^|_)oqf(_|$)/.test(source)) return { sectorKey: "qualite", sectorLabel: "Qualité", workcenterKey: "qualite", workcenterLabel: "Qualité" };
+  if (/photo|(^|_)pho(_|$)/.test(source)) return { sectorKey: "photo", sectorLabel: "Photo", workcenterKey: "photo", workcenterLabel: "Photo" };
+  if (/lavage|(^|_)lav(_|$)/.test(source)) return { sectorKey: "lavage", sectorLabel: "Lavage", workcenterKey: "lavage", workcenterLabel: "Lavage" };
+  if (/diag|transverse|(^|_)tra(_|$)/.test(source)) return { sectorKey: "diagnostic", sectorLabel: "Diagnostic", workcenterKey: "diagnostic", workcenterLabel: "Diagnostic" };
+  if (/magasin|(^|_)mgn(_|$)|acheteur|(^|_)ach(_|$)|labo/.test(source)) return { sectorKey: "magasin", sectorLabel: "Magasin", workcenterKey: "magasin", workcenterLabel: "Magasin" };
+  if (/jockey|(^|_)joc(_|$)/.test(source)) return { sectorKey: "jockey", sectorLabel: "Jockey", workcenterKey: "jockey", workcenterLabel: "Jockey" };
+  return { sectorKey: "non_classe", sectorLabel: "Non classé", workcenterKey: "non_classe", workcenterLabel: "Non classé" };
+}
+function sumSmart(values: Array<number | null>) { const numbers = values.filter((value): value is number => value !== null && Number.isFinite(value)); if (!numbers.length) return null; const rounded = new Set(numbers.map((value) => value.toFixed(4))); return rounded.size === 1 ? numbers[0] : numbers.reduce((sum, value) => sum + value, 0); }
+
+const headerHints = new Set(["date","work_date","date_pointage","date_facture","invoice_date","snapshot_at","date_snapshot","codet","type_temps","nombre_heures","nom_prenom","collaborateur","mecanicien","invoice_number","numero_facture","facture","work_order","ordre_reparation","or","dossier","client","immatriculation","vin","ca","chiffre_affaires","montant_total","total_ht","labor_revenue","parts_revenue","labor_hours","heures_facturees","temps_pointe","secteur","sector_key","activite","intervention","remaining_hours","heures_restantes","remaining_minutes"]);
+function parseDelimited(source: string) {
+  const firstLine = source.split(/\r?\n/, 1)[0] ?? ""; const delimiter = [";", "\t", ","].map((item) => ({ item, count: firstLine.split(item).length })).sort((a, b) => b.count - a.count)[0]?.item ?? ";";
+  const grid: string[][] = []; let row: string[] = [], cell = "", quoted = false;
+  for (let index = 0; index < source.length; index++) { const character = source[index]; if (character === '"') { if (quoted && source[index + 1] === '"') { cell += '"'; index++; } else quoted = !quoted; } else if (character === delimiter && !quoted) { row.push(cell); cell = ""; } else if ((character === "\n" || character === "\r") && !quoted) { if (character === "\r" && source[index + 1] === "\n") index++; row.push(cell); cell = ""; if (row.some((value) => value.trim())) grid.push(row); row = []; } else cell += character; }
+  row.push(cell); if (row.some((value) => value.trim())) grid.push(row); if (!grid.length) return { headers: [] as string[], rows: [] as Record<string, unknown>[] };
+  const headerIndex = grid.slice(0, 40).map((values, index) => { const normalized = values.map(key).filter(Boolean); return { index, score: normalized.filter((item) => headerHints.has(item)).length * 20 + Math.min(normalized.length, 15) }; }).sort((a, b) => b.score - a.score)[0]?.index ?? 0;
+  const seen = new Map<string, number>(); const headers = (grid[headerIndex] ?? []).map((value, index) => key(value) || `col_${index + 1}`).map((name) => { const count = (seen.get(name) ?? 0) + 1; seen.set(name, count); return count === 1 ? name : `${name}_${count}`; });
+  const rows = grid.slice(headerIndex + 1).filter((values) => values.some((value) => value.trim())).map((values) => { const record: Record<string, unknown> = {}; headers.forEach((name, index) => { record[name] = values[index] ?? null; }); return record; }); return { headers, rows };
+}
+async function prepareUploadFile(file: File) {
+  if (/\.csv$/i.test(file.name)) return file;
+  if (!/\.(xlsx|xls)$/i.test(file.name)) throw new Error("Format refusé. Utilise CSV, XLSX ou XLS.");
+  const XLSX = await import("@e965/xlsx"); const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true }); if (!workbook.SheetNames.length) throw new Error("Le classeur Excel ne contient aucune feuille exploitable.");
+  let best = workbook.Sheets[workbook.SheetNames[0]], bestRows = -1; for (const name of workbook.SheetNames) { const sheet = workbook.Sheets[name]; if (!sheet) continue; const grid = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: null }); const count = grid.filter((line) => Array.isArray(line) && line.some((value) => String(value ?? "").trim())).length; if (count > bestRows) { best = sheet; bestRows = count; } }
+  if (!best || bestRows <= 0) throw new Error("Le classeur Excel ne contient aucune donnée exploitable."); const csv = XLSX.utils.sheet_to_csv(best, { FS: ";", RS: "\n", blankrows: false }); if (!csv.trim()) throw new Error("La feuille Excel sélectionnée est vide.");
+  return new File([csv], `${file.name.replace(/\.(xlsx|xls)$/i, "").replace(/[^a-zA-Z0-9._-]+/g, "_") || "export"}.csv`, { type: "text/csv", lastModified: file.lastModified });
+}
+async function sha256File(file: File) { const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer()); return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""); }
+async function readPayload<T extends { error?: string }>(response: Response, fallback: string): Promise<T> { const raw = await response.text(); if (!raw) return { error: `${fallback} (HTTP ${response.status}).` } as T; try { return JSON.parse(raw) as T; } catch { return { error: `${fallback} (HTTP ${response.status}) · ${raw.slice(0, 180).replace(/\s+/g, " ")}` } as T; } }
+
+async function normalizeRh(file: File) {
+  const parsed = parseDelimited(await file.text()); const rows: RhRow[] = [];
+  for (let index = 0; index < parsed.rows.length; index++) { const row = parsed.rows[index]; const rawName = text(pick(row, ["nom_prenom","nom_et_prenom","collaborateur","salarie","mechanic_name","mecanicien","operateur","nom"]), 280); const identity = parseIdentity(rawName); const workDate = dateValue(pick(row, ["date","work_date","date_pointage"])); const timeValue = hoursValue(pick(row, ["nombre_heures","time_value","temps","heures","duree"])); if (!workDate || !identity.raw || timeValue === null) continue; const explicitTeam = key(pick(row, ["equipe","team","equipe_code","groupe"])); const team = explicitTeam.match(/(?:^|_)([abc])(?:_|$)/)?.[1]?.toUpperCase() ?? identity.team;
+    rows.push({ row_index: index + 1, work_date: workDate, mechanic_name: identity.raw, time_code: text(pick(row, ["codet","time_code","code_pointage","code_temps","code"]),80), time_description: text(pick(row,["type_temps","time_description","libelle","description"])), time_value: timeValue, matricule: text(pick(row,["matricule","employee_id","id_salarie","code_salarie"]),100) ?? identity.matricule, service: text(pick(row,["service","secteur","atelier","department","departement"]),160) ?? identity.service, team_code: ["A","B","C"].includes(team ?? "") ? team! : null, first_name: text(pick(row,["prenom","first_name","firstname"]),120), last_name: text(pick(row,["nom_famille","last_name","lastname"]),120) }); }
+  if (!rows.length) throw new Error(`Aucune ligne RH reconnue. Colonnes détectées : ${parsed.headers.join(", ") || "aucune"}.`); const dates = rows.map((row) => row.work_date).sort(); return { rows, headers: parsed.headers, minDate: dates[0], maxDate: dates.at(-1)!, sha256: await sha256File(file) };
 }
 
-const rhHeaderHints = new Set([
-  "date", "work_date", "date_pointage", "codet", "type_temps", "nombre_heures", "nom_prenom", "nom_et_prenom",
-  "collaborateur", "code_pointage", "code_temps", "duree", "heures", "matricule", "service", "equipe", "team",
-]);
-function parseDelimited(source: string) {
-  const firstLine = source.split(/\r?\n/, 1)[0] ?? "";
-  const delimiter = [";", "\t", ","].map((item) => ({ item, count: firstLine.split(item).length })).sort((a, b) => b.count - a.count)[0]?.item ?? ";";
-  const grid: string[][] = [];
-  let row: string[] = [], cell = "", quoted = false;
-  for (let index = 0; index < source.length; index++) {
-    const character = source[index];
-    if (character === '"') {
-      if (quoted && source[index + 1] === '"') { cell += '"'; index++; }
-      else quoted = !quoted;
-    } else if (character === delimiter && !quoted) { row.push(cell); cell = ""; }
-    else if ((character === "\n" || character === "\r") && !quoted) {
-      if (character === "\r" && source[index + 1] === "\n") index++;
-      row.push(cell); cell = "";
-      if (row.some((value) => value.trim())) grid.push(row);
-      row = [];
-    } else cell += character;
+async function normalizeOps(source: Exclude<SourceKey,"rh">, file: File): Promise<Normalized> {
+  const parsed = parseDelimited(await file.text()); const output: OpsRow[] = [];
+  if (source === "billed_time") {
+    parsed.rows.forEach((row, index) => { const workDate = dateValue(pick(row,["work_date","date_pointage","date_intervention","date"])); const invoiceDate = dateValue(pick(row,["invoice_date","date_facture"])); const invoice = text(pick(row,["invoice_number","numero_facture","no_facture","n_facture","facture"]),64); const workOrder = text(pick(row,["work_order","ordre_reparation","or","dossier","numero_or"]),64); const identity = parseIdentity(pick(row,["mechanic_name","mecanicien","operateur","collaborateur","nom_prenom","nom"])); const labor = hoursValue(pick(row,["labor_hours","heures_facturees","heures","temps_pointe","temps_facture","temps","duree"])); if ((!workDate && !invoiceDate) || (!invoice && !workOrder) || !identity.raw || labor === null) return; const intervention = text(pick(row,["intervention","operation","activite","libelle","time_description","description"]),300); const explicitSector = pick(row,["sector_key","secteur","service","atelier","metier"]); const inferred = inferActivity(intervention, pick(row,["time_description","libelle"]), explicitSector, identity.service); const explicitTeam = String(pick(row,["team_code","equipe","team","groupe"]) ?? "").toUpperCase().match(/\b([ABC])\b/)?.[1] ?? identity.team; const dataDate = invoiceDate ?? workDate!;
+      output.push({ row_index:index+1, data_date:dataDate, payload:{ work_date:workDate, invoice_date:invoiceDate, invoice_number:invoice, work_order:workOrder, mechanic_name:identity.raw, time_code:text(pick(row,["time_code","code_pointage","code_temps","code"]),80), time_description:text(pick(row,["time_description","libelle","description"])), labor_hours:labor, sector_key:inferred.sectorKey, sector_label:inferred.sectorLabel, workcenter_key:inferred.workcenterKey, team_code:explicitTeam ?? null, matricule:text(pick(row,["matricule","employee_id","id_salarie"]),100) ?? identity.matricule, intervention } }); });
   }
-  row.push(cell); if (row.some((value) => value.trim())) grid.push(row);
-  if (!grid.length) return { headers: [] as string[], rows: [] as Record<string, unknown>[] };
-  const headerIndex = grid.slice(0, 30).map((values, index) => {
-    const normalized = values.map(key).filter(Boolean);
-    return { index, score: normalized.filter((item) => rhHeaderHints.has(item)).length * 20 + Math.min(normalized.length, 12) };
-  }).sort((a, b) => b.score - a.score)[0]?.index ?? 0;
-  const seen = new Map<string, number>();
-  const headers = (grid[headerIndex] ?? []).map((value, index) => key(value) || `col_${index + 1}`).map((name) => {
-    const count = (seen.get(name) ?? 0) + 1; seen.set(name, count); return count === 1 ? name : `${name}_${count}`;
-  });
-  const rows = grid.slice(headerIndex + 1).filter((values) => values.some((value) => value.trim())).map((values) => {
-    const record: Record<string, unknown> = {};
-    headers.forEach((name, index) => { record[name] = values[index] ?? null; });
-    return record;
-  });
-  return { headers, rows };
-}
-async function sha256File(file: File) {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-async function normalizeRh(file: File) {
-  const parsed = parseDelimited(await file.text());
-  const rows: RhRow[] = [];
-  for (let index = 0; index < parsed.rows.length; index++) {
-    const row = parsed.rows[index];
-    const workDate = dateValue(pick(row, ["date", "work_date", "date_pointage"]));
-    const mechanicName = text(pick(row, ["nom_prenom", "nom_et_prenom", "collaborateur", "salarie", "salarié", "mechanic_name", "mecanicien", "operateur", "nom"]), 250);
-    const timeValue = numberValue(pick(row, ["nombre_heures", "time_value", "temps", "heures", "duree", "durée"]));
-    if (!workDate || !mechanicName || timeValue === null) continue;
-    const rawTeam = key(pick(row, ["equipe", "équipe", "team", "equipe_code", "groupe"]));
-    const teamMatch = rawTeam.match(/(?:^|_)(?:equipe_?|team_?)?([abc])(?:_|$)/) || rawTeam.match(/^([abc])$/);
-    rows.push({
-      row_index: index + 1,
-      work_date: workDate,
-      mechanic_name: mechanicName,
-      time_code: text(pick(row, ["codet", "time_code", "code_pointage", "code_temps", "code"]), 80),
-      time_description: text(pick(row, ["type_temps", "time_description", "libelle", "description"])),
-      time_value: timeValue,
-      matricule: text(pick(row, ["matricule", "employee_id", "id_salarie", "code_salarie"]), 100),
-      service: text(pick(row, ["service", "secteur", "atelier", "department", "departement"]), 160),
-      team_code: teamMatch ? teamMatch[1].toUpperCase() : null,
-      first_name: text(pick(row, ["prenom", "prénom", "first_name", "firstname"]), 120),
-      last_name: text(pick(row, ["nom_famille", "last_name", "lastname"]), 120),
-    });
+  if (source === "finance") {
+    const groups = new Map<string, Array<Record<string, unknown>>>(); parsed.rows.forEach((row) => { const invoiceDate = dateValue(pick(row,["invoice_date","date_facture","date"])); const invoice = text(pick(row,["invoice_number","numero_facture","no_facture","n_facture","facture"]),64); if (!invoiceDate || !invoice) return; const id = `${invoiceDate}|${invoice}`; const list = groups.get(id) ?? []; list.push(row); groups.set(id,list); }); let index=0;
+    for (const [id, rows] of groups) { index++; const [invoiceDate, invoice] = id.split("|"); const first=rows[0]; const revenues=rows.map((row)=>numberValue(pick(row,["revenue_total","chiffre_affaires","ca","montant_total","total_ht","total"]))); const labor=rows.map((row)=>numberValue(pick(row,["labor_revenue","ca_mo","ca_main_oeuvre","main_oeuvre","mo"]))); const parts=rows.map((row)=>numberValue(pick(row,["parts_revenue","ca_pieces","pieces"]))); const other=rows.map((row)=>numberValue(pick(row,["other_revenue","ca_autres","autres"]))); const total=sumSmart(revenues) ?? ((sumSmart(labor) ?? 0)+(sumSmart(parts) ?? 0)+(sumSmart(other) ?? 0)); output.push({ row_index:index, data_date:invoiceDate, payload:{ invoice_number:invoice, registration:text(pick(first,["registration","immatriculation","immat"]),32), work_order:text(pick(first,["work_order","ordre_reparation","or","dossier","numero_or"]),64), client:text(pick(first,["client","customer"]),100), revenue_total:total, labor_revenue:sumSmart(labor), parts_revenue:sumSmart(parts), other_revenue:sumSmart(other), vin:text(pick(first,["vin","vin_number"]),40), labor_hours:sumSmart(rows.map((row)=>hoursValue(pick(row,["labor_hours","heures_mo","heures_facturees"])))) } }); }
   }
-  if (!rows.length) throw new Error(`Aucune ligne RH reconnue. Colonnes détectées : ${parsed.headers.join(", ") || "aucune"}.`);
-  const dates = rows.map((row) => row.work_date).sort();
-  return { rows, headers: parsed.headers, minDate: dates[0], maxDate: dates.at(-1)!, sha256: await sha256File(file) };
+  if (source === "workload") {
+    const groups = new Map<string,{ rowIndex:number; date:string; rows:Array<Record<string,unknown>>; inferred:ReturnType<typeof inferActivity> }>(); parsed.rows.forEach((row,index)=>{ const snapshot = dateValue(pick(row,["snapshot_at","date_snapshot","date_extraction","date"])) ?? parisToday(); const workOrder=text(pick(row,["work_order","ordre_reparation","or","dossier","numero_or"]),64); if(!workOrder)return; const activity=pick(row,["primary_activity","activite","intervention","operation","libelle","description"]); const explicitSector=pick(row,["sector_key","secteur","service","atelier","metier"]); const inferred=inferActivity(activity,explicitSector); const id=`${snapshot}|${workOrder}|${inferred.workcenterKey}`; const current=groups.get(id)??{rowIndex:index+1,date:snapshot,rows:[],inferred}; current.rows.push(row); groups.set(id,current); });
+    for(const group of groups.values()){ const first=group.rows[0]; const workOrder=text(pick(first,["work_order","ordre_reparation","or","dossier","numero_or"]),64)!; const minutes=group.rows.map((row)=>{ const direct=pickPair(row,["remaining_minutes","minutes_restantes","temps_restant_minutes"]); if(direct)return numberValue(direct.value); const hours=hoursValue(pick(row,["remaining_hours","heures_restantes","heures_encours","temps_restant","reste_heures"])); return hours===null?null:hours*60; }); const booked=group.rows.map((row)=>{ const direct=pickPair(row,["booked_minutes","minutes_prevues"]); if(direct)return numberValue(direct.value); const hours=hoursValue(pick(row,["booked_hours","heures_prevues","heures_vendues"])); return hours===null?null:hours*60; }); const totalMinutes=group.rows.map((row)=>{ const direct=pickPair(row,["estimated_total_minutes","minutes_totales"]); if(direct)return numberValue(direct.value); const hours=hoursValue(pick(row,["estimated_total_hours","heures_totales"])); return hours===null?null:hours*60; }); output.push({ row_index:group.rowIndex, data_date:group.date, payload:{ registration:text(pick(first,["registration","immatriculation","immat"]),32), work_order:workOrder, client:text(pick(first,["client","customer"]),100), sector_key:group.inferred.sectorKey, sector_label:group.inferred.sectorLabel, status:text(pick(first,["status","statut"]),220), status_since:text(pick(first,["status_since","date_statut"]),80), age_days:numberValue(pick(first,["age_days","age_jours","anciennete_jours"])), remaining_minutes:sumSmart(minutes), booked_minutes:sumSmart(booked), estimated_total_minutes:sumSmart(totalMinutes), vin:text(pick(first,["vin","vin_number"]),40), opened_at:dateValue(pick(first,["opened_at","date_ouverture","date_or"])), potential_revenue_total:sumSmart(group.rows.map((row)=>numberValue(pick(row,["potential_revenue_total","ca_encours","ca_potentiel","chiffre_affaires_encours","montant_encours","ca"])))), potential_labor_revenue:sumSmart(group.rows.map((row)=>numberValue(pick(row,["potential_labor_revenue","ca_mo_encours","ca_mo"])))), potential_parts_revenue:sumSmart(group.rows.map((row)=>numberValue(pick(row,["potential_parts_revenue","ca_pieces_encours","ca_pieces"])))), potential_other_revenue:sumSmart(group.rows.map((row)=>numberValue(pick(row,["potential_other_revenue","ca_autres_encours","ca_autres"])))), primary_activity:text(pick(first,["primary_activity","activite","intervention","operation","libelle","description"]),300), metadata:{ workcenter_key:group.inferred.workcenterKey, workcenter_label:group.inferred.workcenterLabel } } }); }
+  }
+  if (!output.length) { const expected = source==="billed_time" ? "une date, un collaborateur, un OR/facture et des heures" : source==="finance" ? "une date, un numéro de facture et un montant" : "un OR, un secteur/une activité, du temps ou du CA encours"; throw new Error(`Aucune ligne reconnue. J’attends ${expected}. Colonnes détectées : ${parsed.headers.join(", ") || "aucune"}.`); }
+  const dates=output.map((row)=>row.data_date).filter((value):value is string=>Boolean(value)).sort(); return { rows:output, headers:parsed.headers, minDate:dates[0]??parisToday(), maxDate:dates.at(-1)??parisToday(), sha256:await sha256File(file) };
 }
 
 function UploadZone({ zone }: { zone: Zone }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [fileName, setFileName] = useState("");
-  const [progress, setProgress] = useState("");
-  const [result, setResult] = useState<ImportResult | null>(null);
-
-  async function uploadRh(file: File, preparedFile: File) {
-    setProgress("Lecture du fichier RH sur ton poste…");
-    const normalized = await normalizeRh(preparedFile);
-    setProgress(`${normalized.rows.length.toLocaleString("fr-FR")} lignes reconnues · préparation de l’intégration…`);
-    const startResponse = await fetch("/api/data-import/rh-batch", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "start", filename: file.name, sha256: normalized.sha256, byteSize: preparedFile.size, minDate: normalized.minDate, maxDate: normalized.maxDate, totalRows: normalized.rows.length, headers: normalized.headers }),
-    });
-    const start = await readPayload<RhBatchStart>(startResponse, "Initialisation RH illisible");
-    if (!startResponse.ok) throw new Error(start.error || `Initialisation RH refusée (${startResponse.status}).`);
-    if (start.duplicate) { setResult(start); return; }
-    if (!start.ready || !start.batchId) throw new Error("Le serveur n’a pas créé le lot RH.");
-
-    const chunkSize = 1500;
-    for (let offset = 0; offset < normalized.rows.length; offset += chunkSize) {
-      const chunk = normalized.rows.slice(offset, offset + chunkSize);
-      const response = await fetch("/api/data-import/rh-batch", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "chunk", batchId: start.batchId, rows: chunk }),
-      });
-      const payload = await readPayload<{ error?: string }>(response, "Bloc RH illisible");
-      if (!response.ok) throw new Error(payload.error || `Intégration RH interrompue (${response.status}).`);
-      const done = Math.min(offset + chunk.length, normalized.rows.length);
-      setProgress(`Intégration RH ${Math.round(done / normalized.rows.length * 100)} % · ${done.toLocaleString("fr-FR")} / ${normalized.rows.length.toLocaleString("fr-FR")} lignes`);
-    }
-    setProgress("Finalisation des heures de présence…");
-    const finishResponse = await fetch("/api/data-import/rh-batch", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "finish", batchId: start.batchId }),
-    });
-    const finish = await readPayload<ImportResult>(finishResponse, "Finalisation RH illisible");
-    if (!finishResponse.ok || !finish.imported) throw new Error(finish.error || `Finalisation RH refusée (${finishResponse.status}).`);
-    setResult(finish);
-  }
-
-  async function upload(file?: File) {
-    if (!file || loading) return;
-    setFileName(file.name); setResult(null); setProgress(""); setLoading(true);
-    try {
-      const preparedFile = await prepareUploadFile(file);
-      if (zone.source === "rh") {
-        await uploadRh(file, preparedFile);
-        return;
-      }
-      const initResponse = await fetch("/api/data-import", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: zone.source, filename: preparedFile.name, byteSize: preparedFile.size }),
-      });
-      const init = await readPayload<InitResult>(initResponse, "Initialisation de l'import illisible");
-      if (!initResponse.ok || !init.ready || !init.uploadUrl || !init.token) throw new Error(init.error || `Initialisation refusée (${initResponse.status}).`);
-      const body = new FormData();
-      body.set("file", preparedFile, preparedFile.name); body.set("source", zone.source); body.set("sender", init.sender || "KPI CRVO");
-      body.set("messageId", `direct-${Date.now()}-${crypto.randomUUID()}`); body.set("originalFilename", file.name);
-      const uploadResponse = await fetch(init.uploadUrl, { method: "POST", headers: { "x-crvo-ingest-token": init.token }, body });
-      const payload = await readPayload<ImportResult>(uploadResponse, "Réponse d'analyse illisible");
-      if (!uploadResponse.ok) throw new Error(payload.error || `Import refusé (${uploadResponse.status}).`);
-      setResult(payload);
-    } catch (error) { setResult({ error: error instanceof Error ? error.message : "Import impossible." }); }
-    finally { setLoading(false); setProgress(""); if (inputRef.current) inputRef.current.value = ""; }
-  }
-
-  function drop(event: DragEvent<HTMLDivElement>) { event.preventDefault(); setDragging(false); void upload(event.dataTransfer.files?.[0]); }
-  const min = compactDate(result?.dateRange?.min), max = compactDate(result?.dateRange?.max);
-  const range = min && max ? (min === max ? min : `${min} → ${max}`) : null;
-
-  return <article className={styles.uploadCard}>
-    <div className={styles.uploadHead}><span>{zone.badge}</span><div><strong>{zone.title}</strong><small>{zone.subtitle}</small></div></div>
-    <div className={`${styles.dropZone} ${dragging ? styles.dropZoneActive : ""} ${result?.error ? styles.dropZoneError : result?.imported || result?.duplicate ? styles.dropZoneSuccess : ""}`}
-      onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={drop}
-      onClick={() => inputRef.current?.click()} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") inputRef.current?.click(); }}>
-      <input ref={inputRef} className={styles.fileInput} type="file" accept=".csv,.xlsx,.xls" onChange={(event) => void upload(event.target.files?.[0])}/>
-      <b>{loading ? "Analyse et intégration…" : "Glisse le fichier ici"}</b>
-      <span>{loading ? (progress || fileName) : "ou clique pour choisir un fichier"}</span>
-      <small>CSV · XLSX · XLS · 25 Mo max</small>
-    </div>
-    <p className={styles.uploadHint}>{zone.detail}</p>
-    {result?.imported && <div className={styles.importOk}><strong>IMPORTÉ</strong><span>{result.rows ?? 0} lignes intégrées{range ? ` · ${range}` : ""}{zone.source === "rh" && result.staffSaved ? ` · ${result.staffSaved} collaborateurs détectés` : ""}{zone.source === "billed_time" && result.updatedInvoices ? ` · ${result.updatedInvoices} factures rapprochées` : ""}</span></div>}
-    {result?.duplicate && <div className={styles.importDuplicate}><strong>DÉJÀ INTÉGRÉ</strong><span>{result.filename || result.existing?.original_filename || fileName}</span></div>}
-    {result?.error && <div className={styles.importError}><strong>À CORRIGER</strong><span>{result.error}</span></div>}
-  </article>;
+  const inputRef=useRef<HTMLInputElement>(null); const [dragging,setDragging]=useState(false); const [loading,setLoading]=useState(false); const [fileName,setFileName]=useState(""); const [progress,setProgress]=useState(""); const [result,setResult]=useState<ImportResult|null>(null);
+  async function uploadRh(file:File,prepared:File){ setProgress("Lecture et contrôle du fichier RH sur ton poste…"); const normalized=await normalizeRh(prepared); const startResponse=await fetch("/api/data-import/rh-batch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"start",filename:file.name,sha256:normalized.sha256,byteSize:prepared.size,minDate:normalized.minDate,maxDate:normalized.maxDate,totalRows:normalized.rows.length,headers:normalized.headers})}); const start=await readPayload<BatchStart>(startResponse,"Initialisation RH illisible"); if(!startResponse.ok)throw new Error(start.error||`Initialisation RH refusée (${startResponse.status}).`); if(start.duplicate){setResult(start);return;} if(!start.ready||!start.batchId)throw new Error("Le serveur n’a pas créé le lot RH."); const chunkSize=1500; for(let offset=0;offset<normalized.rows.length;offset+=chunkSize){const chunk=normalized.rows.slice(offset,offset+chunkSize);const response=await fetch("/api/data-import/rh-batch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"chunk",batchId:start.batchId,rows:chunk})});const payload=await readPayload<{error?:string}>(response,"Bloc RH illisible");if(!response.ok)throw new Error(payload.error||`Intégration RH interrompue (${response.status}).`);const done=Math.min(offset+chunk.length,normalized.rows.length);setProgress(`Chargement RH ${Math.round(done/normalized.rows.length*100)} % · ${done.toLocaleString("fr-FR")} / ${normalized.rows.length.toLocaleString("fr-FR")}`);} setProgress("Consolidation des heures de présence…"); const finishResponse=await fetch("/api/data-import/rh-batch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"finish",batchId:start.batchId})});const finish=await readPayload<ImportResult>(finishResponse,"Finalisation RH illisible");if(!finishResponse.ok||!finish.imported)throw new Error(finish.error||`Finalisation RH refusée (${finishResponse.status}).`);setResult(finish); }
+  async function uploadOps(file:File,prepared:File){ setProgress("Lecture, contrôle et normalisation locale…"); const normalized=await normalizeOps(zone.source as Exclude<SourceKey,"rh">,prepared); const startResponse=await fetch("/api/data-import/ops-batch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"start",source:zone.source,filename:file.name,sha256:normalized.sha256,byteSize:prepared.size,minDate:normalized.minDate,maxDate:normalized.maxDate,totalRows:normalized.rows.length,headers:normalized.headers})}); const start=await readPayload<BatchStart>(startResponse,"Initialisation illisible"); if(!startResponse.ok)throw new Error(start.error||`Initialisation refusée (${startResponse.status}).`); if(start.duplicate){setResult(start);return;} if(!start.ready||!start.batchId)throw new Error("Le serveur n’a pas créé le lot d’import."); const chunkSize=1500; for(let offset=0;offset<normalized.rows.length;offset+=chunkSize){const chunk=normalized.rows.slice(offset,offset+chunkSize);const response=await fetch("/api/data-import/ops-batch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"chunk",batchId:start.batchId,rows:chunk})});const payload=await readPayload<{error?:string}>(response,"Bloc d’import illisible");if(!response.ok)throw new Error(payload.error||`Chargement interrompu (${response.status}).`);const done=Math.min(offset+chunk.length,normalized.rows.length);setProgress(`Chargement ${Math.round(done/normalized.rows.length*70)} % · ${done.toLocaleString("fr-FR")} / ${normalized.rows.length.toLocaleString("fr-FR")} lignes`);} let final:ImportResult={}; for(let step=0;step<120;step++){const response=await fetch("/api/data-import/ops-batch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"commit",batchId:start.batchId,limit:5000})});const payload=await readPayload<ImportResult>(response,"Consolidation illisible");if(!response.ok)throw new Error(payload.error||`Consolidation interrompue (${response.status}).`);final=payload;const committed=Number(payload.committedRows??0);setProgress(`Consolidation ${Math.min(99,70+Math.round(committed/normalized.rows.length*30))} % · ${committed.toLocaleString("fr-FR")} / ${normalized.rows.length.toLocaleString("fr-FR")}`);if(payload.imported)break;} if(!final.imported)throw new Error("La consolidation n’a pas pu terminer le lot. Les blocs sont conservés pour diagnostic.");setResult(final); }
+  async function upload(file?:File){if(!file||loading)return;setFileName(file.name);setResult(null);setProgress("");setLoading(true);try{const prepared=await prepareUploadFile(file);if(prepared.size>25*1024*1024)throw new Error("Le fichier préparé dépasse 25 Mo.");if(zone.source==="rh")await uploadRh(file,prepared);else await uploadOps(file,prepared);}catch(error){setResult({error:error instanceof Error?error.message:"Import impossible."});}finally{setLoading(false);setProgress("");if(inputRef.current)inputRef.current.value="";}}
+  function drop(event:DragEvent<HTMLDivElement>){event.preventDefault();setDragging(false);void upload(event.dataTransfer.files?.[0]);} const min=compactDate(result?.dateRange?.min),max=compactDate(result?.dateRange?.max);const range=min&&max?(min===max?min:`${min} → ${max}`):null;
+  return <article className={styles.uploadCard}><div className={styles.uploadHead}><span>{zone.badge}</span><div><strong>{zone.title}</strong><small>{zone.subtitle}</small></div></div><div className={`${styles.dropZone} ${dragging?styles.dropZoneActive:""} ${result?.error?styles.dropZoneError:result?.imported||result?.duplicate?styles.dropZoneSuccess:""}`} onDragEnter={(event)=>{event.preventDefault();setDragging(true);}} onDragOver={(event)=>event.preventDefault()} onDragLeave={()=>setDragging(false)} onDrop={drop} onClick={()=>inputRef.current?.click()} role="button" tabIndex={0} onKeyDown={(event)=>{if(event.key==="Enter"||event.key===" ")inputRef.current?.click();}}><input ref={inputRef} className={styles.fileInput} type="file" accept=".csv,.xlsx,.xls" onChange={(event)=>void upload(event.target.files?.[0])}/><b>{loading?"Analyse et intégration…":"Glisse le fichier ici"}</b><span>{loading?(progress||fileName):"ou clique pour choisir un fichier"}</span><small>CSV · XLSX · XLS · 25 Mo max</small></div><p className={styles.uploadHint}>{zone.detail}</p>{result?.imported&&<div className={styles.importOk}><strong>IMPORTÉ</strong><span>{result.rows??0} lignes intégrées{range?` · ${range}`:""}{zone.source==="rh"&&result.staffSaved?` · ${result.staffSaved} collaborateurs détectés`:""}</span></div>}{result?.duplicate&&<div className={styles.importDuplicate}><strong>DÉJÀ INTÉGRÉ</strong><span>{result.filename||fileName}</span></div>}{result?.error&&<div className={styles.importError}><strong>À CORRIGER</strong><span>{result.error}</span></div>}</article>;
 }
 
-export default function DirectFileImport() {
-  return <section className={styles.importSection}>
-    <div className={styles.importTitle}><div><span>IMPORT DIRECT</span><h2>Dépose les 3 fichiers</h2></div><p>Le fichier RH est lu localement puis intégré par petits blocs sécurisés. Les gros exports ne dépendent plus de la limite de calcul des fonctions Supabase.</p></div>
-    <div className={styles.uploadGrid}>{zones.map((zone) => <UploadZone key={zone.source} zone={zone}/>)}</div>
-  </section>;
-}
+export default function DirectFileImport(){return <section className={styles.importSection}><div className={styles.importTitle}><div><span>IMPORT DIRECT</span><h2>Dépose les 4 fichiers</h2></div><p>Les quatre exports sont lus et contrôlés localement, puis envoyés par petits blocs sécurisés. Aucun gros classeur n’est parsé dans une fonction serveur : le chemin évite les erreurs de mémoire et de timeout rencontrées sur le premier import RH.</p></div><div className={styles.uploadGrid}>{zones.map((zone)=><UploadZone key={zone.source} zone={zone}/>)}</div></section>;}
