@@ -9,10 +9,21 @@ type ImportResult = {
   duplicate?: boolean;
   rows?: number;
   updatedInvoices?: number;
+  staffSaved?: number;
   dateRange?: { min?: string | null; max?: string | null };
   filename?: string;
   error?: string;
+  detail?: string;
+  headers?: string[];
   existing?: { status?: string; original_filename?: string };
+};
+type InitResult = {
+  ready?: boolean;
+  uploadUrl?: string;
+  token?: string;
+  sender?: string;
+  expiresAt?: string;
+  error?: string;
 };
 
 type Zone = {
@@ -24,7 +35,7 @@ type Zone = {
 };
 
 const zones: Zone[] = [
-  { source: "rh", badge: "RH", title: "Data RH", subtitle: "Présence & temps", detail: "Date, collaborateur, code temps et durée." },
+  { source: "rh", badge: "RH", title: "Data RH", subtitle: "Présence & temps", detail: "Date, nom/prénom, service, équipe, matricule, code pointage et durée." },
   { source: "billed_time", badge: "H", title: "Temps pointé facturé", subtitle: "Heures par dossier", detail: "OR / facture, collaborateur et heures pointées." },
   { source: "finance", badge: "CA", title: "Factures & chiffre d’affaires", subtitle: "CA réalisé", detail: "Date et numéro de facture, dossier, client et montants." },
 ];
@@ -32,6 +43,11 @@ const zones: Zone[] = [
 function compactDate(value?: string | null) {
   if (!value) return null;
   return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T12:00:00`));
+}
+async function readPayload<T extends {error?:string}>(response:Response, fallback:string):Promise<T>{
+  const text=await response.text();
+  if(!text)return {error:`${fallback} (HTTP ${response.status}).`} as T;
+  try{return JSON.parse(text) as T;}catch{return {error:`${fallback} (HTTP ${response.status}) · ${text.slice(0,180).replace(/\s+/g," ")}`} as T;}
 }
 
 function UploadZone({ zone }: { zone: Zone }) {
@@ -47,12 +63,34 @@ function UploadZone({ zone }: { zone: Zone }) {
     setResult(null);
     setLoading(true);
     try {
+      const initResponse = await fetch("/api/data-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: zone.source, filename: file.name, byteSize: file.size }),
+      });
+      const init = await readPayload<InitResult>(initResponse,"Initialisation de l'import illisible");
+      if (!initResponse.ok || !init.ready || !init.uploadUrl || !init.token) {
+        throw new Error(init.error || `Initialisation refusée (${initResponse.status}).`);
+      }
+
       const body = new FormData();
       body.set("file", file, file.name);
       body.set("source", zone.source);
-      const response = await fetch("/api/data-import", { method: "POST", body });
-      const payload = await response.json().catch(() => ({ error: "Réponse serveur illisible." })) as ImportResult;
-      if (!response.ok) throw new Error(payload.error || `Import refusé (${response.status}).`);
+      body.set("sender", init.sender || "KPI CRVO");
+      body.set("messageId", `direct-${Date.now()}-${crypto.randomUUID()}`);
+
+      let uploadResponse:Response;
+      try{
+        uploadResponse=await fetch(init.uploadUrl,{
+          method:"POST",
+          headers:{"x-crvo-ingest-token":init.token},
+          body,
+        });
+      }catch(error){
+        throw new Error(error instanceof Error?`Envoi du fichier impossible : ${error.message}`:"Envoi du fichier impossible.");
+      }
+      const payload=await readPayload<ImportResult>(uploadResponse,"Réponse d'analyse illisible");
+      if(!uploadResponse.ok)throw new Error(payload.error||`Import refusé (${uploadResponse.status}).`);
       setResult(payload);
     } catch (error) {
       setResult({ error: error instanceof Error ? error.message : "Import impossible." });
@@ -91,7 +129,7 @@ function UploadZone({ zone }: { zone: Zone }) {
       <small>CSV · XLSX · XLS · 25 Mo max</small>
     </div>
     <p className={styles.uploadHint}>{zone.detail}</p>
-    {result?.imported && <div className={styles.importOk}><strong>IMPORTÉ</strong><span>{result.rows ?? 0} lignes intégrées{range ? ` · ${range}` : ""}{zone.source === "billed_time" && result.updatedInvoices ? ` · ${result.updatedInvoices} factures rapprochées` : ""}</span></div>}
+    {result?.imported && <div className={styles.importOk}><strong>IMPORTÉ</strong><span>{result.rows ?? 0} lignes intégrées{range ? ` · ${range}` : ""}{zone.source === "rh" && result.staffSaved ? ` · ${result.staffSaved} collaborateurs détectés` : ""}{zone.source === "billed_time" && result.updatedInvoices ? ` · ${result.updatedInvoices} factures rapprochées` : ""}</span></div>}
     {result?.duplicate && <div className={styles.importDuplicate}><strong>DÉJÀ INTÉGRÉ</strong><span>{result.existing?.original_filename || fileName}</span></div>}
     {result?.error && <div className={styles.importError}><strong>À CORRIGER</strong><span>{result.error}</span></div>}
   </article>;
@@ -99,7 +137,7 @@ function UploadZone({ zone }: { zone: Zone }) {
 
 export default function DirectFileImport() {
   return <section className={styles.importSection}>
-    <div className={styles.importTitle}><div><span>IMPORT DIRECT</span><h2>Dépose les 3 fichiers</h2></div><p>Chaque fichier est contrôlé, archivé, analysé puis intégré dans son jeu de données. Un même fichier ne peut pas être intégré deux fois.</p></div>
+    <div className={styles.importTitle}><div><span>IMPORT DIRECT</span><h2>Dépose les 3 fichiers</h2></div><p>Le fichier part directement vers la passerelle sécurisée d’analyse : il est contrôlé, archivé et intégré sans transiter par le serveur web.</p></div>
     <div className={styles.uploadGrid}>{zones.map((zone) => <UploadZone key={zone.source} zone={zone}/>)}</div>
   </section>;
 }
