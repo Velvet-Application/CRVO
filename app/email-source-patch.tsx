@@ -25,6 +25,13 @@ export default function EmailSourcePatch() {
         setText(hub.querySelector(".finance-source-copy > h3"), "Import financier de secours");
         setText(hub.querySelector(".finance-source-copy > p"), "Le flux principal passe désormais par e-mail. Cet import reste disponible uniquement comme solution de secours.");
       }
+
+      const financeUploader = document.querySelector(".finance-uploader");
+      if (financeUploader) {
+        setText(financeUploader.querySelector(".upload-heading span"), "SECOURS MANUEL");
+        setText(financeUploader.querySelector(".upload-heading h3"), "Ajouter un fichier financier de secours");
+        setText(financeUploader.querySelector(".upload-heading p"), "Le flux principal du chiffre d’affaires passe désormais par e-mail. Cet import manuel reste disponible en cas de besoin.");
+      }
     };
 
     apply();
