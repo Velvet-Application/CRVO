@@ -38,11 +38,16 @@ if [[ -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
   echo "Verifying production HTML hydration and live API..."
   node <<'NODE'
 const origin = "https://kpi-crvo.cyril-gay.workers.dev";
+const accessHeaders = process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET ? {
+  "CF-Access-Client-Id": process.env.CF_ACCESS_CLIENT_ID,
+  "CF-Access-Client-Secret": process.env.CF_ACCESS_CLIENT_SECRET,
+} : {};
+const headers = { "Cache-Control": "no-cache", ...accessHeaders };
 for (let attempt = 1; attempt <= 8; attempt += 1) {
   try {
     const [rootResponse, apiResponse] = await Promise.all([
-      fetch(`${origin}/?_=${Date.now()}`, { headers: { "Cache-Control": "no-cache" } }),
-      fetch(`${origin}/api/dashboard?history=1&_=${Date.now()}`, { headers: { "Cache-Control": "no-cache" } }),
+      fetch(`${origin}/?_=${Date.now()}`, { headers }),
+      fetch(`${origin}/api/dashboard?history=1&_=${Date.now()}`, { headers }),
     ]);
     const html = await rootResponse.text();
     const api = await apiResponse.json();
