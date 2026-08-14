@@ -15,10 +15,21 @@ type Snapshot = {
   over20:number;
   production:Production[];
 };
+type LiveFlow = {
+  date:string;
+  received:number;
+  preparationRemaining:number;
+  qualityRemaining:number;
+  photoRemaining:number;
+  exits:number;
+  stock:number;
+  parkModifiedAt?:string|null;
+};
 type DashboardPayload = {
   connected?:boolean;
   snapshot?:Snapshot;
   snapshots?:Snapshot[];
+  liveFlow?:LiveFlow|null;
   liveFreshness?: {
     sourceModifiedAt?:string|null;
     factoryModifiedAt?:string|null;
@@ -142,6 +153,7 @@ export default function DirectionPage() {
   const snapshots = dashboard?.snapshots?.length ? dashboard.snapshots : dashboard?.snapshot ? [dashboard.snapshot] : [];
   const live = snapshots.at(-1) ?? dashboard?.snapshot ?? null;
   const yesterday = live ? [...snapshots].reverse().find(row => row.date < live.date) ?? null : null;
+  const dayBeforeYesterday = yesterday ? [...snapshots].reverse().find(row => row.date < yesterday.date) ?? null : null;
   const factoryTime = hour(dashboard?.liveFreshness?.factoryModifiedAt ?? dashboard?.liveFreshness?.sourceModifiedAt);
   const parkTime = hour(dashboard?.liveFreshness?.parkModifiedAt ?? dashboard?.liveFreshness?.sourceModifiedAt);
 
@@ -166,6 +178,15 @@ export default function DirectionPage() {
 
   if (!live) return <main className={styles.loading}><img src="/crvo-logo.png" alt="CRVO"/><strong>Connexion à l'écran direction…</strong><span>{error}</span></main>;
 
+  const currentFlow = dashboard?.liveFlow?.date === live.date ? dashboard.liveFlow : null;
+  const todayOperations = [
+    { key:"received", label:"Véhicules reçus", value:currentFlow?.received ?? live.entries, source:"FTP TOTAUX", detail:"réceptions de la journée" },
+    { key:"prep", label:"Prépa restant", value:currentFlow?.preparationRemaining ?? 0, source:"FTP PARC USINE", detail:"en attente / en cours Prépa" },
+    { key:"quality", label:"Qualité restant", value:currentFlow?.qualityRemaining ?? 0, source:"FTP PARC USINE", detail:"en attente / en cours Qualité" },
+    { key:"photo", label:"Photo restant", value:currentFlow?.photoRemaining ?? 0, source:"FTP PARC USINE", detail:"en attente / en cours Photo" },
+    { key:"exits", label:"Sorties usine", value:currentFlow?.exits ?? live.exits, source:"FTP TOTAUX", detail:`objectif ${targets["Sortie usine"]}` },
+  ];
+
   return <main className={styles.page}>
     <header className={styles.header}>
       <div className={styles.brand}><img src="/crvo-logo.png" alt="CRVO"/><div><span>DIRECTION · CRVO LENS</span><h1>TABLEAU DE BORD</h1></div></div>
@@ -174,11 +195,30 @@ export default function DirectionPage() {
 
     <section className={styles.topGrid}>
       <article className={styles.yesterdayCard}>
-        <div className={styles.sectionHead}><div><span>CLÔTURE DE LA VEILLE</span><h2>Production du {yesterday ? fullDate(yesterday.date) : "—"}</h2></div>{yesterday && <b>{yesterday.exits} sorties</b>}</div>
-        {yesterday ? <>
-          <div className={styles.yesterdaySummary}><div><span>Entrées</span><strong>{yesterday.entries}</strong></div><div><span>Sorties</span><strong>{yesterday.exits}</strong></div><div><span>Stock fin de journée</span><strong>{yesterday.stock}</strong></div></div>
-          <div className={styles.prodStrip}>{yesterday.production.map(item => <div key={item.name}><span>{item.name}</span><strong>{item.value}</strong><small>/ {targets[item.name] ?? "—"}</small></div>)}</div>
-        </> : <div className={styles.empty}>Clôture de la veille indisponible.</div>}
+        <div className={styles.yesterdayHero}>
+          <div><span>CLÔTURE DE LA VEILLE</span><h2>Production du {yesterday ? fullDate(yesterday.date) : "—"}</h2><i/></div>
+          {yesterday && <b>{yesterday.exits}<small> sorties</small></b>}
+        </div>
+        {yesterday ? <div className={styles.yesterdayBody}>
+          <div className={styles.yesterdaySummary}>
+            <div><em>EN</em><span>Entrées</span><strong>{yesterday.entries}</strong><small>véhicules reçus</small></div>
+            <div><em>SO</em><span>Sorties</span><strong>{yesterday.exits}</strong><small className={yesterday.exits >= targets["Sortie usine"] ? styles.goodText : styles.badText}>{yesterday.exits >= targets["Sortie usine"] ? "+" : ""}{yesterday.exits-targets["Sortie usine"]} vs objectif</small></div>
+            <div><em>ST</em><span>Stock fin de journée</span><strong>{yesterday.stock}</strong><small>{dayBeforeYesterday ? `${yesterday.stock-dayBeforeYesterday.stock > 0 ? "+" : ""}${yesterday.stock-dayBeforeYesterday.stock} vs veille` : "stock usine"}</small></div>
+          </div>
+          <div className={styles.sectorHead}><strong>PAR SECTEUR</strong><span>réalisé / objectif journalier</span></div>
+          <div className={styles.prodStrip}>{yesterday.production.map((item) => {
+            const target = targets[item.name] ?? 0;
+            const pct = target ? Math.round(item.value/target*100) : 0;
+            const delta = target ? item.value-target : 0;
+            return <div key={item.name}>
+              <span>{item.name}</span>
+              <div><strong>{item.value}</strong><small>/ {target || "—"}</small></div>
+              <i><b style={{width:`${Math.min(Math.max(pct,0),100)}%`}}/></i>
+              <em>{pct}%</em>
+              <small className={delta >= 0 ? styles.goodText : styles.badText}>{delta >= 0 ? "+" : ""}{delta}</small>
+            </div>;
+          })}</div>
+        </div> : <div className={styles.empty}>Clôture de la veille indisponible.</div>}
       </article>
 
       <article className={styles.financeCard}>
@@ -193,14 +233,17 @@ export default function DirectionPage() {
 
     <section className={styles.livePanel}>
       <div className={styles.liveHero}>
-        <div><span>PRODUCTION DU JOUR · RÉALISÉ À {factoryTime}</span><h2>{live.exits}<small>/ {targets["Sortie usine"]}</small></h2><p>{fullDate(live.date)}</p></div>
-        <div className={styles.liveHeroRight}><span>Entrées</span><strong>{live.entries}</strong><span>Stock usine</span><strong>{live.stock}</strong></div>
+        <div><span>PRODUCTION DU JOUR · RÉALISÉ À {factoryTime}</span><h2>{live.exits}<small>/ {targets["Sortie usine"]}</small></h2><p>sorties usine · {fullDate(live.date)}</p></div>
+        <div className={styles.liveHeroRight}><span>Véhicules reçus</span><strong>{live.entries}</strong><span>Stock usine</span><strong>{live.stock}</strong></div>
       </div>
-      <div className={styles.todayProd}>{live.production.map(item => {
-        const target = targets[item.name] ?? 0;
-        const pct = target ? Math.round(item.value/target*100) : 0;
-        return <div key={item.name} className={styles.todayProdCard}><span>{item.name}</span><div><strong>{item.value}</strong><small>/ {target}</small></div><i><b style={{width:`${Math.min(pct,100)}%`}}/></i><em>{pct}%</em></div>;
-      })}</div>
+      <div className={styles.flowSourceBar}><span>FTP TOTAUX</span><i/><span>FTP PARC USINE · ÉTAT À {parkTime}</span></div>
+      <div className={styles.todayFlow}>{todayOperations.map(item => <div key={item.key} className={`${styles.flowCard} ${styles[`flow_${item.key}`] ?? ""}`}>
+        <div className={styles.flowIcon}>{item.key === "received" ? "↘" : item.key === "exits" ? "↗" : item.key === "prep" ? "P" : item.key === "quality" ? "Q" : "PH"}</div>
+        <span>{item.label}</span>
+        <strong>{item.value}</strong>
+        <small>{item.detail}</small>
+        <em>{item.source}</em>
+      </div>)}</div>
     </section>
 
     <section className={styles.stockPanel}>
