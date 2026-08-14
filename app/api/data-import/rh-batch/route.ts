@@ -36,6 +36,8 @@ type CommitBody = { action: "commit"; batchId?: string; days?: number };
 type FinishBody = { action: "finish"; batchId?: string };
 type Body = StartBody | ChunkBody | CommitBody | FinishBody;
 
+type CommitResult = Record<string, unknown> & { imported?: boolean; remainingRows?: number };
+
 function noStore(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
@@ -88,7 +90,7 @@ export async function POST(request: Request) {
 
     if (body.action === "commit") {
       const days = Math.max(1, Math.min(Number(body.days ?? 30) || 30, 90));
-      const result = await authRpc<Record<string, unknown>>("kpi_rh_batch_commit_step_admin", {
+      const result = await authRpc<CommitResult>("kpi_rh_batch_commit_step_admin", {
         p_session_hash: current.tokenHash,
         p_batch_id: batchId,
         p_days: days,
@@ -96,11 +98,21 @@ export async function POST(request: Request) {
       return noStore(result);
     }
 
-    const result = await authRpc<Record<string, unknown>>("kpi_rh_batch_finish_admin", {
-      p_session_hash: current.tokenHash,
-      p_batch_id: batchId,
-    });
-    return noStore(result);
+    let result: CommitResult = {};
+    for (let step = 0; step < 60; step++) {
+      result = await authRpc<CommitResult>("kpi_rh_batch_commit_step_admin", {
+        p_session_hash: current.tokenHash,
+        p_batch_id: batchId,
+        p_days: 30,
+      });
+      if (result.imported) return noStore(result);
+      if (Number(result.remainingRows ?? 0) <= 0) break;
+    }
+
+    return noStore({
+      error: "La finalisation RH n’est pas terminée. Relance l’import : le lot est conservé et reprendra sans perdre les blocs reçus.",
+      ...result,
+    }, 409);
   } catch (error) {
     return noStore({
       error: error instanceof Error ? `Import RH impossible : ${error.message}` : "Import RH impossible.",
