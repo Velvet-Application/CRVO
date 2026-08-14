@@ -18,8 +18,9 @@ type DailyRow = {
 };
 type TeamHourRow = { work_date:string; team_code:TeamCode; sold_hours:number|string; bought_hours:number|string; dossiers:number|string; efficiency:number|string|null };
 type ClientTimeRow = { work_date:string; team_code:TeamCode; client:string; dossier:string|null; labor_hours:number|string|null };
-type StaffMapRow = { id:string; mechanic_name:string; mechanic_key:string; team_code:TeamCode; workcenter:string; active:boolean };
+type StaffMapRow = { id:string; mechanic_name:string; name_key:string; team_code:TeamCode; workcenter:string; matricule:string|null; service:string|null; mapping_source:"manual"|"rh_import"; active:boolean };
 type NameRow = { mechanic_name:string|null };
+type WorkloadRow = { snapshot_at:string; source_name:string; work_order_count:number|string; remaining_hours:number|string; potential_revenue:number|string; run_pool:number|string; max_age_days:number|string|null; updated_at:string };
 
 function env(){
   const supabaseUrl=process.env.SUPABASE_URL;
@@ -77,13 +78,14 @@ export async function GET(){
   const from=daysAgo(today,62);
   const rotation=rotationFor(today);
   try{
-    const [dailyRaw,teamRaw,clientRaw,mappedRaw,presenceNames,billedNames]=await Promise.all([
+    const [dailyRaw,teamRaw,clientRaw,mappedRaw,presenceNames,billedNames,workloadRaw]=await Promise.all([
       rest<DailyRow[]>(config.supabaseUrl,config.secretKey,"kpi_bodyshop_daily?select=production_date,source_modified_at,box_heavy,fixline_1,fixline_2,fixline_3,total_bodyshop&order=production_date.asc&limit=45"),
       rest<TeamHourRow[]>(config.supabaseUrl,config.secretKey,`kpi_bodyshop_team_hours?select=work_date,team_code,sold_hours,bought_hours,dossiers,efficiency&work_date=gte.${from}&order=work_date.asc&limit=1000`),
       rest<ClientTimeRow[]>(config.supabaseUrl,config.secretKey,`kpi_bodyshop_client_time?select=work_date,team_code,client,dossier,labor_hours&work_date=gte.${from}&order=work_date.desc&limit=10000`),
-      rest<StaffMapRow[]>(config.supabaseUrl,config.secretKey,"kpi_bodyshop_staff_map?select=id,mechanic_name,mechanic_key,team_code,workcenter,active&order=team_code.asc,mechanic_name.asc&limit=500"),
+      rest<StaffMapRow[]>(config.supabaseUrl,config.secretKey,"kpi_bodyshop_staff_effective?select=id,mechanic_name,name_key,team_code,workcenter,matricule,service,mapping_source,active&order=team_code.asc,mechanic_name.asc&limit=500"),
       rest<NameRow[]>(config.supabaseUrl,config.secretKey,`kpi_sql_presence_facts?select=mechanic_name&work_date=gte.${from}&mechanic_name=not.is.null&order=work_date.desc&limit=5000`),
       rest<NameRow[]>(config.supabaseUrl,config.secretKey,`kpi_billed_time_facts?select=mechanic_name&mechanic_name=not.is.null&order=imported_at.desc&limit=5000`),
+      rest<WorkloadRow[]>(config.supabaseUrl,config.secretKey,"kpi_bodyshop_workload?select=snapshot_at,source_name,work_order_count,remaining_hours,potential_revenue,run_pool,max_age_days,updated_at&limit=1"),
     ]);
 
     const daily=dailyRaw.map(row=>({
@@ -121,7 +123,7 @@ export async function GET(){
       teams:[...item.teams].sort(),
     })).sort((a,b)=>b.hours-a.hours).slice(0,20);
 
-    const mappedKeys=new Set(mappedRaw.filter(item=>item.active).map(item=>item.mechanic_key));
+    const mappedKeys=new Set(mappedRaw.filter(item=>item.active).map(item=>item.name_key));
     const allNames=new Map<string,string>();
     for(const row of [...presenceNames,...billedNames]){
       const value=(row.mechanic_name??"").trim();
@@ -130,6 +132,17 @@ export async function GET(){
       if(!allNames.has(key))allNames.set(key,value);
     }
     const unmappedStaff=[...allNames.entries()].filter(([key])=>!mappedKeys.has(key)).map(([,name])=>name).sort((a,b)=>a.localeCompare(b,"fr"));
+    const workloadRow=workloadRaw[0]??null;
+    const workload=workloadRow?{
+      snapshotAt:workloadRow.snapshot_at,
+      sourceName:workloadRow.source_name,
+      workOrders:num(workloadRow.work_order_count),
+      remainingHours:num(workloadRow.remaining_hours),
+      potentialRevenue:num(workloadRow.potential_revenue),
+      runPool:num(workloadRow.run_pool),
+      maxAgeDays:workloadRow.max_age_days==null?null:num(workloadRow.max_age_days),
+      updatedAt:workloadRow.updated_at,
+    }:null;
 
     return NextResponse.json({
       generatedAt:new Date().toISOString(),
@@ -161,10 +174,12 @@ export async function GET(){
       production:{daily,latest:daily.at(-1)??null},
       teamDaily,
       clientTimes,
+      workload,
       staffMapping:mappedRaw,
       unmappedStaff,
       readiness:{
         teamMapping:mappedRaw.filter(item=>item.active).length,
+        autoTeamMapping:mappedRaw.filter(item=>item.active&&item.mapping_source==="rh_import").length,
         teamHours:teamDaily.length,
         clientRows:clientRaw.length,
       },
@@ -185,7 +200,7 @@ export async function POST(request:Request){
   const workcenter=body?.workcenter??"mixed";
   if(!mechanicName||!["A","B","C"].includes(teamCode)||!["fixline_1","fixline_2","fixline_3","box","heavy","mixed"].includes(workcenter))return NextResponse.json({error:"Paramétrage équipe invalide."},{status:400});
   try{
-    const rows=await rest<StaffMapRow[]>(config.supabaseUrl,config.secretKey,"kpi_bodyshop_staff_map?on_conflict=mechanic_key",{
+    const rows=await rest<Record<string,unknown>[]>(config.supabaseUrl,config.secretKey,"kpi_bodyshop_staff_map?on_conflict=mechanic_key",{
       method:"POST",
       headers:{"Content-Type":"application/json","Prefer":"resolution=merge-duplicates,return=representation"},
       body:JSON.stringify({mechanic_name:mechanicName,team_code:teamCode,workcenter,active:true}),
