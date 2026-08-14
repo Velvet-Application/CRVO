@@ -89,7 +89,7 @@ export async function POST(request: Request) {
     if (!/^[0-9a-f-]{36}$/i.test(batchId)) return noStore({ error: "Lot RH invalide." }, 400);
 
     if (body.action === "commit") {
-      const days = Math.max(1, Math.min(Number(body.days ?? 30) || 30, 90));
+      const days = Math.max(1, Math.min(Number(body.days ?? 60) || 60, 90));
       const result = await authRpc<CommitResult>("kpi_rh_batch_commit_step_admin", {
         p_session_hash: current.tokenHash,
         p_batch_id: batchId,
@@ -99,11 +99,11 @@ export async function POST(request: Request) {
     }
 
     let result: CommitResult = {};
-    for (let step = 0; step < 60; step++) {
+    for (let step = 0; step < 12; step++) {
       result = await authRpc<CommitResult>("kpi_rh_batch_commit_step_admin", {
         p_session_hash: current.tokenHash,
         p_batch_id: batchId,
-        p_days: 30,
+        p_days: 90,
       });
       if (result.imported) return noStore(result);
       if (Number(result.remainingRows ?? 0) <= 0) break;
