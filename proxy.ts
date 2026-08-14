@@ -30,15 +30,40 @@ function apiUnauthorized(status=401,message="Authentification requise."){
   return NextResponse.json({error:message},{status,headers:{"Cache-Control":"no-store"}});
 }
 
+function kioskPage(pathname:string){
+  return pathname==="/atelier"||pathname==="/direction";
+}
+
+function kioskApiAllowed(request:NextRequest){
+  if(request.method!=="GET")return false;
+  const path=request.nextUrl.pathname;
+  const referer=request.headers.get("referer");
+  if(!referer)return false;
+  let sourcePath="";
+  try{sourcePath=new URL(referer).pathname;}catch{return false;}
+  if(sourcePath==="/atelier"){
+    return path==="/api/dashboard"||path==="/api/system-status"||path==="/api/objectives"||path==="/api/kiosk/atelier";
+  }
+  if(sourcePath==="/direction"){
+    return path==="/api/dashboard"||path==="/api/finance"||path==="/api/kiosk/direction";
+  }
+  return false;
+}
+
 export async function proxy(request:NextRequest){
   const path=request.nextUrl.pathname;
   if(isStatic(path))return NextResponse.next();
   if(path==="/api/health")return NextResponse.next();
 
+  // Deux écrans d'affichage terrain restent accessibles sans compte.
+  // Ils ne contiennent aucun lien vers le reste du reporting et leurs appels API
+  // anonymes sont limités aux seules données nécessaires à l'écran d'origine.
+  if(kioskPage(path))return NextResponse.next();
+
   const token=request.cookies.get(COOKIE)?.value;
   const publicLogin=path==="/login"||path==="/api/auth/login";
   if(!token){
-    if(publicLogin)return NextResponse.next();
+    if(publicLogin||kioskApiAllowed(request))return NextResponse.next();
     if(path.startsWith("/api/"))return apiUnauthorized();
     const url=new URL("/login",request.url);
     if(path!=="/")url.searchParams.set("next",`${path}${request.nextUrl.search}`.slice(0,1000));
