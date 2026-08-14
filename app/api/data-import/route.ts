@@ -4,6 +4,7 @@ import { authRpc, currentSession, newSessionToken, sha256Hex } from "../../lib/c
 export const dynamic = "force-dynamic";
 
 const IMPORT_GATEWAY = "https://tvmkhvfmdstkunwwuzuz.supabase.co/functions/v1/kpi-direct-import-gateway";
+const RH_IMPORT_GATEWAY = "https://tvmkhvfmdstkunwwuzuz.supabase.co/functions/v1/kpi-rh-direct-import-v2";
 const ACCEPTED = /\.(csv|xlsx|xls)$/i;
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const SOURCES = new Set(["rh", "finance", "billed_time"]);
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ready: true,
-      uploadUrl: IMPORT_GATEWAY,
+      uploadUrl: source === "rh" ? RH_IMPORT_GATEWAY : IMPORT_GATEWAY,
       token,
       sender: current.session.display_name || current.session.username,
       expiresAt,
