@@ -7,11 +7,6 @@ const IMPORT_GATEWAY = "https://tvmkhvfmdstkunwwuzuz.supabase.co/functions/v1/kp
 const ACCEPTED = /\.(csv|xlsx|xls)$/i;
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
-function newImportToken() {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 export async function POST(request: Request) {
   const current = await currentSession();
   if (!current || current.session.role !== "admin") {
@@ -24,7 +19,7 @@ export async function POST(request: Request) {
   if (!value || typeof value === "string" || typeof (value as { arrayBuffer?: unknown }).arrayBuffer !== "function") {
     return NextResponse.json({ error: "Sélectionne un fichier à importer." }, { status: 400 });
   }
-  if (!['rh', 'finance', 'billed_time'].includes(source)) {
+  if (!["rh", "finance", "billed_time"].includes(source)) {
     return NextResponse.json({ error: "Type de données invalide." }, { status: 400 });
   }
 
@@ -32,7 +27,7 @@ export async function POST(request: Request) {
   if (!ACCEPTED.test(file.name)) return NextResponse.json({ error: "Format refusé. Utilise CSV, XLSX ou XLS." }, { status: 400 });
   if (!file.size || file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "Le fichier dépasse la limite de 25 Mo." }, { status: 400 });
 
-  const token = newImportToken();
+  const token = await sha256Hex(`crvo-direct-import:v1:${current.token}`);
   await authRpc<string>("kpi_set_email_gateway_token_admin", {
     p_session_hash: current.tokenHash,
     p_token_sha256: await sha256Hex(token),
