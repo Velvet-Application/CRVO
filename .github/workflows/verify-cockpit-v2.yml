@@ -8,6 +8,8 @@ on:
     paths:
       - "app/intelligence/**"
       - "app/api/cockpit-v2/**"
+      - "app/api/health/**"
+      - "proxy.ts"
       - ".github/workflows/verify-cockpit-v2.yml"
 
 permissions:
@@ -17,52 +19,18 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
-      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
     steps:
-      - name: Verify managerial cockpit in production
+      - name: Verify authentication and data health
         run: |
           node <<'NODE'
           const origin = "https://kpi-crvo.cyril-gay.workers.dev";
-          const accessHeaders = process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET ? {
-            "CF-Access-Client-Id": process.env.CF_ACCESS_CLIENT_ID,
-            "CF-Access-Client-Secret": process.env.CF_ACCESS_CLIENT_SECRET,
-          } : {};
-          const headers = { "Cache-Control": "no-cache", ...accessHeaders };
-          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-          let last = null;
-          for (let attempt = 1; attempt <= 12; attempt += 1) {
-            try {
-              const stamp = Date.now();
-              const [apiResponse, pageResponse] = await Promise.all([
-                fetch(`${origin}/api/cockpit-v2?_=${stamp}`, { headers }),
-                fetch(`${origin}/intelligence?_=${stamp}`, { headers }),
-              ]);
-              const api = await apiResponse.json().catch(() => ({}));
-              const html = await pageResponse.text();
-              last = {
-                apiStatus: apiResponse.status,
-                connected: api.connected,
-                alerts: Array.isArray(api.managerialAlerts) ? api.managerialAlerts.length : 0,
-                preparation: api.preparation?.current,
-                bodywork: api.bodywork?.pending,
-                bmw: api.bmw?.vehicles,
-                pageStatus: pageResponse.status,
-                pageBuilt: html.includes("CRVO COCKPIT V2"),
-              };
-              console.log(`attempt ${attempt}: ${JSON.stringify(last)}`);
-              if (
-                apiResponse.ok && api.connected === true &&
-                api.preparation && api.bodywork && api.bmw &&
-                pageResponse.ok && last.pageBuilt
-              ) process.exit(0);
-            } catch (error) {
-              last = { error: error instanceof Error ? error.message : String(error) };
-              console.log(`attempt ${attempt}: ${JSON.stringify(last)}`);
-            }
-            await sleep(5000);
-          }
-          console.error(`CRVO COCKPIT V2 production verification failed: ${JSON.stringify(last)}`);
-          process.exit(1);
+          const stamp = Date.now();
+          const [healthResponse, cockpitResponse] = await Promise.all([
+            fetch(`${origin}/api/health?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+            fetch(`${origin}/api/cockpit-v2?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+          ]);
+          const health = await healthResponse.json().catch(() => ({}));
+          console.log(`health=${healthResponse.status} ok=${health.ok} data=${health.dataReady} cockpitProtected=${cockpitResponse.status}`);
+          if (!healthResponse.ok || health.ok !== true || health.dataReady !== true || health.bottlenecksReady !== true) process.exit(1);
+          if (cockpitResponse.status !== 401) process.exit(2);
           NODE
