@@ -11,6 +11,17 @@ type Hosts = {
   settingsExtra: HTMLElement;
 };
 
+type GroupKey = "performance" | "book" | "cockpit" | "client" | "settings";
+type OpenGroups = Record<GroupKey, boolean>;
+
+const DEFAULT_OPEN: OpenGroups = {
+  performance: true,
+  book: false,
+  cockpit: false,
+  client: false,
+  settings: false,
+};
+
 function makeSlot(nav: HTMLElement, id: string) {
   let slot = document.getElementById(id);
   if (!slot) {
@@ -21,13 +32,33 @@ function makeSlot(nav: HTMLElement, id: string) {
   return slot;
 }
 
-function relabel(id:string,label:string){
-  const node=document.getElementById(id)?.querySelector("span");
-  if(node&&node.textContent!==label)node.textContent=label;
+function relabel(id: string, label: string) {
+  const node = document.getElementById(id)?.querySelector("span");
+  if (node && node.textContent !== label) node.textContent = label;
+}
+
+function setHidden(id: string, hidden: boolean) {
+  const node = document.getElementById(id);
+  if (node) node.hidden = hidden;
 }
 
 export default function PilotageNav() {
   const [hosts, setHosts] = useState<Hosts | null>(null);
+  const [open, setOpen] = useState<OpenGroups>(DEFAULT_OPEN);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem("crvo-sidebar-groups");
+      const restored = stored ? { ...DEFAULT_OPEN, ...JSON.parse(stored) } as OpenGroups : DEFAULT_OPEN;
+      const path = window.location.pathname;
+      if (path.startsWith("/cockpit-v2")) restored.cockpit = true;
+      if (path.startsWith("/dashboard-client")) restored.client = true;
+      if (/^\/(account|data-rh|atelier|direction)/.test(path)) restored.settings = true;
+      setOpen(restored);
+    } catch {
+      setOpen(DEFAULT_OPEN);
+    }
+  }, []);
 
   useEffect(() => {
     const install = () => {
@@ -47,12 +78,12 @@ export default function PilotageNav() {
       const sources = document.getElementById("nav-sources");
       if (!today || !yesterday || !finance || !objectives || !sources) return;
 
-      relabel("nav-today","Performance");
-      relabel("nav-bottlenecks","Goulot");
-      relabel("nav-walking","Walking DEAD");
-      relabel("nav-finance","Chiffre d'affaire");
-      relabel("nav-objectives","Objectif & seuil");
-      relabel("nav-sources","Source & Connexion");
+      relabel("nav-today", "Performance");
+      relabel("nav-bottlenecks", "Goulot");
+      relabel("nav-walking", "Walking DEAD");
+      relabel("nav-finance", "Chiffre d'affaire");
+      relabel("nav-objectives", "Objectif & seuil");
+      relabel("nav-sources", "Source & Connexion");
 
       const performance = makeSlot(nav, "architecture-performance-label");
       if (performance.nextSibling !== today) nav.insertBefore(performance, today);
@@ -80,6 +111,31 @@ export default function PilotageNav() {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    setHidden("nav-today", !open.performance);
+    ["nav-yesterday", "nav-bottlenecks", "nav-walking", "nav-finance"].forEach((id) => setHidden(id, !open.book));
+    ["nav-objectives", "nav-sources"].forEach((id) => setHidden(id, !open.settings));
+  }, [open, hosts]);
+
+  const toggle = (group: GroupKey) => {
+    setOpen((current) => {
+      const next = { ...current, [group]: !current[group] };
+      try { window.localStorage.setItem("crvo-sidebar-groups", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const groupHeading = (group: GroupKey, label: string, spaced = false) => (
+    <button
+      type="button"
+      className={`architecture-group-heading${spaced ? " architecture-heading-spaced" : ""}`}
+      aria-expanded={open[group]}
+      onClick={() => toggle(group)}
+    >
+      <span>{label}</span><i className={open[group] ? "is-open" : ""}>›</i>
+    </button>
+  );
+
   const link = (href: string, label: string, icon: string) => (
     <a className="architecture-link" href={href}>
       <span className="architecture-icon">{icon}</span><span>{label}</span><i />
@@ -87,34 +143,47 @@ export default function PilotageNav() {
   );
 
   return <>
-    {hosts && hosts.performance.isConnected ? createPortal(<div className="architecture-heading">PERFORMANCE</div>, hosts.performance) : null}
-    {hosts && hosts.book.isConnected ? createPortal(<div className="architecture-heading">BOOK</div>, hosts.book) : null}
+    {hosts && hosts.performance.isConnected ? createPortal(groupHeading("performance", "PERFORMANCE"), hosts.performance) : null}
+    {hosts && hosts.book.isConnected ? createPortal(groupHeading("book", "BOOK"), hosts.book) : null}
     {hosts && hosts.middle.isConnected ? createPortal(<>
-      <div className="architecture-heading architecture-heading-spaced">CRVO COCKPIT V2</div>
-      <div className="architecture-links">
-        {link("/cockpit-v2?section=pilotage", "Pilotage du jour", "↗")}
-        {link("/cockpit-v2?section=synthese", "Synthèse managériale", "Σ")}
-        {link("/cockpit-v2?section=decision", "Aide à la décision", "◆")}
-        {link("/cockpit-v2?section=prevision", "Prévision fin de journée", "◒")}
+      {groupHeading("cockpit", "CRVO COCKPIT V2", true)}
+      <div className={`architecture-collapse${open.cockpit ? " is-open" : ""}`}>
+        <div className="architecture-links">
+          {link("/cockpit-v2?section=pilotage", "Pilotage du jour", "↗")}
+          {link("/cockpit-v2?section=synthese", "Synthèse managériale", "Σ")}
+          {link("/cockpit-v2?section=decision", "Aide à la décision", "◆")}
+          {link("/cockpit-v2?section=prevision", "Prévision fin de journée", "◒")}
+        </div>
       </div>
-      <div className="architecture-heading architecture-heading-spaced">DASHBOARD CLIENT</div>
-      <div className="architecture-links">
-        {link("/dashboard-client?scope=reseau", "Réseau", "R")}
-        {link("/dashboard-client?scope=bmw-mini", "BMW / MINI", "B")}
+      {groupHeading("client", "DASHBOARD CLIENT", true)}
+      <div className={`architecture-collapse${open.client ? " is-open" : ""}`}>
+        <div className="architecture-links">
+          {link("/dashboard-client?scope=reseau", "Réseau", "R")}
+          {link("/dashboard-client?scope=bmw-mini", "BMW / MINI", "B")}
+        </div>
       </div>
     </>, hosts.middle) : null}
-    {hosts && hosts.settings.isConnected ? createPortal(<div className="architecture-heading architecture-heading-spaced">PARAMÈTRE</div>, hosts.settings) : null}
-    {hosts && hosts.settingsExtra.isConnected ? createPortal(<div className="architecture-links architecture-settings-links">
-      {link("/account", "Accès", "A")}
-      {link("/data-rh", "Data RH", "RH")}
-      {link("/atelier", "Ecran ATELIER", "AT")}
-      {link("/direction", "Ecran DIRECTION", "DI")}
-    </div>, hosts.settingsExtra) : null}
+    {hosts && hosts.settings.isConnected ? createPortal(groupHeading("settings", "PARAMÈTRE", true), hosts.settings) : null}
+    {hosts && hosts.settingsExtra.isConnected ? createPortal(
+      <div className={`architecture-collapse architecture-settings-collapse${open.settings ? " is-open" : ""}`}>
+        <div className="architecture-links architecture-settings-links">
+          {link("/account", "Accès", "A")}
+          {link("/data-rh", "Data RH", "RH")}
+          {link("/atelier", "Ecran ATELIER", "AT")}
+          {link("/direction", "Ecran DIRECTION", "DI")}
+        </div>
+      </div>, hosts.settingsExtra) : null}
     <style>{`
-      .sidebar nav .architecture-heading{
-        margin:15px 10px 7px;color:rgba(255,255,255,.50);font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+      .sidebar nav .architecture-group-heading{
+        width:calc(100% - 20px);margin:15px 10px 7px;padding:5px 2px;border:0;background:transparent;color:rgba(255,255,255,.54);display:flex;align-items:center;justify-content:space-between;gap:8px;font:inherit;font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;text-align:left;
       }
+      .sidebar nav .architecture-group-heading:hover{color:#fff}
       .sidebar nav .architecture-heading-spaced{margin-top:19px}
+      .sidebar nav .architecture-group-heading>i{font-style:normal;font-size:18px;line-height:1;color:#009edb;transform:rotate(0deg);transition:transform .18s ease}
+      .sidebar nav .architecture-group-heading>i.is-open{transform:rotate(90deg)}
+      .sidebar nav .architecture-collapse{display:grid;grid-template-rows:0fr;opacity:.35;transition:grid-template-rows .2s ease,opacity .18s ease}
+      .sidebar nav .architecture-collapse.is-open{grid-template-rows:1fr;opacity:1}
+      .sidebar nav .architecture-collapse>.architecture-links{min-height:0;overflow:hidden}
       .sidebar nav .architecture-links{display:grid;gap:5px}
       .sidebar nav .architecture-link{
         min-height:42px;padding:0 13px;display:grid;grid-template-columns:23px 1fr 6px;align-items:center;gap:11px;border:0;border-radius:10px;color:rgba(255,255,255,.90)!important;background:rgba(0,158,219,.11);text-decoration:none!important;transition:.18s ease;box-shadow:inset 0 0 0 1px rgba(133,221,255,.10);
@@ -125,7 +194,7 @@ export default function PilotageNav() {
       .sidebar nav .architecture-link>i{width:6px;height:6px;border-radius:50%;background:#009edb;opacity:.8}
       .sidebar nav .architecture-settings-links{margin-bottom:12px}
       #architecture-performance-label,#architecture-book-label,#architecture-middle-root,#architecture-settings-label,#architecture-settings-extra{display:contents}
-      @media (max-width:760px){.sidebar nav .architecture-heading{margin-left:8px}.sidebar nav .architecture-link{min-height:44px}}
+      @media (max-width:760px){.sidebar nav .architecture-group-heading{margin-left:8px;width:calc(100% - 16px)}.sidebar nav .architecture-link{min-height:44px}}
     `}</style>
   </>;
 }
