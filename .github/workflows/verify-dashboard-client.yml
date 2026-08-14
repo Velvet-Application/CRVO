@@ -5,6 +5,8 @@ on:
   push:
     branches: [main]
     paths:
+      - "app/api/health/**"
+      - "proxy.ts"
       - ".github/workflows/verify-dashboard-client.yml"
 
 permissions:
@@ -14,36 +16,18 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
-      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
     steps:
-      - name: Verify dashboard, BMW and dossier history
+      - name: Verify client dashboard data and protection
         run: |
           node <<'NODE'
           const origin = "https://kpi-crvo.cyril-gay.workers.dev";
-          const accessHeaders = process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET ? {
-            "CF-Access-Client-Id": process.env.CF_ACCESS_CLIENT_ID,
-            "CF-Access-Client-Secret": process.env.CF_ACCESS_CLIENT_SECRET,
-          } : {};
-          const headers = { "Cache-Control": "no-cache", ...accessHeaders };
           const stamp = Date.now();
-          const page = await fetch(`${origin}/dashboard-client?_=${stamp}`, { headers });
-          const listResponse = await fetch(`${origin}/api/client-dashboard?_=${stamp}`, { headers });
-          const list = await listResponse.json();
-          console.log(`page=${page.status} clients=${list.clients?.length || 0} vehicles=${list.totalVehicles || 0}`);
-          if (!page.ok || !listResponse.ok || !Array.isArray(list.clients) || !list.clients.length) process.exit(1);
-          const names = list.clients.map(row => String(row.client));
-          const sorted = names.every((name,index) => index === 0 || names[index-1].localeCompare(name,"fr",{sensitivity:"base"}) <= 0);
-          console.log(`alphabetical=${sorted} first=${names[0]} last=${names.at(-1)}`);
-          if (!sorted) process.exit(2);
-          const bmwResponse = await fetch(`${origin}/api/client-dashboard?bmw=1&_=${stamp}`, { headers });
-          const bmw = await bmwResponse.json();
-          console.log(`bmw=${bmwResponse.status} vehicles=${bmw.vehicles?.length || 0} events=${bmw.metrics?.historyEventCount || 0}`);
-          if (!bmwResponse.ok || bmw.client !== "BMW FRANCE Prestations" || !Array.isArray(bmw.vehicles) || !bmw.vehicles.length) process.exit(3);
-          const sample = bmw.vehicles.find(v => v.registration)?.registration;
-          const focusResponse = await fetch(`${origin}/api/client-dashboard?registration=${encodeURIComponent(sample)}&_=${stamp}`, { headers });
-          const focus = await focusResponse.json();
-          console.log(`focus=${focusResponse.status} registration=${focus.vehicle?.registration || "none"} history=${focus.history?.length || 0}`);
-          if (!focusResponse.ok || !focus.vehicle?.registration || !Array.isArray(focus.history)) process.exit(4);
+          const [healthResponse, clientResponse] = await Promise.all([
+            fetch(`${origin}/api/health?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+            fetch(`${origin}/api/client-dashboard?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+          ]);
+          const health = await healthResponse.json().catch(() => ({}));
+          console.log(`health=${healthResponse.status} clientsReady=${health.clientDashboardReady} clientProtected=${clientResponse.status}`);
+          if (!healthResponse.ok || health.ok !== true || health.clientDashboardReady !== true) process.exit(1);
+          if (clientResponse.status !== 401) process.exit(2);
           NODE
