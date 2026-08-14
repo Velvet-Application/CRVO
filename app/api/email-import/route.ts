@@ -10,6 +10,8 @@ type SourceKey = "rh" | "finance" | "billed_time" | "unknown";
 type Row = Record<string, unknown>;
 type Parsed = { rows: Row[]; headers: string[] };
 
+type LooseClient = any;
+
 function getEnv() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SECRET_KEY;
@@ -162,7 +164,7 @@ function classify(filename: string, subject: string, parsed: Parsed, explicit: s
   return ranked[0][1] >= 5 ? ranked[0][0] : "unknown";
 }
 
-async function insertChunks(client: ReturnType<typeof createClient>, table: string, rows: Record<string, unknown>[], upsertConflict?: string) {
+async function insertChunks(client: LooseClient, table: string, rows: Record<string, unknown>[], upsertConflict?: string) {
   for (let index = 0; index < rows.length; index += 500) {
     const chunk = rows.slice(index, index + 500);
     const result = upsertConflict ? await client.from(table).upsert(chunk, { onConflict: upsertConflict }) : await client.from(table).insert(chunk);
