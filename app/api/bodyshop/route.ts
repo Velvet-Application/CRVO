@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentSession } from "../../lib/crvo-auth";
+import { authRpc, currentSession } from "../../lib/crvo-auth";
 import { supabaseRestHeaders } from "../../supabase-rest";
 
 export const dynamic = "force-dynamic";
@@ -78,13 +78,12 @@ export async function GET(){
   const from=daysAgo(today,62);
   const rotation=rotationFor(today);
   try{
-    const [dailyRaw,teamRaw,clientRaw,mappedRaw,presenceNames,billedNames,workloadRaw]=await Promise.all([
+    const [dailyRaw,teamRaw,clientRaw,mappedRaw,unmappedRows,workloadRaw]=await Promise.all([
       rest<DailyRow[]>(config.supabaseUrl,config.secretKey,"kpi_bodyshop_daily?select=production_date,source_modified_at,box_heavy,fixline_1,fixline_2,fixline_3,total_bodyshop&order=production_date.asc&limit=45"),
       rest<TeamHourRow[]>(config.supabaseUrl,config.secretKey,`kpi_bodyshop_team_hours?select=work_date,team_code,sold_hours,bought_hours,dossiers,efficiency&work_date=gte.${from}&order=work_date.asc&limit=1000`),
       rest<ClientTimeRow[]>(config.supabaseUrl,config.secretKey,`kpi_bodyshop_client_time?select=work_date,team_code,client,dossier,labor_hours&work_date=gte.${from}&order=work_date.desc&limit=10000`),
       rest<StaffMapRow[]>(config.supabaseUrl,config.secretKey,"kpi_bodyshop_staff_effective?select=id,mechanic_name,name_key,team_code,workcenter,matricule,service,mapping_source,active&order=team_code.asc,mechanic_name.asc&limit=500"),
-      rest<NameRow[]>(config.supabaseUrl,config.secretKey,`kpi_sql_presence_facts?select=mechanic_name&work_date=gte.${from}&mechanic_name=not.is.null&order=work_date.desc&limit=5000`),
-      rest<NameRow[]>(config.supabaseUrl,config.secretKey,`kpi_billed_time_facts?select=mechanic_name&mechanic_name=not.is.null&order=imported_at.desc&limit=5000`),
+      authRpc<NameRow[]>("kpi_bodyshop_unmapped_staff",{p_session_hash:session.tokenHash,p_from_date:from}),
       rest<WorkloadRow[]>(config.supabaseUrl,config.secretKey,"kpi_bodyshop_workload?select=snapshot_at,source_name,work_order_count,remaining_hours,potential_revenue,run_pool,max_age_days,updated_at&limit=1"),
     ]);
 
@@ -123,15 +122,7 @@ export async function GET(){
       teams:[...item.teams].sort(),
     })).sort((a,b)=>b.hours-a.hours).slice(0,20);
 
-    const mappedKeys=new Set(mappedRaw.filter(item=>item.active).map(item=>item.name_key));
-    const allNames=new Map<string,string>();
-    for(const row of [...presenceNames,...billedNames]){
-      const value=(row.mechanic_name??"").trim();
-      if(!value)continue;
-      const key=value.toLocaleLowerCase("fr-FR");
-      if(!allNames.has(key))allNames.set(key,value);
-    }
-    const unmappedStaff=[...allNames.entries()].filter(([key])=>!mappedKeys.has(key)).map(([,name])=>name).sort((a,b)=>a.localeCompare(b,"fr"));
+    const unmappedStaff=unmappedRows.map(row=>(row.mechanic_name??"").trim()).filter(Boolean).sort((a,b)=>a.localeCompare(b,"fr"));
     const workloadRow=workloadRaw[0]??null;
     const workload=workloadRow?{
       snapshotAt:workloadRow.snapshot_at,
