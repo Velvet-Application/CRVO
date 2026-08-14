@@ -17,19 +17,27 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
     steps:
       - name: Verify managerial cockpit in production
         run: |
           node <<'NODE'
           const origin = "https://kpi-crvo.cyril-gay.workers.dev";
+          const accessHeaders = process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET ? {
+            "CF-Access-Client-Id": process.env.CF_ACCESS_CLIENT_ID,
+            "CF-Access-Client-Secret": process.env.CF_ACCESS_CLIENT_SECRET,
+          } : {};
+          const headers = { "Cache-Control": "no-cache", ...accessHeaders };
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           let last = null;
           for (let attempt = 1; attempt <= 12; attempt += 1) {
             try {
               const stamp = Date.now();
               const [apiResponse, pageResponse] = await Promise.all([
-                fetch(`${origin}/api/cockpit-v2?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
-                fetch(`${origin}/intelligence?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+                fetch(`${origin}/api/cockpit-v2?_=${stamp}`, { headers }),
+                fetch(`${origin}/intelligence?_=${stamp}`, { headers }),
               ]);
               const api = await apiResponse.json().catch(() => ({}));
               const html = await pageResponse.text();
