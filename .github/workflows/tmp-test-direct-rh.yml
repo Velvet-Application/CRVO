@@ -17,10 +17,10 @@ jobs:
           EOF
           code=$(curl -sS -o /tmp/body.txt -w '%{http_code}' \
             -X POST 'https://tvmkhvfmdstkunwwuzuz.supabase.co/functions/v1/kpi-direct-import-gateway' \
-            -H 'x-crvo-ingest-token: fea17aeeda11fb7e5ce3915150bd0ab031802361ea47d1787496ec13d6ac444b' \
+            -H 'x-crvo-ingest-token: 59366fc3ab4e7a70e517e6d4bc29dfdc3cad1412125c97f49aa7d4b0d00648d4' \
             -F 'source=rh' \
             -F 'sender=debug-ci' \
-            -F 'messageId=debug-ci-1' \
+            -F 'messageId=debug-ci-2' \
             -F 'file=@/tmp/rh.csv;type=text/csv')
           echo "HTTP $code"
           cat /tmp/body.txt
