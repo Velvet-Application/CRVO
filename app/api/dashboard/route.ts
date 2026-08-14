@@ -28,6 +28,19 @@ const verifiedRows: SnapshotRow[] = [
   { snapshot_at: "2026-08-12", source_name: "Book CRVO Lens - Journée du 12.08.2026.xlsx", metrics: { entries_vop: 8, exits_vop: 94, factory_stock: 1064, stock_over_15d: 477, stock_over_20d: 382, production_expertise: 65, production_mechanics: 75, production_dsp: 27, production_bodywork: 10, production_preparation: 83, production_quality: 87, production_factory_exit: 94 } },
 ];
 
+const SATURDAY_ADDITIVE_METRICS = [
+  "entries_vop",
+  "exits_vop",
+  "production_expertise",
+  "production_mechanics",
+  "production_dsp",
+  "production_bodywork",
+  "production_preparation",
+  "production_quality",
+  "production_factory_exit",
+];
+const STOCK_METRICS = ["factory_stock", "stock_over_15d", "stock_over_20d"];
+
 function priority(source: string) {
   const value = source.toLowerCase();
   if (value.includes("ftp") || value.includes("sftp")) return 30;
@@ -40,6 +53,44 @@ function sourceMode(source: string) {
   if (value.includes("ftp") || value.includes("sftp")) return "ftp";
   if (value.includes("manuel") || value.includes("book")) return "book";
   return "embedded";
+}
+
+function metricValue(metrics: SnapshotRow["metrics"], key: string) {
+  const value = Number(metrics[key]);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function previousIsoDate(dateIso: string) {
+  const date = new Date(`${dateIso}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function foldSaturdayIntoFriday(rows: SnapshotRow[]) {
+  const byDate = new Map(rows.map((row) => [row.snapshot_at, { ...row, metrics: { ...row.metrics } }]));
+  for (const saturday of [...byDate.values()]) {
+    const date = new Date(`${saturday.snapshot_at}T12:00:00Z`);
+    if (date.getUTCDay() !== 6) continue;
+    const hasSaturdayProduction = SATURDAY_ADDITIVE_METRICS.some((key) => metricValue(saturday.metrics, key) > 0);
+    if (!hasSaturdayProduction) continue;
+    const fridayDate = previousIsoDate(saturday.snapshot_at);
+    const friday = byDate.get(fridayDate);
+    if (!friday) continue;
+
+    const metrics = { ...friday.metrics };
+    for (const key of SATURDAY_ADDITIVE_METRICS) metrics[key] = metricValue(friday.metrics, key) + metricValue(saturday.metrics, key);
+    for (const key of STOCK_METRICS) {
+      const saturdayValue = metricValue(saturday.metrics, key);
+      if (saturdayValue > 0) metrics[key] = saturdayValue;
+    }
+    byDate.set(fridayDate, {
+      ...friday,
+      source_name: `${friday.source_name} · samedi consolidé`,
+      metrics,
+    });
+    byDate.delete(saturday.snapshot_at);
+  }
+  return [...byDate.values()].sort((a, b) => a.snapshot_at.localeCompare(b.snapshot_at));
 }
 
 function numberValue(metrics: SnapshotRow["metrics"], key: string, fallback = 0) {
@@ -100,7 +151,7 @@ export async function GET(request: Request) {
       publicRest<SnapshotRow[]>("kpi_public_dashboard_snapshots?select=snapshot_at,source_name,metrics&order=snapshot_at.asc&limit=180"),
       publicRest<LiveRow[]>("kpi_ftp_live_dashboard?select=snapshot_at,source_name,metrics,source_modified_at,factory_modified_at,park_modified_at&limit=1"),
     ]);
-    const all = mergeRows([...historyRows, ...liveRows]);
+    const all = foldSaturdayIntoFriday(mergeRows([...historyRows, ...liveRows]));
     const source = (requestedDate ? all.find((row) => row.snapshot_at === requestedDate) : all.at(-1)) ?? all.at(-1) ?? verifiedRows.at(-1)!;
     const live = liveRows[0] ?? null;
     return NextResponse.json({
@@ -118,7 +169,7 @@ export async function GET(request: Request) {
     }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
   } catch (error) {
     console.error(JSON.stringify({ event: "dashboard_public_fetch_failed", message: error instanceof Error ? error.message : "unknown" }));
-    const all = mergeRows([]);
+    const all = foldSaturdayIntoFriday(mergeRows([]));
     const source = (requestedDate ? all.find((row) => row.snapshot_at === requestedDate) : all.at(-1)) ?? verifiedRows.at(-1)!;
     return NextResponse.json({ connected: false, backend: "embedded-history", sourceMode: sourceMode(source.source_name), latestSource: source.source_name, snapshot: formatSnapshot(source), snapshots: wantsHistory ? all.map(formatSnapshot) : undefined, liveFreshness: null }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
   }
