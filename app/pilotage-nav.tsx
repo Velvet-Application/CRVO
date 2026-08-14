@@ -2,34 +2,67 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import ClientNavLink from "./client-nav-link";
+
+type Hosts = {
+  performance: HTMLElement;
+  book: HTMLElement;
+  middle: HTMLElement;
+  settings: HTMLElement;
+  settingsExtra: HTMLElement;
+};
+
+function makeSlot(nav: HTMLElement, id: string) {
+  let slot = document.getElementById(id);
+  if (!slot) {
+    slot = document.createElement("div");
+    slot.id = id;
+  }
+  if (slot.parentElement !== nav) nav.appendChild(slot);
+  return slot;
+}
 
 export default function PilotageNav() {
-  const [host, setHost] = useState<HTMLElement | null>(null);
+  const [hosts, setHosts] = useState<Hosts | null>(null);
 
   useEffect(() => {
     const install = () => {
       const nav = document.querySelector<HTMLElement>(".sidebar nav");
       if (!nav) {
-        setHost(null);
+        setHosts(null);
         return;
       }
 
-      nav.querySelectorAll("[data-pilotage-link],[data-intelligence-link]").forEach((node) => {
-        if (!node.closest("#pilotage-nav-root")) node.remove();
-      });
+      document.getElementById("pilotage-nav-root")?.remove();
+      nav.querySelectorAll("[data-pilotage-link],[data-intelligence-link],[data-client-link]").forEach((node) => node.remove());
 
-      let root = document.getElementById("pilotage-nav-root");
-      if (!root) {
-        root = document.createElement("div");
-        root.id = "pilotage-nav-root";
-        root.style.display = "contents";
-        nav.insertBefore(root, nav.firstChild);
-      } else if (root.parentElement !== nav) {
-        root.remove();
-        nav.insertBefore(root, nav.firstChild);
-      }
-      setHost(root);
+      const today = document.getElementById("nav-today");
+      const yesterday = document.getElementById("nav-yesterday");
+      const finance = document.getElementById("nav-finance");
+      const objectives = document.getElementById("nav-objectives");
+      const sources = document.getElementById("nav-sources");
+      if (!today || !yesterday || !finance || !objectives || !sources) return;
+
+      const todayLabel = today.querySelector("span");
+      if (todayLabel && todayLabel.textContent !== "Performance") todayLabel.textContent = "Performance";
+
+      const performance = makeSlot(nav, "architecture-performance-label");
+      if (performance.nextSibling !== today) nav.insertBefore(performance, today);
+
+      const book = makeSlot(nav, "architecture-book-label");
+      if (book.nextSibling !== yesterday) nav.insertBefore(book, yesterday);
+
+      const middle = makeSlot(nav, "architecture-middle-root");
+      if (finance.nextSibling !== middle) finance.after(middle);
+
+      const settings = makeSlot(nav, "architecture-settings-label");
+      if (settings.nextSibling !== objectives) nav.insertBefore(settings, objectives);
+
+      const settingsExtra = makeSlot(nav, "architecture-settings-extra");
+      if (sources.nextSibling !== settingsExtra) sources.after(settingsExtra);
+
+      setHosts((current) => current?.performance === performance && current?.book === book && current?.middle === middle && current?.settings === settings && current?.settingsExtra === settingsExtra
+        ? current
+        : { performance, book, middle, settings, settingsExtra });
     };
 
     install();
@@ -38,27 +71,52 @@ export default function PilotageNav() {
     return () => observer.disconnect();
   }, []);
 
+  const link = (href: string, label: string, icon: string) => (
+    <a className="architecture-link" href={href}>
+      <span className="architecture-icon">{icon}</span><span>{label}</span><i />
+    </a>
+  );
+
   return <>
-    {host && host.isConnected ? createPortal(<>
-      <a href="/pilotage" data-pilotage-link="1" className="pilotage-nav-link" aria-label="Ouvrir le pilotage du jour">
-        <span className="pilotage-nav-icon">↗</span><span className="pilotage-nav-label">Pilotage du jour</span><i />
-      </a>
-      <a href="/intelligence" data-intelligence-link="1" className="pilotage-nav-link intelligence-nav-link" aria-label="Ouvrir CRVO COCKPIT V2">
-        <span className="pilotage-nav-icon intelligence-nav-icon">◆</span><span className="pilotage-nav-label">CRVO COCKPIT V2</span><i />
-      </a>
-    </>, host) : null}
-    <ClientNavLink/>
+    {hosts && hosts.performance.isConnected ? createPortal(<div className="architecture-heading">PERFORMANCE</div>, hosts.performance) : null}
+    {hosts && hosts.book.isConnected ? createPortal(<div className="architecture-heading">BOOK</div>, hosts.book) : null}
+    {hosts && hosts.middle.isConnected ? createPortal(<>
+      <div className="architecture-heading architecture-heading-spaced">CRVO COCKPIT V2</div>
+      <div className="architecture-links">
+        {link("/cockpit-v2?section=pilotage", "Pilotage du jour", "↗")}
+        {link("/cockpit-v2?section=synthese", "Synthèse managériale", "Σ")}
+        {link("/cockpit-v2?section=decision", "Aide à la décision", "◆")}
+        {link("/cockpit-v2?section=prevision", "Prévision fin de journée", "◒")}
+      </div>
+      <div className="architecture-heading architecture-heading-spaced">DASHBOARD CLIENT</div>
+      <div className="architecture-links">
+        {link("/dashboard-client?scope=reseau", "Réseau", "R")}
+        {link("/dashboard-client?scope=bmw-mini", "BMW / MINI", "B")}
+      </div>
+    </>, hosts.middle) : null}
+    {hosts && hosts.settings.isConnected ? createPortal(<div className="architecture-heading architecture-heading-spaced">PARAMÈTRE</div>, hosts.settings) : null}
+    {hosts && hosts.settingsExtra.isConnected ? createPortal(<div className="architecture-links architecture-settings-links">
+      {link("/account", "Accès", "A")}
+      {link("/data-rh", "Data RH", "RH")}
+      {link("/atelier", "Ecran ATELIER", "AT")}
+      {link("/direction", "Ecran DIRECTION", "DI")}
+    </div>, hosts.settingsExtra) : null}
     <style>{`
-      .sidebar nav .pilotage-nav-link{
-        min-height:50px;padding:0 13px;display:grid;grid-template-columns:23px 1fr 6px;align-items:center;gap:11px;border:0;border-radius:10px;color:rgba(255,255,255,.92)!important;background:rgba(0,158,219,.18)!important;text-decoration:none!important;transition:.18s ease;box-shadow:inset 0 0 0 1px rgba(133,221,255,.16);
+      .sidebar nav .architecture-heading{
+        margin:15px 10px 7px;color:rgba(255,255,255,.50);font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
       }
-      .sidebar nav .pilotage-nav-link:hover{color:#fff!important;background:rgba(0,158,219,.30)!important;box-shadow:inset 0 0 0 1px rgba(133,221,255,.32)}
-      .sidebar nav .pilotage-nav-icon{width:23px;height:23px;display:grid;place-items:center;border-radius:7px;color:#fff!important;background:#009edb;font-size:13px;line-height:1;font-weight:800;box-shadow:0 4px 10px rgba(0,34,68,.18)}
-      .sidebar nav .pilotage-nav-label{color:inherit!important;font-size:11px!important;font-weight:800!important;letter-spacing:0!important}
-      .sidebar nav .pilotage-nav-link>i{width:6px;height:6px;border-radius:50%;background:#85ddff;opacity:.9}
-      .sidebar nav .intelligence-nav-link{background:rgba(0,79,159,.32)!important;box-shadow:inset 0 0 0 1px rgba(159,229,255,.22)}
-      .sidebar nav .intelligence-nav-link:hover{background:rgba(0,79,159,.48)!important}
-      .sidebar nav .intelligence-nav-icon{background:#004f9f;color:#fec82f!important}
+      .sidebar nav .architecture-heading-spaced{margin-top:19px}
+      .sidebar nav .architecture-links{display:grid;gap:5px}
+      .sidebar nav .architecture-link{
+        min-height:42px;padding:0 13px;display:grid;grid-template-columns:23px 1fr 6px;align-items:center;gap:11px;border:0;border-radius:10px;color:rgba(255,255,255,.90)!important;background:rgba(0,158,219,.11);text-decoration:none!important;transition:.18s ease;box-shadow:inset 0 0 0 1px rgba(133,221,255,.10);
+      }
+      .sidebar nav .architecture-link:hover{color:#fff!important;background:rgba(0,158,219,.23);box-shadow:inset 0 0 0 1px rgba(133,221,255,.26)}
+      .sidebar nav .architecture-icon{width:23px;height:23px;display:grid;place-items:center;border-radius:7px;color:#fff;background:#004f9f;font-size:10px;line-height:1;font-weight:800}
+      .sidebar nav .architecture-link>span:nth-child(2){font-size:11px;font-weight:750;line-height:1.15}
+      .sidebar nav .architecture-link>i{width:6px;height:6px;border-radius:50%;background:#009edb;opacity:.8}
+      .sidebar nav .architecture-settings-links{margin-bottom:12px}
+      #architecture-performance-label,#architecture-book-label,#architecture-middle-root,#architecture-settings-label,#architecture-settings-extra{display:contents}
+      @media (max-width:760px){.sidebar nav .architecture-heading{margin-left:8px}.sidebar nav .architecture-link{min-height:44px}}
     `}</style>
   </>;
 }
