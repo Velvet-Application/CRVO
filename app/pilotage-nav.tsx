@@ -166,6 +166,7 @@ export default function PilotageNav() {
           {link("/cockpit-v2?section=synthese", "Synthèse managériale", "Σ")}
           {link("/cockpit-v2?section=decision", "Aide à la décision", "◆")}
           {link("/cockpit-v2?section=prevision", "Prévision fin de journée", "◒")}
+          {link("/cockpit-v2/carrosserie", "Focus carrosserie", "C")}
         </div>
       </div>
       {groupHeading("client", "DASHBOARD CLIENT", true)}
