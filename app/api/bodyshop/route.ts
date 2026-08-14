@@ -4,6 +4,9 @@ import { supabaseRestHeaders } from "../../supabase-rest";
 
 export const dynamic = "force-dynamic";
 
+const ROTATION_ANCHOR_MONDAY = "2026-08-10";
+
+type TeamCode = "A"|"B"|"C";
 type DailyRow = {
   production_date:string;
   source_modified_at:string|null;
@@ -13,9 +16,9 @@ type DailyRow = {
   fixline_3:number|string|null;
   total_bodyshop:number|string|null;
 };
-type TeamHourRow = { work_date:string; team_code:"A"|"B"|"C"; sold_hours:number|string; bought_hours:number|string; dossiers:number|string; efficiency:number|string|null };
-type ClientTimeRow = { work_date:string; team_code:"A"|"B"|"C"; client:string; dossier:string|null; labor_hours:number|string|null };
-type StaffMapRow = { id:string; mechanic_name:string; mechanic_key:string; team_code:"A"|"B"|"C"; workcenter:string; active:boolean };
+type TeamHourRow = { work_date:string; team_code:TeamCode; sold_hours:number|string; bought_hours:number|string; dossiers:number|string; efficiency:number|string|null };
+type ClientTimeRow = { work_date:string; team_code:TeamCode; client:string; dossier:string|null; labor_hours:number|string|null };
+type StaffMapRow = { id:string; mechanic_name:string; mechanic_key:string; team_code:TeamCode; workcenter:string; active:boolean };
 type NameRow = { mechanic_name:string|null };
 
 function env(){
@@ -36,6 +39,34 @@ async function rest<T>(supabaseUrl:string,secretKey:string,path:string,init:Requ
 }
 function isoParis(){return new Intl.DateTimeFormat("sv-SE",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());}
 function daysAgo(iso:string,days:number){const date=new Date(`${iso}T12:00:00Z`);date.setUTCDate(date.getUTCDate()-days);return date.toISOString().slice(0,10);}
+function addDays(iso:string,days:number){const date=new Date(`${iso}T12:00:00Z`);date.setUTCDate(date.getUTCDate()+days);return date.toISOString().slice(0,10);}
+function mondayOf(iso:string){
+  const date=new Date(`${iso}T12:00:00Z`);
+  const day=date.getUTCDay();
+  date.setUTCDate(date.getUTCDate()-((day+6)%7));
+  return date.toISOString().slice(0,10);
+}
+function shortDate(iso:string){
+  return new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit",timeZone:"UTC"}).format(new Date(`${iso}T12:00:00Z`));
+}
+function rotationFor(iso:string){
+  const weekStart=mondayOf(iso);
+  const anchorMs=new Date(`${ROTATION_ANCHOR_MONDAY}T12:00:00Z`).getTime();
+  const weekMs=new Date(`${weekStart}T12:00:00Z`).getTime();
+  const weeks=Math.round((weekMs-anchorMs)/(7*24*60*60*1000));
+  const aMorning=((weeks%2)+2)%2===0;
+  const morningTeam:TeamCode=aMorning?"A":"B";
+  const afternoonTeam:TeamCode=aMorning?"B":"A";
+  return {
+    weekStart,
+    weekEnd:addDays(weekStart,5),
+    morningTeam,
+    afternoonTeam,
+    nightTeam:"C" as TeamCode,
+    nextMorningTeam:afternoonTeam,
+    nextAfternoonTeam:morningTeam,
+  };
+}
 
 export async function GET(){
   const session=await currentSession();
@@ -44,6 +75,7 @@ export async function GET(){
   if(!config)return NextResponse.json({error:"Base CRVO non configurée."},{status:503});
   const today=isoParis();
   const from=daysAgo(today,62);
+  const rotation=rotationFor(today);
   try{
     const [dailyRaw,teamRaw,clientRaw,mappedRaw,presenceNames,billedNames]=await Promise.all([
       rest<DailyRow[]>(config.supabaseUrl,config.secretKey,"kpi_bodyshop_daily?select=production_date,source_modified_at,box_heavy,fixline_1,fixline_2,fixline_3,total_bodyshop&order=production_date.asc&limit=45"),
@@ -102,11 +134,26 @@ export async function GET(){
     return NextResponse.json({
       generatedAt:new Date().toISOString(),
       operationalModel:{
-        week:"Lundi 05:00 → samedi 05:00",
+        week:`${shortDate(rotation.weekStart)} → ${shortDate(rotation.weekEnd)} · A/B alternent chaque semaine`,
+        rotationAnchor:{weekStart:ROTATION_ANCHOR_MONDAY,morningTeam:"A",afternoonTeam:"B",nightTeam:"C"},
+        currentWeek:{
+          weekStart:rotation.weekStart,
+          weekEnd:rotation.weekEnd,
+          morningTeam:rotation.morningTeam,
+          afternoonTeam:rotation.afternoonTeam,
+          nightTeam:rotation.nightTeam,
+        },
+        nextWeek:{
+          weekStart:addDays(rotation.weekStart,7),
+          weekEnd:addDays(rotation.weekEnd,7),
+          morningTeam:rotation.nextMorningTeam,
+          afternoonTeam:rotation.nextAfternoonTeam,
+          nightTeam:"C",
+        },
         shifts:[
-          {code:"A/B",label:"Matin",start:"05:00",end:"13:00",rotation:"A et B alternent chaque semaine"},
-          {code:"B/A",label:"Après-midi",start:"13:00",end:"21:00",rotation:"inverse du matin"},
-          {code:"C",label:"Nuit",start:"21:00",end:"05:00",rotation:"équipe C"},
+          {code:rotation.morningTeam,label:`Équipe ${rotation.morningTeam} · Matin`,start:"05:00",end:"13:00",rotation:`Semaine suivante : équipe ${rotation.nextMorningTeam}`},
+          {code:rotation.afternoonTeam,label:`Équipe ${rotation.afternoonTeam} · Après-midi`,start:"13:00",end:"21:00",rotation:`Semaine suivante : équipe ${rotation.nextAfternoonTeam}`},
+          {code:"C",label:"Équipe C · Nuit",start:"21:00",end:"05:00",rotation:"Fixe de nuit"},
         ],
         bodyshop:{fixlinesPerTeam:3,boxesPerTeam:5,heavyPanel:true},
         saturdayRule:"La production du samedi matin est rattachée au vendredi.",
