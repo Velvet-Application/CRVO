@@ -22,6 +22,8 @@ const DEFAULT_OPEN: OpenGroups = {
   settings: false,
 };
 
+const STORAGE_KEY = "crvo-sidebar-groups-v2";
+
 function makeSlot(nav: HTMLElement, id: string) {
   let slot = document.getElementById(id);
   if (!slot) {
@@ -42,19 +44,29 @@ function setHidden(id: string, hidden: boolean) {
   if (node) node.hidden = hidden;
 }
 
+function activeGroup(path: string): GroupKey | null {
+  if (path.startsWith("/cockpit-v2")) return "cockpit";
+  if (path.startsWith("/dashboard-client")) return "client";
+  if (/^\/(account|data-rh|atelier|direction)/.test(path)) return "settings";
+  return null;
+}
+
 export default function PilotageNav() {
   const [hosts, setHosts] = useState<Hosts | null>(null);
   const [open, setOpen] = useState<OpenGroups>(DEFAULT_OPEN);
 
   useEffect(() => {
+    const path = window.location.pathname;
+    const active = activeGroup(path);
+    if (active) {
+      const next = { ...DEFAULT_OPEN, [active]: true };
+      setOpen(next);
+      try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch {}
+      return;
+    }
     try {
-      const stored = window.localStorage.getItem("crvo-sidebar-groups");
-      const restored = stored ? { ...DEFAULT_OPEN, ...JSON.parse(stored) } as OpenGroups : { ...DEFAULT_OPEN };
-      const path = window.location.pathname;
-      if (path.startsWith("/cockpit-v2")) restored.cockpit = true;
-      if (path.startsWith("/dashboard-client")) restored.client = true;
-      if (/^\/(account|data-rh|atelier|direction)/.test(path)) restored.settings = true;
-      setOpen(restored);
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      setOpen(stored ? { ...DEFAULT_OPEN, ...JSON.parse(stored) } as OpenGroups : { ...DEFAULT_OPEN });
     } catch {
       setOpen(DEFAULT_OPEN);
     }
@@ -119,8 +131,8 @@ export default function PilotageNav() {
 
   const toggle = (group: GroupKey) => {
     setOpen((current) => {
-      const next = { ...current, [group]: !current[group] };
-      try { window.localStorage.setItem("crvo-sidebar-groups", JSON.stringify(next)); } catch {}
+      const next = current[group] ? { ...DEFAULT_OPEN } : { ...DEFAULT_OPEN, [group]: true };
+      try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch {}
       return next;
     });
   };
@@ -131,6 +143,7 @@ export default function PilotageNav() {
       className={`architecture-group-heading${spaced ? " architecture-heading-spaced" : ""}`}
       aria-expanded={open[group]}
       onClick={() => toggle(group)}
+      title={open[group] ? `Replier ${label}` : `Déplier ${label}`}
     >
       <span>{label}</span><i className={open[group] ? "is-open" : ""}>›</i>
     </button>
@@ -175,13 +188,14 @@ export default function PilotageNav() {
       </div>, hosts.settingsExtra) : null}
     <style>{`
       .sidebar nav .architecture-group-heading{
-        width:calc(100% - 20px);margin:15px 10px 7px;padding:5px 2px;border:0;background:transparent;color:rgba(255,255,255,.54);display:flex;align-items:center;justify-content:space-between;gap:8px;font:inherit;font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;text-align:left;
+        width:calc(100% - 20px);margin:15px 10px 7px;padding:7px 3px;border:0;background:transparent;color:rgba(255,255,255,.58);display:flex;align-items:center;justify-content:space-between;gap:8px;font:inherit;font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;text-align:left;
       }
       .sidebar nav .architecture-group-heading:hover{color:#fff}
       .sidebar nav .architecture-heading-spaced{margin-top:19px}
-      .sidebar nav .architecture-group-heading>i{font-style:normal;font-size:18px;line-height:1;color:#009edb;transform:rotate(0deg);transition:transform .18s ease}
+      .sidebar nav .architecture-group-heading>i{width:20px;height:20px;display:grid;place-items:center;border-radius:7px;font-style:normal;font-size:18px;line-height:1;color:#009edb;background:rgba(0,158,219,.08);transform:rotate(0deg);transition:transform .18s ease,background .18s ease}
+      .sidebar nav .architecture-group-heading:hover>i{background:rgba(0,158,219,.18)}
       .sidebar nav .architecture-group-heading>i.is-open{transform:rotate(90deg)}
-      .sidebar nav .architecture-collapse{display:grid;grid-template-rows:0fr;opacity:.35;transition:grid-template-rows .2s ease,opacity .18s ease}
+      .sidebar nav .architecture-collapse{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .2s ease,opacity .18s ease}
       .sidebar nav .architecture-collapse.is-open{grid-template-rows:1fr;opacity:1}
       .sidebar nav .architecture-collapse>.architecture-links{min-height:0;overflow:hidden}
       .sidebar nav .architecture-links{display:grid;gap:5px}
