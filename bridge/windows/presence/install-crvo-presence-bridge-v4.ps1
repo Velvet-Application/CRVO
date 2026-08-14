@@ -228,10 +228,22 @@ $config | ConvertTo-Json | Set-Content -Path $configPath -Encoding UTF8
 
 $taskName = "CRVO - Presence SQL"
 $taskCommand = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $scriptPath + '" -ConfigPath "' + $configPath + '"'
-& schtasks.exe /Delete /TN $taskName /F 2>$null | Out-Null
+
+# The first install legitimately has no existing task. schtasks writes that case to STDERR;
+# with ErrorActionPreference=Stop PowerShell treated it as a fatal NativeCommandError.
+# Ignore only the delete-if-present step, then enforce success on task creation.
+$previousErrorActionPreference = $ErrorActionPreference
+try {
+  $ErrorActionPreference = "SilentlyContinue"
+  & schtasks.exe /Delete /TN $taskName /F 2>$null | Out-Null
+} finally {
+  $ErrorActionPreference = $previousErrorActionPreference
+}
+
 & schtasks.exe /Create /TN $taskName /SC MINUTE /MO 15 /TR $taskCommand /RL LIMITED /IT /F | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Impossible de creer la tache planifiee Windows." }
 
+Write-Host "Tache planifiee Windows creee." -ForegroundColor Green
 Write-Host "Connexion stockee localement avec chiffrement Windows DPAPI." -ForegroundColor Green
 Write-Host "Chargement historique initial depuis novembre 2024..." -ForegroundColor Cyan
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath -ConfigPath $configPath -Full
