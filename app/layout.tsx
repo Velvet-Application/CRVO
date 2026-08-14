@@ -21,6 +21,7 @@ import PeriodDefaultPatch from "./period-default-patch";
 import BottleneckLivePanel from "./bottleneck-live-panel";
 import AuthNav from "./auth-nav";
 import DashboardClientScopePatch from "./dashboard-client-scope-patch";
+import EmailSourcePatch from "./email-source-patch";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -41,6 +42,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <BottleneckLivePanel />
     <AuthNav />
     <DashboardClientScopePatch />
+    <EmailSourcePatch />
     {children}
     <a className="global-book-launch" href="/book">BOOK D&apos;ANIMATION PDF</a>
     <style>{`
