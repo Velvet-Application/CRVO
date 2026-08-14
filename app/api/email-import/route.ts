@@ -14,8 +14,7 @@ type ParsedFile = { rows: RawRow[]; headers: string[] };
 function env() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SECRET_KEY;
-  const ingestToken = process.env.CRVO_INGEST_TOKEN?.trim();
-  return url && key && ingestToken ? { url, key, ingestToken } : null;
+  return url && key ? { url, key } : null;
 }
 
 function constantTimeEqual(left: string, right: string) {
@@ -23,6 +22,19 @@ function constantTimeEqual(left: string, right: string) {
   let difference = 0;
   for (let index = 0; index < left.length; index += 1) difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
   return difference === 0;
+}
+
+async function sha256Text(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function gatewayAuthorized(supabase: ReturnType<typeof createClient>, supplied: string) {
+  if (!supplied || supplied.length < 32 || supplied.length > 256) return false;
+  const actual = await sha256Text(supplied);
+  const { data, error } = await supabase.from("kpi_email_gateway_config").select("token_sha256").eq("id", 1).maybeSingle();
+  if (error || !data?.token_sha256) return false;
+  return constantTimeEqual(actual, String(data.token_sha256));
 }
 
 function normalizeKey(value: unknown) {
@@ -211,8 +223,9 @@ function dateRange(values: Array<string | null>) {
 export async function POST(request: Request) {
   const cfg = env();
   if (!cfg) return NextResponse.json({ error: "Passerelle e-mail CRVO non configurée." }, { status: 503 });
+  const supabase = createClient(cfg.url, cfg.key, { auth: { persistSession: false, autoRefreshToken: false } });
   const supplied = request.headers.get("x-crvo-ingest-token")?.trim() ?? "";
-  if (!supplied || !constantTimeEqual(cfg.ingestToken, supplied)) return NextResponse.json({ error: "Accès passerelle e-mail refusé." }, { status: 401 });
+  if (!(await gatewayAuthorized(supabase, supplied))) return NextResponse.json({ error: "Accès passerelle e-mail refusé." }, { status: 401 });
 
   const form = await request.formData();
   const fileValue = form.get("file");
@@ -226,7 +239,6 @@ export async function POST(request: Request) {
 
   const buffer = await file.arrayBuffer();
   const sha256 = await hashHex(buffer);
-  const supabase = createClient(cfg.url, cfg.key, { auth: { persistSession: false, autoRefreshToken: false } });
   const { data: existing } = await supabase.from("kpi_email_imports").select("id,status,source_key,original_filename,received_at").eq("sha256", sha256).maybeSingle();
   if (existing) return NextResponse.json({ duplicate: true, existing, sha256 });
 
@@ -279,7 +291,7 @@ export async function POST(request: Request) {
       const mapped = parsed.rows.map(normalizeObject).map((row) => ({
         work_date: isoDate(pick(row, ["work_date", "date_pointage", "date", "fecha"])),
         mechanic_name: text(pick(row, ["mechanic_name", "mecanicien", "mécanicien", "operateur", "opérateur", "collaborateur", "nom"]), 300),
-        time_code: text(pick(row, ["time_code", "code_temps", "code temps", "codigo_tiempo", "codigotiiempo", "code"]), 80),
+        time_code: text(pick(row, ["time_code", "code_temps", "code temps", "codigo_tiempo", "code"]), 80),
         time_description: text(pick(row, ["time_description", "libelle", "libellé", "description", "descrip"]), 300),
         time_value: hours(pick(row, ["time_value", "temps", "tiempo", "heures", "duree", "durée"])),
       })).filter((row) => row.work_date && row.time_value !== null);
