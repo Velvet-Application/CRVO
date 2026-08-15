@@ -64,10 +64,12 @@ export async function POST(request: Request) {
     } else if (action === "close") {
       result = await bonusRpc("kpi_bonus_close_workflow", { p_session_hash: current.tokenHash, p_workflow_id: String(body.workflowId ?? "") });
     } else if (action === "log-export") {
-      result = await bonusRpc("kpi_bonus_log_export", {
+      const rawType = String(body.exportType ?? "");
+      const exportType = rawType === "pdf" || rawType === "employee_pdf" ? "employee_pdf" : rawType === "xlsx" || rawType === "payroll_xlsx" ? "payroll_xlsx" : rawType;
+      result = await bonusRpc("kpi_bonus_record_export", {
         p_session_hash: current.tokenHash,
         p_workflow_id: String(body.workflowId ?? ""),
-        p_export_type: String(body.exportType ?? "pdf"),
+        p_export_type: exportType,
         p_employee_key: body.employeeKey ? String(body.employeeKey) : null,
         p_sha256: body.sha256 ? String(body.sha256) : null,
         p_metadata: typeof body.metadata === "object" && body.metadata ? body.metadata : {},
