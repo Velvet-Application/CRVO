@@ -18,6 +18,7 @@ function accessError(code: string | null | undefined) {
   if (code === "invalid_profile") return "Profil d'accès invalide.";
   if (code === "invalid_permission") return "Une page sélectionnée n'est pas autorisée.";
   if (code === "invalid_scope") return "Un périmètre de productivité sélectionné n'est pas autorisé.";
+  if (code === "invalid_team_scope" || code === "team_scope_required") return "Le profil Chef d'équipe nécessite au moins une équipe autorisée.";
   if (code === "cannot_change_self_access") return "Tu ne peux pas réduire les droits de ton propre compte administrateur.";
   if (code === "not_found") return "Utilisateur introuvable.";
   return "Modification impossible.";
@@ -26,7 +27,7 @@ function accessError(code: string | null | undefined) {
 export async function GET() {
   const current = await requireAdmin();
   if (!current) return NextResponse.json({ error: "Accès administrateur requis." }, { status: 403 });
-  const users = await authRpc<Array<Record<string, unknown>>>("crvo_auth_list_users_v2", { p_token_hash: current.tokenHash });
+  const users = await authRpc<Array<Record<string, unknown>>>("crvo_auth_list_users_v3", { p_token_hash: current.tokenHash });
   return NextResponse.json({ ok: true, users }, { headers: { "Cache-Control": "no-store" } });
 }
 
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
   const displayName = String(body.displayName ?? "").trim();
   const temporaryPassword = String(body.temporaryPassword ?? "");
   const accessProfile = String(body.accessProfile ?? "custom");
-  const rows = await authRpc<Array<{ ok: boolean; user_id: string | null; error_code: string | null }>>("crvo_auth_create_user_v2", {
+  const rows = await authRpc<Array<{ ok: boolean; user_id: string | null; error_code: string | null }>>("crvo_auth_create_user_v3", {
     p_token_hash: current.tokenHash,
     p_username: username,
     p_display_name: displayName,
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
     p_access_profile: accessProfile,
     p_page_permissions: list(body.pagePermissions),
     p_productivity_scopes: list(body.productivityScopes),
+    p_team_scopes: list(body.teamScopes),
   });
   const row = rows[0];
   if (!row?.ok) return NextResponse.json({ error: accessError(row?.error_code) }, { status: 400 });
@@ -84,12 +86,13 @@ export async function PATCH(request: Request) {
   }
 
   if (action === "update-access") {
-    const rows = await authRpc<Array<{ ok: boolean; error_code: string | null }>>("crvo_auth_update_user_access", {
+    const rows = await authRpc<Array<{ ok: boolean; error_code: string | null }>>("crvo_auth_update_user_access_v2", {
       p_token_hash: current.tokenHash,
       p_user_id: userId,
       p_access_profile: String(body.accessProfile ?? "custom"),
       p_page_permissions: list(body.pagePermissions),
       p_productivity_scopes: list(body.productivityScopes),
+      p_team_scopes: list(body.teamScopes),
     });
     const row = rows[0];
     if (!row?.ok) return NextResponse.json({ error: accessError(row?.error_code) }, { status: 400 });
