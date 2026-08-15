@@ -38,58 +38,24 @@ export async function GET(request:Request){
 
     const legacy=detail.workflow.validationMode==="legacy_excel";
     const rows=detail.components.map(c=>({
-      Mois:detail.workflow.month,
-      Matricule:c.matricule,
-      Collaborateur:c.employeeName,
-      Population:c.population,
-      Métier:c.jobKey,
-      Secteur:c.sectorLabel,
-      Équipe:c.teamCode,
-      "Heures présence":c.presenceHours,
-      "Heures facturées":c.billedHours,
-      "Heures absence":c.absenceHours,
-      "Rendement %":pct(c.productivity),
-      "Absentéisme %":pct(c.absenceRate),
-      "Palier théorique":c.theoreticalTier,
-      "Palier chef équipe":c.teamTier,
-      "Palier chef service":c.serviceTier,
-      "Palier final":c.finalTier,
-      Coefficient:c.coefficient,
-      "Base individuelle €":eur(c.individualBaseEur),
-      "Prime individuelle €":eur(c.individualAmountEur),
-      "Collectif brut €":eur(c.collectiveAmountEur),
-      "Prorata collectif %":pct(c.collectiveProration),
-      "Collectif payé €":c.collectiveAmountEur==null||c.collectiveProration==null?null:eur(c.collectiveAmountEur*c.collectiveProration),
-      "Exception €":eur(c.exceptionalAmountEur),
-      "TOTAL €":eur(c.totalAmountEur),
-      Figé:c.frozen?"OUI":"NON",
-      "Commentaire source":String(c.sourcePayload?.sourceComment??""),
-      "Source":detail.workflow.sourceFilename??"KPI CRVO"
+      Mois:detail.workflow.month,Matricule:c.matricule,Collaborateur:c.employeeName,Population:c.population,Métier:c.jobKey,Secteur:c.sectorLabel,Équipe:c.teamCode,
+      "Heures présence":c.presenceHours,"Heures facturées":c.billedHours,"Heures absence":c.absenceHours,"Rendement %":pct(c.productivity),"Absentéisme %":pct(c.absenceRate),
+      "Palier théorique":c.theoreticalTier,"Palier chef équipe":c.teamTier,"Palier chef service":c.serviceTier,"Palier final":c.finalTier,Coefficient:c.coefficient,
+      "Base individuelle €":eur(c.individualBaseEur),"Prime individuelle €":eur(c.individualAmountEur),"Collectif brut €":eur(c.collectiveAmountEur),"Prorata collectif %":pct(c.collectiveProration),
+      "Collectif payé €":c.collectiveAmountEur==null||c.collectiveProration==null?null:eur(c.collectiveAmountEur*c.collectiveProration),"Exception €":eur(c.exceptionalAmountEur),"TOTAL €":eur(c.totalAmountEur),
+      Figé:c.frozen?"OUI":"NON","Commentaire source":String(c.sourcePayload?.sourceComment??""),Source:detail.workflow.sourceFilename??"KPI CRVO"
     }));
     const auditRows:(string|number|null)[][]=[
-      ["Mois",detail.workflow.month],
-      ["Statut",detail.workflow.status],
-      ["Mode",detail.workflow.validationMode],
-      ["Fichier source",detail.workflow.sourceFilename??""],
-      ["SHA source",detail.workflow.sourceSha256??""],
-      ["Empreinte clôture",detail.workflow.frozenHash??""],
-      ["Nombre de lignes",rows.length],
-      ["Référence juillet",legacy?"OUI - historique Excel figé, non export paie natif":"NON"],
-      ["Montants juillet",legacy?"NON DÉTERMINABLES : collectif BIMESTRE et bases € absentes du classeur":"Calcul natif KPI CRVO"],
-      ["Audit figé",JSON.stringify(detail.workflow.audit??{})],
-      ["Audit courant",JSON.stringify(detail.workflow.currentAudit??{})],
-      ["Totaux figés",JSON.stringify(detail.workflow.totals??{})]
+      ["Mois",detail.workflow.month],["Statut",detail.workflow.status],["Mode",detail.workflow.validationMode],["Fichier source",detail.workflow.sourceFilename??""],["SHA source",detail.workflow.sourceSha256??""],["Empreinte clôture",detail.workflow.frozenHash??""],["Nombre de lignes",rows.length],
+      ["Référence juillet",legacy?"OUI - historique Excel figé, non export paie natif":"NON"],["Montants juillet",legacy?"NON DÉTERMINABLES : collectif BIMESTRE et bases € absentes du classeur":"Calcul natif KPI CRVO"],
+      ["Audit figé",JSON.stringify(detail.workflow.audit??{})],["Audit courant",JSON.stringify(detail.workflow.currentAudit??{})],["Totaux figés",JSON.stringify(detail.workflow.totals??{})]
     ];
-    const wb=XLSX.utils.book_new();
-    const payroll=XLSX.utils.json_to_sheet(rows); payroll["!autofilter"]={ref:payroll["!ref"]??"A1:A1"};
-    const audit=XLSX.utils.aoa_to_sheet([["AUDIT EXPORT PAIE","VALEUR"],...auditRows]);
-    payroll["!cols"]=[{wch:11},{wch:13},{wch:28},{wch:14},{wch:22},{wch:22},{wch:9},{wch:16},{wch:17},{wch:15},{wch:14},{wch:15},{wch:15},{wch:18},{wch:20},{wch:12},{wch:12},{wch:18},{wch:20},{wch:16},{wch:18},{wch:18},{wch:13},{wch:14},{wch:8},{wch:34},{wch:28}];
-    audit["!cols"]=[{wch:25},{wch:115}];
+    const wb=XLSX.utils.book_new();const payroll=XLSX.utils.json_to_sheet(rows);payroll["!autofilter"]={ref:payroll["!ref"]??"A1:A1"};const audit=XLSX.utils.aoa_to_sheet([["AUDIT EXPORT PAIE","VALEUR"],...auditRows]);
+    payroll["!cols"]=[{wch:11},{wch:13},{wch:28},{wch:14},{wch:22},{wch:22},{wch:9},{wch:16},{wch:17},{wch:15},{wch:14},{wch:15},{wch:15},{wch:18},{wch:20},{wch:12},{wch:12},{wch:18},{wch:20},{wch:16},{wch:18},{wch:18},{wch:13},{wch:14},{wch:8},{wch:34},{wch:28}];audit["!cols"]=[{wch:25},{wch:115}];
     XLSX.utils.book_append_sheet(wb,payroll,"PAIE");XLSX.utils.book_append_sheet(wb,audit,"AUDIT");
-    const raw=XLSX.write(wb,{type:"array",bookType:"xlsx"}) as ArrayBuffer;
-    const bytes=new Uint8Array(raw);const hash=await sha256(bytes);
+    const raw=XLSX.write(wb,{type:"array",bookType:"xlsx"}) as ArrayBuffer;const bytes=new Uint8Array(raw);const hash=await sha256(bytes);
     await bonusRpc("kpi_bonus_record_export",{p_session_hash:current.tokenHash,p_workflow_id:workflowId,p_export_type:"payroll_xlsx",p_employee_key:null,p_sha256:hash,p_metadata:{rows:rows.length,month:detail.workflow.month,legacy_reference:legacy}});
     const filename=`KPI_CRVO_Primes_${detail.workflow.month}_${detail.workflow.status}.xlsx`;
-    return new NextResponse(bytes,{headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","Content-Disposition":`attachment; filename="${filename}"`,`X-CRVO-Export-SHA256`:hash,"Cache-Control":"no-store"}});
+    return new NextResponse(bytes,{headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","Content-Disposition":`attachment; filename="${filename}"`,"X-CRVO-Export-SHA256":hash,"Cache-Control":"no-store"}});
   }catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Export impossible."},{status:400});}
 }
