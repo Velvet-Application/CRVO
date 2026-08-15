@@ -4,7 +4,16 @@ const COOKIE="crvo_session";
 const SUPABASE_URL="https://tvmkhvfmdstkunwwuzuz.supabase.co";
 const SUPABASE_KEY="sb_publishable_bGCdOoq05alXNTOtouIQcQ_HX9jpKnv";
 
-type Session={ok:boolean;role:"admin"|"user";must_change_password:boolean;access_profile:"admin"|"service_manager"|"custom";page_permissions:string[];productivity_scopes:string[]};
+type Session={
+  ok:boolean;
+  role:"admin"|"user";
+  must_change_password:boolean;
+  access_profile:"admin"|"service_manager"|"team_manager"|"custom";
+  page_permissions:string[];
+  productivity_scopes:string[];
+  team_scopes:string[];
+  can_manage_bonus_workflow:boolean;
+};
 
 async function sha256Hex(value:string){
   const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));
@@ -13,7 +22,7 @@ async function sha256Hex(value:string){
 
 async function validate(token:string){
   const tokenHash=await sha256Hex(token);
-  const response=await fetch(`${SUPABASE_URL}/rest/v1/rpc/crvo_auth_context`,{
+  const response=await fetch(`${SUPABASE_URL}/rest/v1/rpc/crvo_auth_context_v2`,{
     method:"POST",
     headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json",Accept:"application/json"},
     body:JSON.stringify({p_token_hash:tokenHash}),
@@ -32,9 +41,7 @@ function apiUnauthorized(status=401,message="Authentification requise."){
   return NextResponse.json({error:message},{status,headers:{"Cache-Control":"no-store"}});
 }
 
-function kioskPage(pathname:string){
-  return pathname==="/atelier"||pathname==="/direction";
-}
+function kioskPage(pathname:string){return pathname==="/atelier"||pathname==="/direction";}
 
 function kioskApiAllowed(request:NextRequest){
   if(request.method!=="GET")return false;
@@ -52,6 +59,7 @@ function has(session:Session,key:string){return session.role==="admin"||session.
 function firstAllowed(session:Session){
   if(has(session,"reporting")||has(session,"book"))return "/";
   if(has(session,"productivity"))return "/performance/productivite";
+  if(has(session,"monthly_animation"))return "/animation-mensuelle";
   if(has(session,"cockpit"))return "/cockpit-v2";
   if(has(session,"bodyshop"))return "/cockpit-v2/carrosserie";
   if(has(session,"client_dashboard"))return "/dashboard-client";
@@ -60,6 +68,7 @@ function firstAllowed(session:Session){
 }
 function requiredPermission(path:string):string|null{
   if(path==="/performance/productivite"||path.startsWith("/api/productivity"))return "productivity";
+  if(path.startsWith("/animation-mensuelle")||path.startsWith("/api/monthly-animation"))return "monthly_animation";
   if(path.startsWith("/cockpit-v2/carrosserie")||path.startsWith("/api/bodyshop"))return "bodyshop";
   if(path.startsWith("/cockpit-v2")||path.startsWith("/api/cockpit-v2"))return "cockpit";
   if(path.startsWith("/dashboard-client")||path.startsWith("/clients")||path.startsWith("/api/client-dashboard")||path.startsWith("/api/clients"))return "client_dashboard";
@@ -72,9 +81,6 @@ export async function proxy(request:NextRequest){
   const path=request.nextUrl.pathname;
   if(isStatic(path))return NextResponse.next();
   if(path==="/api/health")return NextResponse.next();
-
-  // Les deux écrans terrain restent accessibles sans compte ; leurs API anonymes
-  // sont limitées aux données strictement nécessaires à l'écran d'origine.
   if(kioskPage(path))return NextResponse.next();
 
   const token=request.cookies.get(COOKIE)?.value;
@@ -107,6 +113,12 @@ export async function proxy(request:NextRequest){
 
     const authUtility=path==="/account"||path.startsWith("/api/auth/");
     if(authUtility)return NextResponse.next();
+
+    const bonusAdminPage=path.startsWith("/animation-mensuelle/payplan")||path.startsWith("/api/payplan");
+    if(bonusAdminPage&&session.role!=="admin"){
+      if(path.startsWith("/api/"))return apiUnauthorized(403,"Accès administrateur requis.");
+      return NextResponse.redirect(new URL(firstAllowed(session),request.url));
+    }
 
     if((path==="/data-rh"||path.startsWith("/api/data-import"))&&session.role!=="admin"){
       if(path.startsWith("/api/"))return apiUnauthorized(403,"Accès administrateur requis.");
