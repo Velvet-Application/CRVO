@@ -3,8 +3,8 @@ import { cookies } from "next/headers";
 export const CRVO_SESSION_COOKIE = "crvo_session";
 export const CRVO_SESSION_SECONDS = 12 * 60 * 60;
 
-const SUPABASE_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co";
-const SUPABASE_KEY = "sb_publishable_bGCdOoq05alXNTOtouIQcQ_HX9jpKnv";
+export const CRVO_SUPABASE_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co";
+export const CRVO_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_bGCdOoq05alXNTOtouIQcQ_HX9jpKnv";
 
 export type AccessProfile = "admin" | "service_manager" | "team_manager" | "custom";
 
@@ -29,10 +29,10 @@ export async function sha256Hex(value: string) {
 }
 
 export async function authRpc<T>(name: string, body: Record<string, unknown>): Promise<T> {
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+  const response = await fetch(`${CRVO_SUPABASE_URL}/rest/v1/rpc/${name}`, {
     method: "POST",
     headers: {
-      apikey: SUPABASE_KEY,
+      apikey: CRVO_SUPABASE_PUBLISHABLE_KEY,
       "Content-Type": "application/json",
       Accept: "application/json",
     },
