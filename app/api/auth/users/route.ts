@@ -63,30 +63,21 @@ export async function PATCH(request: Request) {
   if (!userId) return NextResponse.json({ error: "Utilisateur manquant." }, { status: 400 });
 
   if (action === "set-active") {
-    const rows = await authRpc<Array<{ ok: boolean; error_code: string | null }>>("crvo_auth_set_user_active", {
-      p_token_hash: current.tokenHash,
-      p_user_id: userId,
-      p_active: Boolean(body.active),
-    });
+    const rows = await authRpc<Array<{ ok: boolean; error_code: string | null }>>("crvo_auth_set_user_active", { p_token_hash: current.tokenHash, p_user_id: userId, p_active: Boolean(body.active) });
     const row = rows[0];
     if (!row?.ok) return NextResponse.json({ error: row?.error_code === "cannot_disable_self" ? "Tu ne peux pas désactiver ton propre compte." : "Modification impossible." }, { status: 400 });
     return NextResponse.json({ ok: true });
   }
 
   if (action === "reset-password") {
-    const temporaryPassword = String(body.temporaryPassword ?? "");
-    const rows = await authRpc<Array<{ ok: boolean; error_code: string | null }>>("crvo_auth_reset_password", {
-      p_token_hash: current.tokenHash,
-      p_user_id: userId,
-      p_temporary_password: temporaryPassword,
-    });
+    const rows = await authRpc<Array<{ ok: boolean; error_code: string | null }>>("crvo_auth_reset_password", { p_token_hash: current.tokenHash, p_user_id: userId, p_temporary_password: String(body.temporaryPassword ?? "") });
     const row = rows[0];
     if (!row?.ok) return NextResponse.json({ error: row?.error_code === "password_too_short" ? "Le mot de passe temporaire doit contenir au moins 12 caractères." : "Réinitialisation impossible." }, { status: 400 });
     return NextResponse.json({ ok: true });
   }
 
   if (action === "update-access") {
-    const rows = await authRpc<Array<{ ok: boolean; error_code: string | null }>>("crvo_auth_update_user_access_v2", {
+    const rows = await authRpc<Array<{ ok: boolean; error_code: string | null }>>("crvo_auth_update_user_access_v3", {
       p_token_hash: current.tokenHash,
       p_user_id: userId,
       p_access_profile: String(body.accessProfile ?? "custom"),
