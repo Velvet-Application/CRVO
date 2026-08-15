@@ -4,6 +4,8 @@ const COOKIE="crvo_session";
 const SUPABASE_URL="https://tvmkhvfmdstkunwwuzuz.supabase.co";
 const SUPABASE_KEY="sb_publishable_bGCdOoq05alXNTOtouIQcQ_HX9jpKnv";
 
+type Session={ok:boolean;role:"admin"|"user";must_change_password:boolean;access_profile:"admin"|"service_manager"|"custom";page_permissions:string[];productivity_scopes:string[]};
+
 async function sha256Hex(value:string){
   const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,"0")).join("");
@@ -11,14 +13,14 @@ async function sha256Hex(value:string){
 
 async function validate(token:string){
   const tokenHash=await sha256Hex(token);
-  const response=await fetch(`${SUPABASE_URL}/rest/v1/rpc/crvo_auth_validate`,{
+  const response=await fetch(`${SUPABASE_URL}/rest/v1/rpc/crvo_auth_context`,{
     method:"POST",
     headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json",Accept:"application/json"},
     body:JSON.stringify({p_token_hash:tokenHash}),
     cache:"no-store",
   });
   if(!response.ok)throw new Error(`auth ${response.status}`);
-  const rows=await response.json() as Array<{ok:boolean;role:string;must_change_password:boolean}>;
+  const rows=await response.json() as Session[];
   return rows[0]??null;
 }
 
@@ -41,13 +43,29 @@ function kioskApiAllowed(request:NextRequest){
   if(!referer)return false;
   let sourcePath="";
   try{sourcePath=new URL(referer).pathname;}catch{return false;}
-  if(sourcePath==="/atelier"){
-    return path==="/api/dashboard"||path==="/api/system-status"||path==="/api/objectives"||path==="/api/kiosk/atelier";
-  }
-  if(sourcePath==="/direction"){
-    return path==="/api/dashboard"||path==="/api/finance"||path==="/api/kiosk/direction";
-  }
+  if(sourcePath==="/atelier")return path==="/api/dashboard"||path==="/api/system-status"||path==="/api/objectives"||path==="/api/kiosk/atelier";
+  if(sourcePath==="/direction")return path==="/api/dashboard"||path==="/api/finance"||path==="/api/direction-finance"||path==="/api/kiosk/direction";
   return false;
+}
+
+function has(session:Session,key:string){return session.role==="admin"||session.page_permissions?.includes("*")||session.page_permissions?.includes(key);}
+function firstAllowed(session:Session){
+  if(has(session,"reporting")||has(session,"book"))return "/";
+  if(has(session,"productivity"))return "/performance/productivite";
+  if(has(session,"cockpit"))return "/cockpit-v2";
+  if(has(session,"bodyshop"))return "/cockpit-v2/carrosserie";
+  if(has(session,"client_dashboard"))return "/dashboard-client";
+  if(has(session,"intelligence"))return "/intelligence";
+  return "/account";
+}
+function requiredPermission(path:string):string|null{
+  if(path==="/performance/productivite"||path.startsWith("/api/productivity"))return "productivity";
+  if(path.startsWith("/cockpit-v2/carrosserie")||path.startsWith("/api/bodyshop"))return "bodyshop";
+  if(path.startsWith("/cockpit-v2")||path.startsWith("/api/cockpit-v2"))return "cockpit";
+  if(path.startsWith("/dashboard-client")||path.startsWith("/clients")||path.startsWith("/api/client-dashboard")||path.startsWith("/api/clients"))return "client_dashboard";
+  if(path.startsWith("/intelligence")||path.startsWith("/api/intelligence"))return "intelligence";
+  if(path.startsWith("/book")||path.startsWith("/api/import-book"))return "book";
+  return null;
 }
 
 export async function proxy(request:NextRequest){
@@ -55,9 +73,8 @@ export async function proxy(request:NextRequest){
   if(isStatic(path))return NextResponse.next();
   if(path==="/api/health")return NextResponse.next();
 
-  // Deux écrans d'affichage terrain restent accessibles sans compte.
-  // Ils ne contiennent aucun lien vers le reste du reporting et leurs appels API
-  // anonymes sont limités aux seules données nécessaires à l'écran d'origine.
+  // Les deux écrans terrain restent accessibles sans compte ; leurs API anonymes
+  // sont limitées aux données strictement nécessaires à l'écran d'origine.
   if(kioskPage(path))return NextResponse.next();
 
   const token=request.cookies.get(COOKIE)?.value;
@@ -78,9 +95,7 @@ export async function proxy(request:NextRequest){
       return response;
     }
 
-    if(publicLogin){
-      return NextResponse.redirect(new URL(session.must_change_password?"/account?change=1":"/",request.url));
-    }
+    if(publicLogin)return NextResponse.redirect(new URL(session.must_change_password?"/account?change=1":firstAllowed(session),request.url));
 
     if(session.must_change_password){
       const allowed=path==="/account"||path==="/api/auth/me"||path==="/api/auth/change-password"||path==="/api/auth/logout";
@@ -88,6 +103,22 @@ export async function proxy(request:NextRequest){
         if(path.startsWith("/api/"))return apiUnauthorized(403,"Changement de mot de passe requis.");
         return NextResponse.redirect(new URL("/account?change=1",request.url));
       }
+    }
+
+    const authUtility=path==="/account"||path.startsWith("/api/auth/");
+    if(authUtility)return NextResponse.next();
+
+    if((path==="/data-rh"||path.startsWith("/api/data-import"))&&session.role!=="admin"){
+      if(path.startsWith("/api/"))return apiUnauthorized(403,"Accès administrateur requis.");
+      return NextResponse.redirect(new URL(firstAllowed(session),request.url));
+    }
+
+    if(path==="/"&&!has(session,"reporting")&&!has(session,"book"))return NextResponse.redirect(new URL(firstAllowed(session),request.url));
+
+    const permission=requiredPermission(path);
+    if(permission&&!has(session,permission)){
+      if(path.startsWith("/api/"))return apiUnauthorized(403,"Cette donnée n'est pas autorisée pour ce compte.");
+      return NextResponse.redirect(new URL(firstAllowed(session),request.url));
     }
 
     return NextResponse.next();
