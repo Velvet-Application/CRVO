@@ -1,0 +1,66 @@
+import { NextResponse } from "next/server";
+import * as XLSX from "@e965/xlsx";
+import { currentSession } from "../../../lib/crvo-auth";
+import { bonusRpc } from "../../../lib/bonus-rpc";
+
+export const dynamic = "force-dynamic";
+
+type Component = {
+  employeeKey:string|null; matricule:string|null; employeeName:string; population:string; jobKey:string;
+  sectorLabel:string|null; teamCode:string|null; theoreticalTier:number|null; teamTier:number|null; serviceTier:number|null;
+  finalTier:number|null; coefficient:number|null; presenceHours:number|null; billedHours:number|null; absenceHours:number|null;
+  absenceRate:number|null; productivity:number|null; individualBaseEur:number|null; individualAmountEur:number|null;
+  collectiveAmountEur:number|null; collectiveProration:number|null; exceptionalAmountEur:number|null; totalAmountEur:number|null;
+  sourcePayload:Record<string,unknown>; frozen:boolean;
+};
+type Detail = {
+  workflow:{id:string;month:string;status:string;validationMode:string;sourceFilename:string|null;sourceSha256:string|null;audit:Record<string,unknown>;currentAudit:Record<string,unknown>;totals:Record<string,unknown>;frozenHash:string|null};
+  components:Component[];
+};
+
+async function sha256(bytes: Uint8Array) {
+  const copy = new Uint8Array(bytes.byteLength); copy.set(bytes);
+  const digest = await crypto.subtle.digest("SHA-256", copy.buffer);
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2,"0")).join("");
+}
+function eur(value:number|null){return value == null ? null : Number(value.toFixed(2));}
+function pct(value:number|null){return value == null ? null : Number((value*100).toFixed(2));}
+
+export async function GET(request:Request){
+  const current=await currentSession();
+  if(!current)return NextResponse.json({error:"Session CRVO requise."},{status:401});
+  try{
+    const url=new URL(request.url);const workflowId=url.searchParams.get("workflowId");
+    if(!workflowId)return NextResponse.json({error:"Workflow manquant."},{status:400});
+    const detail=await bonusRpc<Detail>("kpi_bonus_get_workflow",{p_session_hash:current.tokenHash,p_workflow_id:workflowId});
+    if(!["closed","legacy_closed"].includes(detail.workflow.status))return NextResponse.json({error:"L'export paie est disponible uniquement après clôture."},{status:409});
+
+    const rows=detail.components.map(c=>({
+      Mois:detail.workflow.month,Matricule:c.matricule,Collaborateur:c.employeeName,Population:c.population,Métier:c.jobKey,
+      Secteur:c.sectorLabel,Équipe:c.teamCode,"Heures présence":c.presenceHours,"Heures facturées":c.billedHours,
+      "Heures absence":c.absenceHours,"Rendement %":pct(c.productivity),"Absentéisme %":pct(c.absenceRate),
+      "Palier théorique":c.theoreticalTier,"Palier chef équipe":c.teamTier,"Palier chef service":c.serviceTier,"Palier final":c.finalTier,
+      Coefficient:c.coefficient,"Base individuelle €":eur(c.individualBaseEur),"Prime individuelle €":eur(c.individualAmountEur),
+      "Collectif brut €":eur(c.collectiveAmountEur),"Prorata collectif %":pct(c.collectiveProration),
+      "Exception €":eur(c.exceptionalAmountEur),"TOTAL €":eur(c.totalAmountEur),Figé:c.frozen?"OUI":"NON",
+      "Commentaire source":String(c.sourcePayload?.sourceComment??""),"Source":detail.workflow.sourceFilename??"KPI CRVO"
+    }));
+    const auditRows=[
+      ["Mois",detail.workflow.month],["Statut",detail.workflow.status],["Mode",detail.workflow.validationMode],
+      ["Fichier source",detail.workflow.sourceFilename??""],["SHA source",detail.workflow.sourceSha256??""],["Empreinte clôture",detail.workflow.frozenHash??""],
+      ["Nombre de lignes",rows.length],["Audit figé",JSON.stringify(detail.workflow.audit??{})],["Audit courant",JSON.stringify(detail.workflow.currentAudit??{})],
+      ["Totaux figés",JSON.stringify(detail.workflow.totals??{})]
+    ];
+    const wb=XLSX.utils.book_new();
+    const payroll=XLSX.utils.json_to_sheet(rows); payroll["!autofilter"]={ref:payroll["!ref"]??"A1:A1"};
+    const audit=XLSX.utils.aoa_to_sheet([["AUDIT EXPORT PAIE","VALEUR"],...auditRows]);
+    payroll["!cols"]=[{wch:11},{wch:13},{wch:28},{wch:14},{wch:22},{wch:22},{wch:9},{wch:16},{wch:17},{wch:15},{wch:14},{wch:15},{wch:15},{wch:18},{wch:20},{wch:12},{wch:12},{wch:18},{wch:20},{wch:16},{wch:18},{wch:13},{wch:14},{wch:8},{wch:34},{wch:28}];
+    audit["!cols"]=[{wch:24},{wch:110}];
+    XLSX.utils.book_append_sheet(wb,payroll,"PAIE");XLSX.utils.book_append_sheet(wb,audit,"AUDIT");
+    const raw=XLSX.write(wb,{type:"array",bookType:"xlsx"}) as ArrayBuffer;
+    const bytes=new Uint8Array(raw);const hash=await sha256(bytes);
+    await bonusRpc("kpi_bonus_log_export",{p_session_hash:current.tokenHash,p_workflow_id:workflowId,p_export_type:"xlsx",p_employee_key:null,p_sha256:hash,p_metadata:{rows:rows.length,month:detail.workflow.month}});
+    const filename=`KPI_CRVO_Primes_${detail.workflow.month}_${detail.workflow.status}.xlsx`;
+    return new NextResponse(bytes,{headers:{"Content-Type":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","Content-Disposition":`attachment; filename="${filename}"`,`X-CRVO-Export-SHA256`:hash,"Cache-Control":"no-store"}});
+  }catch(error){return NextResponse.json({error:error instanceof Error?error.message:"Export impossible."},{status:400});}
+}
