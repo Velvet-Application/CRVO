@@ -15,130 +15,31 @@ type Session={
   can_manage_bonus_workflow:boolean;
 };
 
-async function sha256Hex(value:string){
-  const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,"0")).join("");
-}
-
-async function validate(token:string){
-  const tokenHash=await sha256Hex(token);
-  const response=await fetch(`${SUPABASE_URL}/rest/v1/rpc/crvo_auth_context_v2`,{
-    method:"POST",
-    headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json",Accept:"application/json"},
-    body:JSON.stringify({p_token_hash:tokenHash}),
-    cache:"no-store",
-  });
-  if(!response.ok)throw new Error(`auth ${response.status}`);
-  const rows=await response.json() as Session[];
-  return rows[0]??null;
-}
-
-function isStatic(pathname:string){
-  return pathname.startsWith("/_next/")||pathname.startsWith("/assets/")||pathname==="/favicon.svg"||/\.(?:css|js|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|map)$/i.test(pathname);
-}
-
-function apiUnauthorized(status=401,message="Authentification requise."){
-  return NextResponse.json({error:message},{status,headers:{"Cache-Control":"no-store"}});
-}
-
+async function sha256Hex(value:string){const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,"0")).join("");}
+async function validate(token:string){const tokenHash=await sha256Hex(token);const response=await fetch(`${SUPABASE_URL}/rest/v1/rpc/crvo_auth_context_v2`,{method:"POST",headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({p_token_hash:tokenHash}),cache:"no-store"});if(!response.ok)throw new Error(`auth ${response.status}`);const rows=await response.json() as Session[];return rows[0]??null;}
+function isStatic(pathname:string){return pathname.startsWith("/_next/")||pathname.startsWith("/assets/")||pathname==="/favicon.svg"||/\.(?:css|js|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|map)$/i.test(pathname);}
+function apiUnauthorized(status=401,message="Authentification requise."){return NextResponse.json({error:message},{status,headers:{"Cache-Control":"no-store"}});}
 function kioskPage(pathname:string){return pathname==="/atelier"||pathname==="/direction";}
-
-function kioskApiAllowed(request:NextRequest){
-  if(request.method!=="GET")return false;
-  const path=request.nextUrl.pathname;
-  const referer=request.headers.get("referer");
-  if(!referer)return false;
-  let sourcePath="";
-  try{sourcePath=new URL(referer).pathname;}catch{return false;}
-  if(sourcePath==="/atelier")return path==="/api/dashboard"||path==="/api/system-status"||path==="/api/objectives"||path==="/api/kiosk/atelier";
-  if(sourcePath==="/direction")return path==="/api/dashboard"||path==="/api/finance"||path==="/api/direction-finance"||path==="/api/kiosk/direction";
-  return false;
-}
-
+function kioskApiAllowed(request:NextRequest){if(request.method!=="GET")return false;const path=request.nextUrl.pathname;const referer=request.headers.get("referer");if(!referer)return false;let sourcePath="";try{sourcePath=new URL(referer).pathname;}catch{return false;}if(sourcePath==="/atelier")return path==="/api/dashboard"||path==="/api/system-status"||path==="/api/objectives"||path==="/api/kiosk/atelier";if(sourcePath==="/direction")return path==="/api/dashboard"||path==="/api/finance"||path==="/api/direction-finance"||path==="/api/kiosk/direction";return false;}
 function has(session:Session,key:string){return session.role==="admin"||session.page_permissions?.includes("*")||session.page_permissions?.includes(key);}
-function firstAllowed(session:Session){
-  if(has(session,"reporting")||has(session,"book"))return "/";
-  if(has(session,"productivity"))return "/performance/productivite";
-  if(has(session,"monthly_animation"))return "/animation-mensuelle";
-  if(has(session,"cockpit"))return "/cockpit-v2";
-  if(has(session,"bodyshop"))return "/cockpit-v2/carrosserie";
-  if(has(session,"client_dashboard"))return "/dashboard-client";
-  if(has(session,"intelligence"))return "/intelligence";
-  return "/account";
-}
-function requiredPermission(path:string):string|null{
-  if(path==="/performance/productivite"||path.startsWith("/api/productivity"))return "productivity";
-  if(path.startsWith("/animation-mensuelle")||path.startsWith("/api/monthly-animation"))return "monthly_animation";
-  if(path.startsWith("/cockpit-v2/carrosserie")||path.startsWith("/api/bodyshop"))return "bodyshop";
-  if(path.startsWith("/cockpit-v2")||path.startsWith("/api/cockpit-v2"))return "cockpit";
-  if(path.startsWith("/dashboard-client")||path.startsWith("/clients")||path.startsWith("/api/client-dashboard")||path.startsWith("/api/clients"))return "client_dashboard";
-  if(path.startsWith("/intelligence")||path.startsWith("/api/intelligence"))return "intelligence";
-  if(path.startsWith("/book")||path.startsWith("/api/import-book"))return "book";
-  return null;
-}
+function firstAllowed(session:Session){if(has(session,"reporting")||has(session,"book"))return "/";if(has(session,"productivity"))return "/performance/productivite";if(has(session,"monthly_animation"))return "/animation-mensuelle";if(has(session,"cockpit"))return "/cockpit-v2";if(has(session,"bodyshop"))return "/cockpit-v2/carrosserie";if(has(session,"client_dashboard"))return "/dashboard-client";if(has(session,"intelligence"))return "/intelligence";return "/account";}
+function requiredPermission(path:string):string|null{if(path==="/performance/productivite"||path.startsWith("/api/productivity"))return "productivity";if(path.startsWith("/animation-mensuelle")||path.startsWith("/api/monthly-animation"))return "monthly_animation";if(path.startsWith("/cockpit-v2/carrosserie")||path.startsWith("/api/bodyshop"))return "bodyshop";if(path.startsWith("/cockpit-v2")||path.startsWith("/api/cockpit-v2"))return "cockpit";if(path.startsWith("/dashboard-client")||path.startsWith("/clients")||path.startsWith("/api/client-dashboard")||path.startsWith("/api/clients"))return "client_dashboard";if(path.startsWith("/intelligence")||path.startsWith("/api/intelligence"))return "intelligence";if(path.startsWith("/book")||path.startsWith("/api/import-book"))return "book";return null;}
 
 export async function proxy(request:NextRequest){
-  const path=request.nextUrl.pathname;
-  if(isStatic(path))return NextResponse.next();
-  if(path==="/api/health")return NextResponse.next();
-  if(kioskPage(path))return NextResponse.next();
-
-  const token=request.cookies.get(COOKIE)?.value;
-  const publicLogin=path==="/login"||path==="/api/auth/login";
-  if(!token){
-    if(publicLogin||kioskApiAllowed(request))return NextResponse.next();
-    if(path.startsWith("/api/"))return apiUnauthorized();
-    const url=new URL("/login",request.url);
-    if(path!=="/")url.searchParams.set("next",`${path}${request.nextUrl.search}`.slice(0,1000));
-    return NextResponse.redirect(url);
-  }
-
+  const path=request.nextUrl.pathname;if(isStatic(path))return NextResponse.next();if(path==="/api/health")return NextResponse.next();if(kioskPage(path))return NextResponse.next();
+  const token=request.cookies.get(COOKIE)?.value;const publicLogin=path==="/login"||path==="/api/auth/login";
+  if(!token){if(publicLogin||kioskApiAllowed(request))return NextResponse.next();if(path.startsWith("/api/"))return apiUnauthorized();const url=new URL("/login",request.url);if(path!=="/")url.searchParams.set("next",`${path}${request.nextUrl.search}`.slice(0,1000));return NextResponse.redirect(url);}
   try{
-    const session=await validate(token);
-    if(!session?.ok){
-      const response=path.startsWith("/api/")?apiUnauthorized():NextResponse.redirect(new URL("/login",request.url));
-      response.cookies.delete(COOKIE);
-      return response;
-    }
-
+    const session=await validate(token);if(!session?.ok){const response=path.startsWith("/api/")?apiUnauthorized():NextResponse.redirect(new URL("/login",request.url));response.cookies.delete(COOKIE);return response;}
     if(publicLogin)return NextResponse.redirect(new URL(session.must_change_password?"/account?change=1":firstAllowed(session),request.url));
-
-    if(session.must_change_password){
-      const allowed=path==="/account"||path==="/api/auth/me"||path==="/api/auth/change-password"||path==="/api/auth/logout";
-      if(!allowed){
-        if(path.startsWith("/api/"))return apiUnauthorized(403,"Changement de mot de passe requis.");
-        return NextResponse.redirect(new URL("/account?change=1",request.url));
-      }
-    }
-
-    const authUtility=path==="/account"||path.startsWith("/api/auth/");
-    if(authUtility)return NextResponse.next();
-
-    const bonusAdminPage=path.startsWith("/animation-mensuelle/payplan")||path.startsWith("/api/payplan");
-    if(bonusAdminPage&&session.role!=="admin"){
-      if(path.startsWith("/api/"))return apiUnauthorized(403,"Accès administrateur requis.");
-      return NextResponse.redirect(new URL(firstAllowed(session),request.url));
-    }
-
-    if((path==="/data-rh"||path.startsWith("/api/data-import"))&&session.role!=="admin"){
-      if(path.startsWith("/api/"))return apiUnauthorized(403,"Accès administrateur requis.");
-      return NextResponse.redirect(new URL(firstAllowed(session),request.url));
-    }
-
+    if(session.must_change_password){const allowed=path==="/account"||path==="/api/auth/me"||path==="/api/auth/change-password"||path==="/api/auth/logout";if(!allowed){if(path.startsWith("/api/"))return apiUnauthorized(403,"Changement de mot de passe requis.");return NextResponse.redirect(new URL("/account?change=1",request.url));}}
+    const authUtility=path==="/account"||path.startsWith("/api/auth/");if(authUtility)return NextResponse.next();
+    const bonusAdminPage=path.startsWith("/animation-mensuelle/payplan")||path.startsWith("/animation-mensuelle/acces")||path.startsWith("/api/payplan");
+    if(bonusAdminPage&&session.role!=="admin"){if(path.startsWith("/api/"))return apiUnauthorized(403,"Accès administrateur requis.");return NextResponse.redirect(new URL(firstAllowed(session),request.url));}
+    if((path==="/data-rh"||path.startsWith("/api/data-import"))&&session.role!=="admin"){if(path.startsWith("/api/"))return apiUnauthorized(403,"Accès administrateur requis.");return NextResponse.redirect(new URL(firstAllowed(session),request.url));}
     if(path==="/"&&!has(session,"reporting")&&!has(session,"book"))return NextResponse.redirect(new URL(firstAllowed(session),request.url));
-
-    const permission=requiredPermission(path);
-    if(permission&&!has(session,permission)){
-      if(path.startsWith("/api/"))return apiUnauthorized(403,"Cette donnée n'est pas autorisée pour ce compte.");
-      return NextResponse.redirect(new URL(firstAllowed(session),request.url));
-    }
-
+    const permission=requiredPermission(path);if(permission&&!has(session,permission)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Cette donnée n'est pas autorisée pour ce compte.");return NextResponse.redirect(new URL(firstAllowed(session),request.url));}
     return NextResponse.next();
-  }catch(error){
-    console.error("crvo_auth_proxy_failed",error);
-    if(path.startsWith("/api/"))return apiUnauthorized(503,"Service d'authentification temporairement indisponible.");
-    return new NextResponse("Service d'authentification temporairement indisponible.",{status:503,headers:{"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"}});
-  }
+  }catch(error){console.error("crvo_auth_proxy_failed",error);if(path.startsWith("/api/"))return apiUnauthorized(503,"Service d'authentification temporairement indisponible.");return new NextResponse("Service d'authentification temporairement indisponible.",{status:503,headers:{"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"}});}
 }
-
 export const config={matcher:["/:path*"]};
