@@ -6,7 +6,7 @@ export const CRVO_SESSION_SECONDS = 12 * 60 * 60;
 const SUPABASE_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co";
 const SUPABASE_KEY = "sb_publishable_bGCdOoq05alXNTOtouIQcQ_HX9jpKnv";
 
-export type AccessProfile = "admin" | "service_manager" | "custom";
+export type AccessProfile = "admin" | "service_manager" | "team_manager" | "custom";
 
 export type CrvoSession = {
   ok: boolean;
@@ -19,6 +19,8 @@ export type CrvoSession = {
   access_profile: AccessProfile;
   page_permissions: string[];
   productivity_scopes: string[];
+  team_scopes: string[];
+  can_manage_bonus_workflow: boolean;
 };
 
 export async function sha256Hex(value: string) {
@@ -37,14 +39,17 @@ export async function authRpc<T>(name: string, body: Record<string, unknown>): P
     body: JSON.stringify(body),
     cache: "no-store",
   });
-  if (!response.ok) throw new Error(`Auth RPC ${name} failed with ${response.status}`);
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Auth RPC ${name} failed with ${response.status}${detail ? `: ${detail.slice(0, 500)}` : ""}`);
+  }
   return response.json() as Promise<T>;
 }
 
 export async function validateSessionToken(token: string | null | undefined): Promise<CrvoSession | null> {
   if (!token || token.length < 32) return null;
   const hash = await sha256Hex(token);
-  const rows = await authRpc<CrvoSession[]>("crvo_auth_context", { p_token_hash: hash });
+  const rows = await authRpc<CrvoSession[]>("crvo_auth_context_v2", { p_token_hash: hash });
   return rows[0] ?? null;
 }
 
@@ -53,7 +58,7 @@ export async function currentSession(): Promise<{ token: string; tokenHash: stri
   const token = store.get(CRVO_SESSION_COOKIE)?.value;
   if (!token) return null;
   const tokenHash = await sha256Hex(token);
-  const rows = await authRpc<CrvoSession[]>("crvo_auth_context", { p_token_hash: tokenHash });
+  const rows = await authRpc<CrvoSession[]>("crvo_auth_context_v2", { p_token_hash: tokenHash });
   const session = rows[0];
   if (!session?.ok) return null;
   return { token, tokenHash, session };
