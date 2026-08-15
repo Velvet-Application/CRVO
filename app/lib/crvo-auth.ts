@@ -6,6 +6,8 @@ export const CRVO_SESSION_SECONDS = 12 * 60 * 60;
 const SUPABASE_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co";
 const SUPABASE_KEY = "sb_publishable_bGCdOoq05alXNTOtouIQcQ_HX9jpKnv";
 
+export type AccessProfile = "admin" | "service_manager" | "custom";
+
 export type CrvoSession = {
   ok: boolean;
   user_id: string;
@@ -14,6 +16,9 @@ export type CrvoSession = {
   role: "admin" | "user";
   must_change_password: boolean;
   expires_at: string;
+  access_profile: AccessProfile;
+  page_permissions: string[];
+  productivity_scopes: string[];
 };
 
 export async function sha256Hex(value: string) {
@@ -39,7 +44,7 @@ export async function authRpc<T>(name: string, body: Record<string, unknown>): P
 export async function validateSessionToken(token: string | null | undefined): Promise<CrvoSession | null> {
   if (!token || token.length < 32) return null;
   const hash = await sha256Hex(token);
-  const rows = await authRpc<CrvoSession[]>("crvo_auth_validate", { p_token_hash: hash });
+  const rows = await authRpc<CrvoSession[]>("crvo_auth_context", { p_token_hash: hash });
   return rows[0] ?? null;
 }
 
@@ -48,7 +53,7 @@ export async function currentSession(): Promise<{ token: string; tokenHash: stri
   const token = store.get(CRVO_SESSION_COOKIE)?.value;
   if (!token) return null;
   const tokenHash = await sha256Hex(token);
-  const rows = await authRpc<CrvoSession[]>("crvo_auth_validate", { p_token_hash: tokenHash });
+  const rows = await authRpc<CrvoSession[]>("crvo_auth_context", { p_token_hash: tokenHash });
   const session = rows[0];
   if (!session?.ok) return null;
   return { token, tokenHash, session };
