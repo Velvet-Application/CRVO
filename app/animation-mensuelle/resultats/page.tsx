@@ -1,0 +1,49 @@
+"use client";
+
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import styles from "../payplan/payplan.module.css";
+
+type Workflow={id:string;month:string;status:string;validationMode:string};
+type Rule={id:string;population:string;jobKey:string;label:string;ruleType:string;thresholds:(number|null)[];coefficients:number[];baseAmountEur:number|null;settings:Record<string,unknown>};
+type Payplan={canManage:boolean;rules:Rule[]};
+type Input={id:string;scopeType:string;scopeKey:string;inputKey:string;numericValue:number|null;textValue:string|null;comment:string|null};
+type Detail={actor:{canManage:boolean};workflow:{id:string;month:string;status:string};manualInputs:Input[]};
+
+const GLOBAL_FIELDS=[
+  ["working_days","Jours ouvrés"],
+  ["factory_output","Sorties usine réalisées"],
+  ["fixline_result","Résultat Fixline réalisé"],
+  ["small_supplies","Petites fournitures"],
+  ["quality_claim_rate","Taux réclamation qualité (ex. 0,0135 = 1,35 %)"],
+  ["collective_amount_eur","Montant collectif sortie usine €"]
+] as const;
+
+function monthLabel(month:string){const [y,m]=month.split("-").map(Number);return new Intl.DateTimeFormat("fr-FR",{month:"long",year:"numeric"}).format(new Date(y,m-1,1));}
+function num(v:number|null|undefined){return v==null?"—":new Intl.NumberFormat("fr-FR",{maximumFractionDigits:4}).format(v);}
+function inputValue(inputs:Input[],scopeType:string,scopeKey:string,inputKey:string){return inputs.find(i=>i.scopeType===scopeType&&i.scopeKey===scopeKey&&i.inputKey===inputKey)?.numericValue;}
+function criterion2(rule:Rule){const value=rule.settings?.criterion_2;return Array.isArray(value)?value as number[]:[];}
+function label1(rule:Rule){return String(rule.settings?.criterion_1_label??"Critère 1");}
+function label2(rule:Rule){return String(rule.settings?.criterion_2_label??"Critère 2");}
+
+export default function MonthlyResultsPage(){
+  const [workflows,setWorkflows]=useState<Workflow[]>([]);const [workflowId,setWorkflowId]=useState("");const [detail,setDetail]=useState<Detail|null>(null);const [payplan,setPayplan]=useState<Payplan|null>(null);const [error,setError]=useState("");const [notice,setNotice]=useState("");const [saving,setSaving]=useState("");
+  async function api(url:string,options?:RequestInit){const r=await fetch(url,{...options,cache:"no-store"});const p=await r.json().catch(()=>({}));if(!r.ok)throw new Error(p.error||"Opération impossible.");return p;}
+  async function loadDetail(id:string){if(!id){setDetail(null);return;}setDetail(await api(`/api/monthly-animation?workflowId=${encodeURIComponent(id)}`) as Detail);}
+  async function load(){setError("");try{const [list,pp]=await Promise.all([api("/api/monthly-animation"),api("/api/payplan")]);const ws=(list.workflows??[]) as Workflow[];setWorkflows(ws);setPayplan(pp as Payplan);const open=ws.find(w=>w.status!=="closed"&&w.status!=="legacy_closed")??ws[0];if(open){setWorkflowId(open.id);await loadDetail(open.id);}}catch(e){setError(e instanceof Error?e.message:"Chargement impossible.");}}
+  useEffect(()=>{void load();},[]);
+  async function save(scopeType:string,scopeKey:string,inputKey:string,value:string,textValue:string|null=null){if(!workflowId)return;setSaving(`${scopeType}:${scopeKey}:${inputKey}`);setError("");setNotice("");try{await api("/api/monthly-animation",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"input",workflowId,scopeType,scopeKey,inputKey,numericValue:textValue?null:value,textValue})});setNotice("Résultat enregistré et moteur recalculé.");await loadDetail(workflowId);}catch(e){setError(e instanceof Error?e.message:"Enregistrement impossible.");}finally{setSaving("");}}
+  const rules=payplan?.rules??[];const adminRules=useMemo(()=>rules.filter(r=>r.population==="preprod"),[rules]);const locked=detail?.workflow.status==="closed"||detail?.workflow.status==="legacy_closed";
+  return <main className={styles.page}>
+    <header className={styles.header}><div><a href="/animation-mensuelle">← ANIMATION VARIABLE</a><span>WORKFLOW · VALEURS RÉALISÉES</span><h1>Résultats du mois</h1><p><b>Payplan = attendu.</b> Cette page sert à saisir le <b>réalisé du mois</b>. Ces valeurs sont rattachées au workflow sélectionné et sont figées à sa clôture.</p></div><div className={styles.badge}>{detail?.actor.canManage?"RESPONSABLE PAYPLAN":"LECTURE SEULE"}</div></header>
+    <div className={styles.shell}>{error&&<div className={styles.error}>{error}</div>}{notice&&<div className={styles.notice}>{notice}</div>}
+      <section className={styles.version}><div><span>Workflow</span><strong>{detail?monthLabel(detail.workflow.month):"—"}</strong></div><div><span>Statut</span><strong>{detail?.workflow.status?.toUpperCase()??"—"}</strong></div><div><span>Règle</span><strong>ATTENDU ≠ RÉALISÉ</strong></div><div><span>Action</span><strong>SAISIE DU MOIS</strong></div></section>
+      <section className={styles.group}><div className={styles.groupHead}><div><span className={styles.eyebrow}>MOIS À RENSEIGNER</span><h2>Choisir le workflow</h2></div></div><select value={workflowId} onChange={async e=>{setWorkflowId(e.target.value);await loadDetail(e.target.value);}} style={{minHeight:42,border:"1px solid #cbdce6",borderRadius:10,padding:"0 12px",minWidth:260}}>{workflows.map(w=><option key={w.id} value={w.id}>{monthLabel(w.month)} · {w.status}</option>)}</select>{locked&&<p className={styles.footer}>Ce mois est clôturé : valeurs visibles mais non modifiables.</p>}</section>
+      <section className={styles.group}><div className={styles.groupHead}><div><span className={styles.eyebrow}>RÉSULTATS CRVO</span><h2>Valeurs globales du mois</h2></div></div><div className={styles.settings}>{GLOBAL_FIELDS.map(([key,label])=><GlobalResult key={key} label={label} value={inputValue(detail?.manualInputs??[],"global","*",key)} disabled={Boolean(locked||!detail?.actor.canManage)} saving={saving===`global:*:${key}`} onSave={value=>save("global","*",key,value)}/>)}</div></section>
+      <section className={styles.group}><div className={styles.groupHead}><div><span className={styles.eyebrow}>ADMINISTRATIF / PRÉ-PRODUCTION</span><h2>Résultats par métier</h2><p className={styles.footer}>Ici, tu renseignes la valeur réellement constatée du mois. Les colonnes P1 à P5 restent uniquement les seuils attendus définis dans Payplan.</p></div></div><div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Métier</th><th>Attendu P1</th><th>P2</th><th>P3</th><th>P4</th><th>P5</th><th>Résultat critère 1</th><th>Résultat critère 2</th></tr></thead><tbody>{adminRules.map(rule=>{const c2=criterion2(rule);const manual=Boolean(rule.settings?.manual_tier);return <tr key={rule.id}><td className={styles.label}><strong>{rule.label}</strong><small>{manual?"Palier manuel · règle source absente":label1(rule)}{c2.length?` · ${label2(rule)}`:""}</small></td>{[0,1,2,3,4].map(i=><td key={i}>{num(rule.thresholds[i])}{c2[i]!=null?<small style={{display:"block",color:"#8396a2"}}> / {num(c2[i])}</small>:null}</td>)}<td>{manual?<InlineResult value={inputValue(detail?.manualInputs??[],"job",rule.jobKey,"manual_tier")} placeholder="P0 à P5" disabled={Boolean(locked||!detail?.actor.canManage)} saving={saving===`job:${rule.jobKey}:manual_tier`} onSave={v=>save("job",rule.jobKey,"manual_tier",v)}/>:<InlineResult value={inputValue(detail?.manualInputs??[],"job",rule.jobKey,"criterion_1")} placeholder={label1(rule)} disabled={Boolean(locked||!detail?.actor.canManage)} saving={saving===`job:${rule.jobKey}:criterion_1`} onSave={v=>save("job",rule.jobKey,"criterion_1",v)}/>}</td><td>{!manual&&c2.length?<InlineResult value={inputValue(detail?.manualInputs??[],"job",rule.jobKey,"criterion_2")} placeholder={label2(rule)} disabled={Boolean(locked||!detail?.actor.canManage)} saving={saving===`job:${rule.jobKey}:criterion_2`} onSave={v=>save("job",rule.jobKey,"criterion_2",v)}/>:"—"}</td></tr>})}</tbody></table></div></section>
+      <section className={styles.group}><div className={styles.groupHead}><div><span className={styles.eyebrow}>À RETENIR</span><h2>Deux pages, deux fonctions</h2></div></div><div className={styles.settings}><div className={styles.setting}><span>PAYPLAN</span><strong>Je définis P1 → P5, coefficients et bases €</strong></div><div className={styles.setting}><span>RÉSULTATS DU MOIS</span><strong>Je saisis ce qui a réellement été obtenu</strong></div><div className={styles.setting}><span>WORKFLOW</span><strong>Le moteur calcule puis CE / CDS / Direction valident</strong></div></div></section>
+    </div>
+  </main>;
+}
+
+function GlobalResult({label,value,disabled,saving,onSave}:{label:string;value:number|null|undefined;disabled:boolean;saving:boolean;onSave:(v:string)=>void}){const [v,setV]=useState(value==null?"":String(value));useEffect(()=>setV(value==null?"":String(value)),[value]);return <div className={styles.setting}><span>{label}</span><div style={{display:"flex",gap:6,marginTop:6}}><input value={v} disabled={disabled} onChange={e=>setV(e.target.value)} style={{minHeight:34,minWidth:0,width:"100%",border:"1px solid #cbdce6",borderRadius:9,padding:"0 8px"}}/><button disabled={disabled||saving||v===""} onClick={()=>onSave(v)} style={{border:0,borderRadius:9,background:"#004f9f",color:"white",fontWeight:800,padding:"0 10px"}}>{saving?"…":"OK"}</button></div></div>}
+function InlineResult({value,placeholder,disabled,saving,onSave}:{value:number|null|undefined;placeholder:string;disabled:boolean;saving:boolean;onSave:(v:string)=>void}){const [v,setV]=useState(value==null?"":String(value));useEffect(()=>setV(value==null?"":String(value)),[value]);return <div style={{display:"flex",gap:5}}><input value={v} placeholder={placeholder} disabled={disabled} onChange={e=>setV(e.target.value)}/><button disabled={disabled||saving||v===""} onClick={()=>onSave(v)}>{saving?"…":"OK"}</button></div>}
