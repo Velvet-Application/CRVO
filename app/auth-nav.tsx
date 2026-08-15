@@ -3,9 +3,8 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-type Me={displayName:string;role:"admin"|"user";accessProfile:"admin"|"service_manager"|"custom"};
-
-function profileLabel(me:Me){return me.role==="admin"||me.accessProfile==="admin"?"ADMIN":me.accessProfile==="service_manager"?"CHEF DE SERVICE":"ACCÈS PERSONNALISÉ";}
+type Me={displayName:string;role:"admin"|"user";accessProfile:"admin"|"service_manager"|"team_manager"|"custom"};
+function profileLabel(me:Me){return me.role==="admin"||me.accessProfile==="admin"?"ADMIN":me.accessProfile==="service_manager"?"CHEF DE SERVICE":me.accessProfile==="team_manager"?"CHEF D'ÉQUIPE":"ACCÈS PERSONNALISÉ";}
 
 export default function AuthNav(){
   const [me,setMe]=useState<Me|null>(null);const [host,setHost]=useState<HTMLElement|null>(null);
