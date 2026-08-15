@@ -6,10 +6,16 @@ export const dynamic="force-dynamic";
 
 function responseError(error:unknown){const message=error instanceof Error?error.message:"Opération Payplan impossible.";return NextResponse.json({error:message},{status:/seul|requis|autorisé/i.test(message)?403:400,headers:{"Cache-Control":"no-store"}});}
 
-export async function GET(){
+export async function GET(request:Request){
   const current=await currentSession();if(!current)return NextResponse.json({error:"Session CRVO requise."},{status:401});
   if(current.session.role!=="admin")return NextResponse.json({error:"Accès administrateur requis."},{status:403});
-  try{return NextResponse.json(await bonusRpc("kpi_bonus_get_payplan",{p_session_hash:current.tokenHash}),{headers:{"Cache-Control":"no-store"}});}catch(error){return responseError(error);}
+  try{
+    const workflowId=new URL(request.url).searchParams.get("workflowId");
+    const result=workflowId
+      ?await bonusRpc("kpi_bonus_get_workflow_payplan",{p_session_hash:current.tokenHash,p_workflow_id:workflowId})
+      :await bonusRpc("kpi_bonus_get_payplan",{p_session_hash:current.tokenHash});
+    return NextResponse.json(result,{headers:{"Cache-Control":"no-store"}});
+  }catch(error){return responseError(error);}
 }
 
 export async function PATCH(request:Request){
