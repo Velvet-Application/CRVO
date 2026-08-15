@@ -17,6 +17,8 @@ export async function GET() {
       accessProfile: session.access_profile,
       pagePermissions: session.page_permissions ?? [],
       productivityScopes: session.productivity_scopes ?? [],
+      teamScopes: session.team_scopes ?? [],
+      canManageBonusWorkflow: Boolean(session.can_manage_bonus_workflow),
       mustChangePassword: session.must_change_password,
       expiresAt: session.expires_at,
     },
