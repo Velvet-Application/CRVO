@@ -17,6 +17,11 @@ export async function PATCH(request:Request){
   if(current.session.role!=="admin")return NextResponse.json({error:"Accès administrateur requis."},{status:403});
   const body=await request.json().catch(()=>({})) as Record<string,unknown>;
   try{
+    if(body.action==="common_coefficients"){
+      const coefficients=Array.isArray(body.coefficients)?body.coefficients.map(Number):[];
+      const result=await bonusRpc("kpi_bonus_update_common_coefficients",{p_session_hash:current.tokenHash,p_coefficients:coefficients});
+      return NextResponse.json(result,{headers:{"Cache-Control":"no-store"}});
+    }
     if(body.action==="rule"){
       const result=await bonusRpc("kpi_bonus_update_payplan_rule",{
         p_session_hash:current.tokenHash,p_rule_id:String(body.ruleId??""),
