@@ -6,7 +6,7 @@ type GroupKey="book"|"animation"|"cockpit"|"client"|"settings";
 type Me={role:"admin"|"user";accessProfile:"admin"|"service_manager"|"team_manager"|"custom";pagePermissions:string[]};
 const CLOSED:Record<GroupKey,boolean>={book:false,animation:false,cockpit:false,client:false,settings:false};
 function rootHref(view:string){return `/?nav=${encodeURIComponent(view)}`;}
-function activeGroup(path:string):GroupKey|null{if(path.startsWith("/performance/productivite")||path.startsWith("/animation-mensuelle"))return"animation";if(path.startsWith("/cockpit-v2")||path.startsWith("/intelligence"))return"cockpit";if(path.startsWith("/dashboard-client")||path.startsWith("/clients"))return"client";if(/^\/(account|data-rh)/.test(path))return"settings";return null;}
+function activeGroup(path:string):GroupKey|null{if(path.startsWith("/performance/productivite")||path.startsWith("/animation-mensuelle"))return"animation";if(path.startsWith("/cockpit-v2")||path.startsWith("/intelligence"))return"cockpit";if(path.startsWith("/dashboard-client")||path.startsWith("/clients"))return"client";if(/^\/(account|data-rh|sources)/.test(path))return"settings";return null;}
 
 export default function GlobalNavDrawer(){
   const [me,setMe]=useState<Me|null>(null);const [drawer,setDrawer]=useState(false);const [open,setOpen]=useState<Record<GroupKey,boolean>>(CLOSED);
@@ -27,7 +27,7 @@ export default function GlobalNavDrawer(){
       {animationVisible&&group("animation","Animation du centre",<>{allowed("productivity")&&link("/performance/productivite","Productivité")}{allowed("monthly_animation")&&link("/animation-mensuelle","Variable")}{admin&&link("/animation-mensuelle/acces","Accès Workflow",true)}{admin&&link("/animation-mensuelle/payplan","Payplan",true)}</>)}
       {cockpitVisible&&group("cockpit","Cockpit V2",<>{allowed("cockpit")&&link("/cockpit-v2?section=pilotage","Pilotage du jour")}{allowed("cockpit")&&link("/cockpit-v2?section=synthese","Synthèse manager")}{allowed("cockpit")&&link("/cockpit-v2?section=decision","Aide à la décision")}{allowed("cockpit")&&link("/cockpit-v2?section=prevision","Prévision fin de journée")}{allowed("bodyshop")&&link("/cockpit-v2/carrosserie","Focus carrosserie")}{allowed("intelligence")&&link("/intelligence","Analyse")}</>)}
       {clientVisible&&group("client","Dashboard client",<>{link("/dashboard-client?scope=reseau","Réseau EFF & EFB")}{link("/dashboard-client?scope=bmw-mini","BMW / MINI")}</>)}
-      {group("settings","Paramètre",<>{allowed("settings")&&link(rootHref("objectives"),"Objectif & seuil")}{allowed("settings")&&link(rootHref("sources"),"Source & Connexion")}{link("/account","Accès")}{allowed("data_rh")&&link("/data-rh","Data RH")}</>)}
+      {group("settings","Paramètre",<>{allowed("settings")&&link(rootHref("objectives"),"Objectif & seuil")}{allowed("settings")&&link("/sources","Source & Connexion")}{link("/account","Accès")}{allowed("data_rh")&&link("/data-rh","Data RH")}</>)}
       {admin&&<div className="gn-admin">{link("/atelier","Ecran ATELIER",true)}{link("/direction","Ecran DIRECTION",true)}</div>}
     </nav><footer><span>SESSION SÉCURISÉE</span><strong>{profile}</strong></footer></aside></>}
     <style>{`
