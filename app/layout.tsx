@@ -6,11 +6,9 @@ import "@fontsource/exo/700.css";
 import "@fontsource/exo/800.css";
 import "@fontsource/exo/800-italic.css";
 import "./globals.css";
-import PilotageNav from "./pilotage-nav";
 import GlobalNavDrawer from "./global-nav-drawer";
 import DataTrustGuard from "./data-trust-guard";
 import AuthNav from "./auth-nav";
-import DashboardClientScopePatch from "./dashboard-client-scope-patch";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -21,11 +19,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="fr"><body>
-    <PilotageNav />
     <GlobalNavDrawer />
     <DataTrustGuard />
     <AuthNav />
-    <DashboardClientScopePatch />
     {children}
   </body></html>;
 }
