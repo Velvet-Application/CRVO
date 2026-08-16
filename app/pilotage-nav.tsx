@@ -26,21 +26,29 @@ export default function PilotageNav(){
   const allowed=(key:string)=>Boolean(me&&(me.role==="admin"||me.pagePermissions?.includes("*")||me.pagePermissions?.includes(key)));const admin=me?.role==="admin";
   useEffect(()=>{fetch("/api/auth/me",{cache:"no-store"}).then(async response=>response.ok?response.json():null).then(payload=>setMe(payload?.user??null)).catch(()=>setMe(null));},[]);
   useEffect(()=>{const active=activeGroup(window.location.pathname);if(active){const next={...DEFAULT_OPEN,[active]:true};setOpen(next);try{localStorage.setItem(STORAGE_KEY,JSON.stringify(next));}catch{}return;}try{const stored=localStorage.getItem(STORAGE_KEY);setOpen(stored?{...DEFAULT_OPEN,...JSON.parse(stored)} as OpenGroups:{...DEFAULT_OPEN});}catch{setOpen(DEFAULT_OPEN);}},[]);
-  useEffect(()=>{const install=()=>{
-    const nav=document.querySelector<HTMLElement>(".sidebar nav");if(!nav){setHosts(null);return;}
-    ["architecture-performance-label","architecture-performance-extra","architecture-variable-root","architecture-book-label","architecture-animation-root","architecture-middle-root","architecture-settings-label","architecture-settings-extra","architecture-admin-screens"].forEach(id=>document.getElementById(id)?.remove());
-    nav.querySelectorAll("[data-pilotage-link],[data-intelligence-link],[data-client-link]").forEach(node=>node.remove());
-    const today=document.getElementById("nav-today"),yesterday=document.getElementById("nav-yesterday"),bottlenecks=document.getElementById("nav-bottlenecks"),walking=document.getElementById("nav-walking"),finance=document.getElementById("nav-finance"),objectives=document.getElementById("nav-objectives"),sources=document.getElementById("nav-sources");
-    if(!today||!yesterday||!bottlenecks||!walking||!finance||!objectives||!sources)return;
-    relabel("nav-today","Performance du jour");relabel("nav-yesterday","Dashboard");relabel("nav-bottlenecks","Goulot");relabel("nav-walking","Walking Dead");relabel("nav-finance","Chiffre d'affaire");relabel("nav-objectives","Objectif & seuil");relabel("nav-sources","Source & Connexion");
-    const book=makeSlot(nav,"architecture-book-label");if(book.nextSibling!==yesterday)nav.insertBefore(book,yesterday);
-    const animation=makeSlot(nav,"architecture-animation-root");if(finance.nextSibling!==animation)nav.insertBefore(animation,finance.nextSibling);
-    const middle=makeSlot(nav,"architecture-middle-root");if(animation.nextSibling!==middle)nav.insertBefore(middle,animation.nextSibling);
-    const settings=makeSlot(nav,"architecture-settings-label");if(settings.nextSibling!==objectives)nav.insertBefore(settings,objectives);
-    const settingsExtra=makeSlot(nav,"architecture-settings-extra");if(sources.nextSibling!==settingsExtra)nav.insertBefore(settingsExtra,sources.nextSibling);
-    const adminScreens=makeSlot(nav,"architecture-admin-screens");if(settingsExtra.nextSibling!==adminScreens)nav.insertBefore(adminScreens,settingsExtra.nextSibling);
-    setHosts(current=>current?.book===book&&current?.animation===animation&&current?.middle===middle&&current?.settings===settings&&current?.settingsExtra===settingsExtra&&current?.adminScreens===adminScreens?current:{book,animation,middle,settings,settingsExtra,adminScreens});
-  };install();const observer=new MutationObserver(install);observer.observe(document.body,{childList:true,subtree:true});return()=>observer.disconnect();},[]);
+  useEffect(()=>{
+    let stopped=false;
+    let attempts=0;
+    const install=()=>{
+      if(stopped)return true;
+      const nav=document.querySelector<HTMLElement>(".sidebar nav");
+      if(!nav)return false;
+      const today=document.getElementById("nav-today"),yesterday=document.getElementById("nav-yesterday"),bottlenecks=document.getElementById("nav-bottlenecks"),walking=document.getElementById("nav-walking"),finance=document.getElementById("nav-finance"),objectives=document.getElementById("nav-objectives"),sources=document.getElementById("nav-sources");
+      if(!today||!yesterday||!bottlenecks||!walking||!finance||!objectives||!sources)return false;
+      relabel("nav-today","Performance du jour");relabel("nav-yesterday","Dashboard");relabel("nav-bottlenecks","Goulot");relabel("nav-walking","Walking Dead");relabel("nav-finance","Chiffre d'affaire");relabel("nav-objectives","Objectif & seuil");relabel("nav-sources","Source & Connexion");
+      const book=makeSlot(nav,"architecture-book-label");if(book.nextSibling!==yesterday)nav.insertBefore(book,yesterday);
+      const animation=makeSlot(nav,"architecture-animation-root");if(finance.nextSibling!==animation)nav.insertBefore(animation,finance.nextSibling);
+      const middle=makeSlot(nav,"architecture-middle-root");if(animation.nextSibling!==middle)nav.insertBefore(middle,animation.nextSibling);
+      const settings=makeSlot(nav,"architecture-settings-label");if(settings.nextSibling!==objectives)nav.insertBefore(settings,objectives);
+      const settingsExtra=makeSlot(nav,"architecture-settings-extra");if(sources.nextSibling!==settingsExtra)nav.insertBefore(settingsExtra,sources.nextSibling);
+      const adminScreens=makeSlot(nav,"architecture-admin-screens");if(settingsExtra.nextSibling!==adminScreens)nav.insertBefore(adminScreens,settingsExtra.nextSibling);
+      setHosts(current=>current?.book===book&&current?.animation===animation&&current?.middle===middle&&current?.settings===settings&&current?.settingsExtra===settingsExtra&&current?.adminScreens===adminScreens?current:{book,animation,middle,settings,settingsExtra,adminScreens});
+      return true;
+    };
+    if(install())return()=>{stopped=true;};
+    const timer=window.setInterval(()=>{attempts+=1;if(install()||attempts>=40)window.clearInterval(timer);},50);
+    return()=>{stopped=true;window.clearInterval(timer);};
+  },[]);
   useEffect(()=>{
     setHidden("nav-today",!allowed("reporting"));
     ["nav-yesterday","nav-bottlenecks","nav-walking","nav-finance"].forEach(id=>setHidden(id,!allowed("book")||!open.book));
