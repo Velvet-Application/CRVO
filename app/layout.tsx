@@ -8,6 +8,7 @@ import "@fontsource/exo/800-italic.css";
 import "./globals.css";
 import "./production-fixes.css";
 import GlobalNavDrawer from "./global-nav-drawer";
+import HomeSideMenu from "./home-side-menu";
 import DataTrustGuard from "./data-trust-guard";
 import AuthNav from "./auth-nav";
 
@@ -21,6 +22,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="fr"><body>
     <GlobalNavDrawer />
+    <HomeSideMenu />
     <DataTrustGuard />
     <AuthNav />
     {children}
