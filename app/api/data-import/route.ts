@@ -18,8 +18,9 @@ type InitBody = {
 export async function POST(request: Request) {
   try {
     const current = await currentSession();
-    if (!current || current.session.role !== "admin") {
-      return NextResponse.json({ error: "Accès administrateur CRVO requis." }, { status: 401 });
+    const canImport = Boolean(current && (current.session.role === "admin" || current.session.page_permissions?.includes("*") || current.session.page_permissions?.includes("data_rh")));
+    if (!current || !canImport) {
+      return NextResponse.json({ error: "Droit Data RH requis." }, { status: 403 });
     }
 
     const incoming = await request.json().catch(() => null) as InitBody | null;
