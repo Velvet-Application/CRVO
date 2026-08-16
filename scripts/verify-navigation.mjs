@@ -46,8 +46,8 @@ for(const path of ["/animation-mensuelle/payplan","/animation-mensuelle/acces","
 }
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/acces"'))failures.push("Accès Workflow doit rester ADMIN dans le menu latéral.");
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/payplan"'))failures.push("Payplan doit rester ADMIN dans le menu latéral.");
-if(!files.drawer.includes('admin&&link("/atelier"'))failures.push("Ecran ATELIER doit rester ADMIN dans le menu global.");
-if(!files.drawer.includes('admin&&link("/direction"'))failures.push("Ecran DIRECTION doit rester ADMIN dans le menu global.");
+if(!files.drawer.includes('admin&&<div className="gn-admin"')||!files.drawer.includes('link("/atelier","Ecran ATELIER",true)'))failures.push("Ecran ATELIER doit rester ADMIN dans le menu global.");
+if(!files.drawer.includes('admin&&<div className="gn-admin"')||!files.drawer.includes('link("/direction","Ecran DIRECTION",true)'))failures.push("Ecran DIRECTION doit rester ADMIN dans le menu global.");
 
 if(failures.length){
   console.error("Contrat de navigation CRVO invalide :\n- "+failures.join("\n- "));
