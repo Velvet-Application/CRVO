@@ -16,6 +16,7 @@ import ObjectivesDailyPatch from "./objectives-daily-patch";
 import FinanceSourcePortal from "./finance-source-portal";
 import FinanceTrendPanel from "./finance-trend-panel";
 import PilotageNav from "./pilotage-nav";
+import GlobalNavDrawer from "./global-nav-drawer";
 import FtpTerminologyPatch from "./ftp-terminology-patch";
 import PeriodDefaultPatch from "./period-default-patch";
 import BottleneckLivePanel from "./bottleneck-live-panel";
@@ -37,6 +38,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <FinanceSourcePortal />
     <FinanceTrendPanel />
     <PilotageNav />
+    <GlobalNavDrawer />
     <FtpTerminologyPatch />
     <PeriodDefaultPatch />
     <BottleneckLivePanel />
