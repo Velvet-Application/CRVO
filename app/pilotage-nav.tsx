@@ -15,7 +15,7 @@ function relabel(id:string,label:string){const node=document.getElementById(id)?
 function setHidden(id:string,hidden:boolean){const node=document.getElementById(id);if(node)node.hidden=hidden;}
 function activeGroup(path:string):GroupKey|null{
   if(path.startsWith("/performance/productivite")||path.startsWith("/animation-mensuelle"))return"animation";
-  if(path.startsWith("/cockpit-v2")||path.startsWith("/intelligence"))return"cockpit";
+  if(path.startsWith("/cockpit-v2")||path.startsWith("/intelligence")||path.startsWith("/capacitaire"))return"cockpit";
   if(path.startsWith("/dashboard-client")||path.startsWith("/clients"))return"client";
   if(/^\/(account|data-rh)/.test(path))return"settings";
   return null;
@@ -58,12 +58,12 @@ export default function PilotageNav(){
   const groupHeading=(group:GroupKey,label:string,spaced=false)=><button type="button" className={`architecture-group-heading${spaced?" architecture-heading-spaced":""}`} aria-expanded={open[group]} onClick={()=>toggle(group)} title={open[group]?`Replier ${label}`:`Déplier ${label}`}><span>{label}</span><i className={open[group]?"is-open":""}>›</i></button>;
   const link=(href:string,label:string)=><a className="architecture-link" href={href}><span className="architecture-marker"/><span>{label}</span><i>›</i></a>;
   const topLink=(href:string,label:string)=><a className="architecture-top-link" href={href}><span>{label}</span><i>›</i></a>;
-  const animationVisible=allowed("productivity")||allowed("monthly_animation")||admin;const cockpitVisible=allowed("cockpit")||allowed("bodyshop")||allowed("intelligence");const clientVisible=allowed("client_dashboard");const settingsVisible=Boolean(me);
+  const animationVisible=allowed("productivity")||allowed("monthly_animation")||admin;const cockpitVisible=allowed("cockpit")||allowed("bodyshop")||allowed("intelligence")||admin;const clientVisible=allowed("client_dashboard");const settingsVisible=Boolean(me);
   return <>
     {hosts?.book.isConnected&&allowed("book")?createPortal(groupHeading("book","BOOK",true),hosts.book):null}
     {hosts?.animation.isConnected&&animationVisible?createPortal(<>{groupHeading("animation","Animation du centre",true)}<div className={`architecture-collapse${open.animation?" is-open":""}`}><div className="architecture-links">{allowed("productivity")?link("/performance/productivite","Productivité"):null}{allowed("monthly_animation")?link("/animation-mensuelle","Variable"):null}{admin?link("/animation-mensuelle/acces","Accès Workflow"):null}{admin?link("/animation-mensuelle/payplan","Payplan"):null}</div></div></>,hosts.animation):null}
     {hosts?.middle.isConnected?createPortal(<>
-      {cockpitVisible?<>{groupHeading("cockpit","Cockpit V2",true)}<div className={`architecture-collapse${open.cockpit?" is-open":""}`}><div className="architecture-links">{allowed("cockpit")?<>{link("/cockpit-v2?section=pilotage","Pilotage du jour")}{link("/cockpit-v2?section=synthese","Synthèse manager")}{link("/cockpit-v2?section=decision","Aide à la décision")}{link("/cockpit-v2?section=prevision","Prévision fin de journée")}</>:null}{allowed("bodyshop")?link("/cockpit-v2/carrosserie","Focus carrosserie"):null}{allowed("intelligence")?link("/intelligence","Analyse"):null}</div></div></>:null}
+      {cockpitVisible?<>{groupHeading("cockpit","Cockpit V2",true)}<div className={`architecture-collapse${open.cockpit?" is-open":""}`}><div className="architecture-links">{allowed("cockpit")?<>{link("/cockpit-v2?section=pilotage","Pilotage du jour")}{link("/cockpit-v2?section=synthese","Synthèse manager")}{link("/cockpit-v2?section=decision","Aide à la décision")}{link("/cockpit-v2?section=prevision","Prévision fin de journée")}</>:null}{allowed("bodyshop")?link("/cockpit-v2/carrosserie","Focus carrosserie"):null}{admin?link("/capacitaire","Simulateur capacitaire"):null}{allowed("intelligence")?link("/intelligence","Analyse"):null}</div></div></>:null}
       {clientVisible?<>{groupHeading("client","Dashboard client",true)}<div className={`architecture-collapse${open.client?" is-open":""}`}><div className="architecture-links">{link("/dashboard-client?scope=reseau","Réseau EFF & EFB")}{link("/dashboard-client?scope=bmw-mini","BMW / MINI")}</div></div></>:null}
     </>,hosts.middle):null}
     {hosts?.settings.isConnected&&settingsVisible?createPortal(groupHeading("settings","Paramètre",true),hosts.settings):null}
