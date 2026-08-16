@@ -18,7 +18,8 @@ function reply(body: unknown, status = 200) {
 export async function POST(request: Request) {
   try {
     const current = await currentSession();
-    if (!current || current.session.role !== "admin") return reply({ error: "Accès administrateur CRVO requis." }, 401);
+    const canImport = Boolean(current && (current.session.role === "admin" || current.session.page_permissions?.includes("*") || current.session.page_permissions?.includes("data_rh")));
+    if (!current || !canImport) return reply({ error: "Droit Data RH requis." }, 403);
     const body = await request.json().catch(() => null) as Body | null;
     if (!body?.action) return reply({ error: "Action d’import invalide." }, 400);
 
