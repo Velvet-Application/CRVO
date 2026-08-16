@@ -45,7 +45,8 @@ function noStore(body: unknown, status = 200) {
 export async function POST(request: Request) {
   try {
     const current = await currentSession();
-    if (!current || current.session.role !== "admin") return noStore({ error: "Accès administrateur CRVO requis." }, 401);
+    const canImport = Boolean(current && (current.session.role === "admin" || current.session.page_permissions?.includes("*") || current.session.page_permissions?.includes("data_rh")));
+    if (!current || !canImport) return noStore({ error: "Droit Data RH requis." }, 403);
 
     const body = await request.json().catch(() => null) as Body | null;
     if (!body?.action) return noStore({ error: "Action d’import RH invalide." }, 400);
