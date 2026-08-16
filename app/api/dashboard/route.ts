@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentSession } from "../../lib/crvo-auth";
+import { CRVO_SUPABASE_PUBLISHABLE_KEY, currentSession } from "../../lib/crvo-auth";
 import { supabaseRestHeaders } from "../../supabase-rest";
 
 export const dynamic = "force-dynamic";
@@ -39,8 +39,8 @@ const STOCK_METRICS = ["factory_stock", "stock_over_15d", "stock_over_20d"];
 
 function config() {
   const supabaseUrl = process.env.SUPABASE_URL;
-  const secretKey = process.env.SUPABASE_SECRET_KEY;
-  return supabaseUrl && secretKey ? { supabaseUrl, secretKey } : null;
+  if (!supabaseUrl) return null;
+  return { supabaseUrl, readKey: process.env.SUPABASE_SECRET_KEY || CRVO_SUPABASE_PUBLISHABLE_KEY };
 }
 
 function sourcePriority(source: string) {
@@ -123,9 +123,9 @@ function formatSnapshot(row: SnapshotRow) {
   };
 }
 
-async function rest<T>(supabaseUrl: string, secretKey: string, path: string): Promise<T> {
+async function rest<T>(supabaseUrl: string, readKey: string, path: string): Promise<T> {
   const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
-    headers: supabaseRestHeaders(secretKey, { Accept: "application/json" }),
+    headers: supabaseRestHeaders(readKey, { Accept: "application/json" }),
     cache: "no-store",
   });
   if (!response.ok) throw new Error(`Supabase ${response.status}`);
@@ -144,9 +144,9 @@ export async function GET(request: Request) {
 
   try {
     const [historyRows, liveRows, directionRows] = await Promise.all([
-      rest<SnapshotRow[]>(db.supabaseUrl, db.secretKey, "kpi_public_dashboard_snapshots?select=snapshot_at,source_name,metrics&order=snapshot_at.asc&limit=180"),
-      rest<LiveRow[]>(db.supabaseUrl, db.secretKey, "kpi_ftp_live_dashboard?select=snapshot_at,source_name,metrics,source_modified_at,factory_modified_at,park_modified_at&limit=1"),
-      rest<DirectionLiveFlowRow[]>(db.supabaseUrl, db.secretKey, "kpi_ftp_direction_live_flow?select=snapshot_at,park_modified_at,preparation_remaining,quality_remaining,photo_remaining&limit=1").catch(() => []),
+      rest<SnapshotRow[]>(db.supabaseUrl, db.readKey, "kpi_public_dashboard_snapshots?select=snapshot_at,source_name,metrics&order=snapshot_at.asc&limit=180"),
+      rest<LiveRow[]>(db.supabaseUrl, db.readKey, "kpi_ftp_live_dashboard?select=snapshot_at,source_name,metrics,source_modified_at,factory_modified_at,park_modified_at&limit=1"),
+      rest<DirectionLiveFlowRow[]>(db.supabaseUrl, db.readKey, "kpi_ftp_direction_live_flow?select=snapshot_at,park_modified_at,preparation_remaining,quality_remaining,photo_remaining&limit=1").catch(() => []),
     ]);
     const all = foldSaturdayIntoFriday(mergeRealRows([...historyRows, ...liveRows]));
     if (!all.length) return NextResponse.json({ connected: false, error: "Aucune donnée opérationnelle réelle n'est disponible." }, { status: 503, headers: { "Cache-Control": "no-store" } });
