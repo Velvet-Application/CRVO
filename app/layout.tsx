@@ -6,6 +6,7 @@ import "@fontsource/exo/700.css";
 import "@fontsource/exo/800.css";
 import "@fontsource/exo/800-italic.css";
 import "./globals.css";
+import "./production-fixes.css";
 import GlobalNavDrawer from "./global-nav-drawer";
 import DataTrustGuard from "./data-trust-guard";
 import AuthNav from "./auth-nav";
