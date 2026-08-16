@@ -4,6 +4,7 @@ const files={
   sidebar:fs.readFileSync("app/pilotage-nav.tsx","utf8"),
   drawer:fs.readFileSync("app/global-nav-drawer.tsx","utf8"),
   proxy:fs.readFileSync("proxy.ts","utf8"),
+  account:fs.readFileSync("app/account/page.tsx","utf8"),
 };
 
 const labels=[
@@ -48,9 +49,13 @@ if(!files.sidebar.includes('admin?link("/animation-mensuelle/acces"'))failures.p
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/payplan"'))failures.push("Payplan doit rester ADMIN dans le menu latéral.");
 if(!files.drawer.includes('admin&&<div className="gn-admin"')||!files.drawer.includes('link("/atelier","Ecran ATELIER",true)'))failures.push("Ecran ATELIER doit rester ADMIN dans le menu global.");
 if(!files.drawer.includes('admin&&<div className="gn-admin"')||!files.drawer.includes('link("/direction","Ecran DIRECTION",true)'))failures.push("Ecran DIRECTION doit rester ADMIN dans le menu global.");
+if(!files.sidebar.includes('allowed("data_rh")?link("/data-rh","Data RH")'))failures.push("Data RH doit suivre la permission data_rh dans le menu latéral.");
+if(!files.drawer.includes('allowed("data_rh")&&link("/data-rh","Data RH")'))failures.push("Data RH doit suivre la permission data_rh dans le menu global.");
+if(!files.proxy.includes('return "data_rh"'))failures.push("La route Data RH doit être protégée par la permission data_rh.");
+if(!files.account.includes('key:"settings"')||!files.account.includes('key:"data_rh"'))failures.push("Les permissions Paramètres métier et Data RH doivent être configurables dans Accès.");
 
 if(failures.length){
   console.error("Contrat de navigation CRVO invalide :\n- "+failures.join("\n- "));
   process.exit(1);
 }
-console.log(`Navigation CRVO validée : ${labels.length} libellés et protections ADMIN contrôlés.`);
+console.log(`Navigation CRVO validée : ${labels.length} libellés, droits RH/paramètres et protections ADMIN contrôlés.`);
