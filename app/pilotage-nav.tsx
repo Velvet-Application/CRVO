@@ -44,7 +44,7 @@ export default function PilotageNav(){
   useEffect(()=>{
     setHidden("nav-today",!allowed("reporting"));
     ["nav-yesterday","nav-bottlenecks","nav-walking","nav-finance"].forEach(id=>setHidden(id,!allowed("book")||!open.book));
-    ["nav-objectives","nav-sources"].forEach(id=>setHidden(id,!admin||!open.settings));
+    ["nav-objectives","nav-sources"].forEach(id=>setHidden(id,!allowed("settings")||!open.settings));
   },[open,hosts,me]);
   const toggle=(group:GroupKey)=>setOpen(current=>{const next=current[group]?{...DEFAULT_OPEN}:{...DEFAULT_OPEN,[group]:true};try{localStorage.setItem(STORAGE_KEY,JSON.stringify(next));}catch{}return next;});
   const groupHeading=(group:GroupKey,label:string,spaced=false)=><button type="button" className={`architecture-group-heading${spaced?" architecture-heading-spaced":""}`} aria-expanded={open[group]} onClick={()=>toggle(group)} title={open[group]?`Replier ${label}`:`Déplier ${label}`}><span>{label}</span><i className={open[group]?"is-open":""}>›</i></button>;
@@ -59,7 +59,7 @@ export default function PilotageNav(){
       {clientVisible?<>{groupHeading("client","Dashboard client",true)}<div className={`architecture-collapse${open.client?" is-open":""}`}><div className="architecture-links">{link("/dashboard-client?scope=reseau","Réseau EFF & EFB")}{link("/dashboard-client?scope=bmw-mini","BMW / MINI")}</div></div></>:null}
     </>,hosts.middle):null}
     {hosts?.settings.isConnected&&settingsVisible?createPortal(groupHeading("settings","Paramètre",true),hosts.settings):null}
-    {hosts?.settingsExtra.isConnected&&settingsVisible?createPortal(<div className={`architecture-collapse architecture-settings-collapse${open.settings?" is-open":""}`}><div className="architecture-links architecture-settings-links">{link("/account","Accès")}{admin?link("/data-rh","Data RH"):null}</div></div>,hosts.settingsExtra):null}
+    {hosts?.settingsExtra.isConnected&&settingsVisible?createPortal(<div className={`architecture-collapse architecture-settings-collapse${open.settings?" is-open":""}`}><div className="architecture-links architecture-settings-links">{link("/account","Accès")}{allowed("data_rh")?link("/data-rh","Data RH"):null}</div></div>,hosts.settingsExtra):null}
     {hosts?.adminScreens.isConnected&&admin?createPortal(<div className="architecture-admin-screens">{topLink("/atelier","Ecran ATELIER")}{topLink("/direction","Ecran DIRECTION")}</div>,hosts.adminScreens):null}
     <style>{`
       .sidebar nav{padding-bottom:14px}.sidebar nav .architecture-group-heading{width:calc(100% - 16px);margin:18px 8px 7px;padding:8px 5px;border:0;background:transparent;color:rgba(255,255,255,.62);display:flex;align-items:center;justify-content:space-between;gap:8px;font:inherit;font-size:10px;font-weight:800;letter-spacing:.115em;text-transform:uppercase;cursor:pointer;text-align:left}.sidebar nav .architecture-group-heading:hover{color:#fff}.sidebar nav .architecture-heading-spaced{margin-top:22px}.sidebar nav .architecture-group-heading>i{width:22px;height:22px;display:grid;place-items:center;border-radius:7px;font-style:normal;font-size:18px;line-height:1;color:#82dcff;background:rgba(0,158,219,.10);transform:rotate(0deg);transition:transform .18s ease,background .18s ease}.sidebar nav .architecture-group-heading:hover>i{background:rgba(0,158,219,.20)}.sidebar nav .architecture-group-heading>i.is-open{transform:rotate(90deg)}
