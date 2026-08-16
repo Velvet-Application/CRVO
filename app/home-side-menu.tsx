@@ -90,7 +90,7 @@ export default function HomeSideMenu() {
 
       {group("settings", "Paramètre", <>
         {allowed("settings") && direct(rootHref("objectives"), "Objectif & seuil", requested === "objectives")}
-        {allowed("settings") && direct(rootHref("sources"), "Source & Connexion", requested === "sources")}
+        {allowed("settings") && direct("/sources", "Source & Connexion")}
         {direct("/account", "Accès")}
         {allowed("data_rh") && direct("/data-rh", "Data RH")}
       </>)}
