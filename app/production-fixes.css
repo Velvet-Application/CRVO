@@ -1,0 +1,24 @@
+/* Production-only presentation hardening for the shared shell. */
+
+/* vinext/Cloudflare does not need Next Image optimization for this local brand asset.
+   Hide a failed optimized image and render the same public asset directly. */
+.sidebar-brand{position:relative;overflow:hidden}
+.sidebar-brand img{visibility:hidden!important}
+.sidebar-brand::after{content:"";position:absolute;inset:10px 14px;background:url('/crvo-logo.png') center/contain no-repeat;pointer-events:none}
+
+.main-workspace>header>div:first-child{position:relative;overflow:hidden}
+.main-workspace>header>div:first-child img{visibility:hidden!important}
+.main-workspace>header>div:first-child::after{content:"";position:absolute;inset:4px 18px 4px 0;background:url('/crvo-logo.png') left center/contain no-repeat;pointer-events:none}
+
+/* The authenticated user control is fixed on legacy headers. Reserve its space so
+   the data-status card never sits underneath it. */
+@media (min-width:901px){
+  .main-workspace>header [class*="status"]{margin-right:190px!important}
+}
+@media (min-width:761px) and (max-width:900px){
+  .main-workspace>header [class*="status"]{margin-right:115px!important}
+}
+
+/* Keep emergency/source messages readable and visually controlled. */
+.main-workspace [class*="error"]{border-radius:10px!important;border:1px solid #f0d1cf!important;border-left:4px solid #eb5b56!important;box-shadow:none!important;font-size:13px!important;line-height:1.45!important}
+.main-workspace [class*="error"] strong{color:#8b3331!important}
