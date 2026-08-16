@@ -24,7 +24,7 @@ type CockpitData = {
 
 const sections:Array<{id:Section;label:string;short:string}> = [
   { id:"pilotage", label:"Pilotage du jour", short:"Jour" },
-  { id:"synthese", label:"Synthèse managériale", short:"Synthèse" },
+  { id:"synthese", label:"Synthèse manager", short:"Synthèse" },
   { id:"decision", label:"Aide à la décision", short:"Décision" },
   { id:"prevision", label:"Prévision fin de journée", short:"Prévision" },
 ];
@@ -96,7 +96,7 @@ export default function CockpitV2Page(){
         {[['MAINTENANT',data.weather.now],['CE SOIR',data.weather.tonight],['DEMAIN',data.weather.tomorrow]].map(([label,item])=>item?<article key={String(label)} className={styles[`weather_${(item as Weather).level}`]??""}><span>{String(label)}</span><strong>{(item as Weather).title}</strong><p>{(item as Weather).detail}</p></article>:null)}
       </section>
       <section className={styles.managerGrid}>
-        <article className={styles.panel}><div className={styles.panelTitle}><div><span>SYNTHÈSE MANAGÉRIALE</span><h2>Ce qui mérite ton attention</h2></div></div><div className={styles.signalList}>{[...critical,...watch].slice(0,7).map(item=><div key={item.key}><i className={styles[`dot_${item.risk}`]}/><span><strong>{item.label}</strong><small>{item.current} encours · {item.pending} à traiter · {item.over20} &gt;20 j</small></span><em>{riskLabel(item.risk)}</em></div>)}</div></article>
+        <article className={styles.panel}><div className={styles.panelTitle}><div><span>SYNTHÈSE MANAGER</span><h2>Ce qui mérite ton attention</h2></div></div><div className={styles.signalList}>{[...critical,...watch].slice(0,7).map(item=><div key={item.key}><i className={styles[`dot_${item.risk}`]}/><span><strong>{item.label}</strong><small>{item.current} encours · {item.pending} à traiter · {item.over20} &gt;20 j</small></span><em>{riskLabel(item.risk)}</em></div>)}</div></article>
         <article className={styles.panel}><div className={styles.panelTitle}><div><span>PHOTO USINE</span><h2>Les 4 chiffres du jour</h2></div></div><div className={styles.summaryNumbers}><div><span>Stock</span><strong>{fmt(data.summary.stock)}</strong></div><div><span>&gt;15 jours</span><strong>{fmt(data.summary.over15)}</strong></div><div><span>&gt;20 jours</span><strong>{fmt(data.summary.over20)}</strong></div><div><span>Dossiers actifs</span><strong>{fmt(data.summary.activeVehicles)}</strong></div></div></article>
       </section>
     </>}
