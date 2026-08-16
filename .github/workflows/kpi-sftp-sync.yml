@@ -9,14 +9,17 @@ on:
       - "bridge/**"
       - ".github/workflows/kpi-sftp-sync.yml"
   schedule:
-    # Les dépôts opérationnels observés arrivent majoritairement autour de H:00 à H:04.
-    # Contrôle à H:05 puis toutes les 15 min sur la plage opérationnelle (cron en UTC).
-    # Les doublons d'archives sont ignorés par SHA-256 ; les vues live sont idempotentes.
-    # Les goulots sont recalculés avec les règles multi-secteurs des TCD du Book.
-    - cron: "5,20,35,50 3-21 * * *"
+    # Les dépôts observés arrivent aussi la nuit (notamment entre 00h30 et 01h30 Paris).
+    # Contrôle à H:05 puis toutes les 15 min, 24h/24. Les doublons sont ignorés par SHA-256.
+    # Les vues live sont idempotentes et seules les versions réellement modifiées sont retraitées.
+    - cron: "5,20,35,50 * * * *"
 
 permissions:
   contents: read
+
+concurrency:
+  group: kpi-crvo-ftp-sync
+  cancel-in-progress: false
 
 jobs:
   sync:
