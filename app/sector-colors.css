@@ -1,9 +1,0 @@
-/* Couleurs secteurs reproduites depuis le Tdb Production du book CRVO Excel */
-.tone-coral { --sector-bg: #FFC9C9; --sector-accent: #FF7171; }
-.tone-green { --sector-bg: #EBF6DE; --sector-accent: #92D050; }
-.tone-cyan { --sector-bg: #CDF2FF; --sector-accent: #00B0F0; }
-/* Dans le book CRVO, Carrosserie utilise la même famille cyan que DSP. */
-.tone-red { --sector-bg: #CDF2FF; --sector-accent: #00B0F0; }
-.tone-purple { --sector-bg: #F0E1FF; --sector-accent: #C993FF; }
-.tone-orange { --sector-bg: #FFECD9; --sector-accent: #FFC081; }
-.tone-blue { --sector-bg: #B9DCFF; --sector-accent: #004F9F; }
