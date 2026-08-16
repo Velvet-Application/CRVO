@@ -6,7 +6,8 @@ type State="checking"|"ok"|"unavailable";
 export default function DataTrustGuard(){
   const [state,setState]=useState<State>("checking");
   useEffect(()=>{
-    if(window.location.pathname!=="/"){setState("ok");return;}
+    const requested=new URLSearchParams(window.location.search).get("nav");
+    if(window.location.pathname!=="/"||requested==="objectives"||requested==="sources"){setState("ok");return;}
     let cancelled=false;
     async function check(){try{const response=await fetch(`/api/dashboard?history=1&trust=${Date.now()}`,{cache:"no-store"});if(!response.ok)throw new Error();const payload=await response.json() as {snapshots?:unknown[];snapshot?:unknown};const hasData=Boolean(payload.snapshot||(Array.isArray(payload.snapshots)&&payload.snapshots.length));if(!cancelled)setState(hasData?"ok":"unavailable");}catch{if(!cancelled)setState("unavailable");}}
     void check();const timer=window.setInterval(()=>void check(),60000);return()=>{cancelled=true;window.clearInterval(timer);};
