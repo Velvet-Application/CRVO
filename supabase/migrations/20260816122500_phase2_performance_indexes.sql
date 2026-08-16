@@ -1,0 +1,12 @@
+create index if not exists crvo_auth_users_created_by_idx on public.crvo_auth_users(created_by);
+create index if not exists kpi_bonus_components_config_id_idx on public.kpi_bonus_components(config_id);
+create index if not exists kpi_bonus_events_actor_id_idx on public.kpi_bonus_events(actor_id);
+create index if not exists kpi_bonus_exports_created_by_idx on public.kpi_bonus_exports(created_by);
+create index if not exists kpi_bonus_exports_workflow_id_idx on public.kpi_bonus_exports(workflow_id);
+create index if not exists kpi_bonus_manual_inputs_entered_by_idx on public.kpi_bonus_manual_inputs(entered_by);
+create index if not exists kpi_bonus_payplan_versions_created_by_idx on public.kpi_bonus_payplan_versions(created_by);
+create index if not exists kpi_bonus_validations_actor_id_idx on public.kpi_bonus_validations(actor_id);
+create index if not exists kpi_bonus_workflows_closed_by_idx on public.kpi_bonus_workflows(closed_by);
+create index if not exists kpi_bonus_workflows_opened_by_idx on public.kpi_bonus_workflows(opened_by);
+create index if not exists kpi_bonus_workflows_payplan_version_id_idx on public.kpi_bonus_workflows(payplan_version_id);
+drop index if exists public.kpi_vehicle_workload_snapshot_or_sector_uidx;
