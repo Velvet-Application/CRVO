@@ -25,6 +25,7 @@ const labels=[
   "Aide à la décision",
   "Prévision fin de journée",
   "Focus carrosserie",
+  "Simulateur capacitaire",
   "Analyse",
   "Dashboard client",
   "Réseau EFF & EFB",
@@ -42,11 +43,13 @@ const failures=[];
 for(const label of labels){
   if(!files.sidebar.includes(label)&&!files.drawer.includes(label))failures.push(`Libellé absent : ${label}`);
 }
-for(const path of ["/animation-mensuelle/payplan","/animation-mensuelle/acces","/atelier","/direction"]){
+for(const path of ["/animation-mensuelle/payplan","/animation-mensuelle/acces","/capacitaire","/api/capacity-simulator","/atelier","/direction"]){
   if(!files.proxy.includes(path))failures.push(`Protection serveur absente : ${path}`);
 }
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/acces"'))failures.push("Accès Workflow doit rester ADMIN dans le menu latéral.");
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/payplan"'))failures.push("Payplan doit rester ADMIN dans le menu latéral.");
+if(!files.sidebar.includes('admin?link("/capacitaire","Simulateur capacitaire")'))failures.push("Simulateur capacitaire doit rester ADMIN dans le menu latéral.");
+if(!files.drawer.includes('admin&&link("/capacitaire","Simulateur capacitaire",true)'))failures.push("Simulateur capacitaire doit rester ADMIN dans le menu global.");
 if(!files.drawer.includes('admin&&<div className="gn-admin"')||!files.drawer.includes('link("/atelier","Ecran ATELIER",true)'))failures.push("Ecran ATELIER doit rester ADMIN dans le menu global.");
 if(!files.drawer.includes('admin&&<div className="gn-admin"')||!files.drawer.includes('link("/direction","Ecran DIRECTION",true)'))failures.push("Ecran DIRECTION doit rester ADMIN dans le menu global.");
 if(!files.sidebar.includes('allowed("data_rh")?link("/data-rh","Data RH")'))failures.push("Data RH doit suivre la permission data_rh dans le menu latéral.");
@@ -58,4 +61,4 @@ if(failures.length){
   console.error("Contrat de navigation CRVO invalide :\n- "+failures.join("\n- "));
   process.exit(1);
 }
-console.log(`Navigation CRVO validée : ${labels.length} libellés, droits RH/paramètres et protections ADMIN contrôlés.`);
+console.log(`Navigation CRVO validée : ${labels.length} libellés, droits RH/paramètres, protections ADMIN et simulateur capacitaire contrôlés.`);
