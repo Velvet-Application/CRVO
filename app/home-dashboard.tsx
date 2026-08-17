@@ -125,7 +125,7 @@ export default function HomeDashboard(){
         {error&&<div className={styles.error}><strong>Une source n'a pas répondu.</strong> {error} Aucun chiffre de secours n'est injecté.</div>}
         {loading&&!latest&&<Empty title="Connexion aux sources réelles" text="Le tableau de bord attend les données CRVO. Aucune valeur de démonstration n'est utilisée."/>}
 
-        {view==="today"&&latest&&<Today latest={latest} previous={previous} objectives={objectives}/>} 
+        {view==="today"&&latest&&<Today latest={latest} previous={previous} objectives={objectives} system={data.system}/>} 
         {view==="yesterday"&&latest&&<Summary snapshot={previous??latest} objectives={objectives} isPrevious={Boolean(previous)}/>} 
         {view==="bottlenecks"&&<Bottlenecks data={data.bottlenecks} current={currentBottleneck} selected={selectedSector} onSelect={setSelectedSector}/>} 
         {view==="walking"&&<Walking vehicles={walking} sourceModifiedAt={data.intelligence?.sourceModifiedAt}/>} 
@@ -139,10 +139,10 @@ export default function HomeDashboard(){
 
 function Empty({title,text}:{title:string;text:string}){return <section className={styles.empty}><strong>{title}</strong><p>{text}</p></section>;}
 
-function Today({latest,previous,objectives}:{latest:Snapshot;previous:Snapshot|null;objectives:Objective[]}){
+function Today({latest,previous,objectives,system}:{latest:Snapshot;previous:Snapshot|null;objectives:Objective[];system:SystemStatus|null}){
   const stockDelta=previous?latest.stock-previous.stock:null;
   return <>
-    <section className={styles.hero}><div><span>PILOTAGE QUOTIDIEN</span><h2>Performance du jour</h2><p>Dernière photographie issue des sources réellement connectées. Les objectifs sont lus exclusivement depuis la base de paramétrage.</p></div><div className={styles.heroMeta}><small>DATE DE DONNÉE</small><strong>{latest.label}</strong><small style={{marginTop:8}}>SOURCE</small><strong>{latest.source}</strong></div></section>
+    <section className={styles.hero}><div><span>PILOTAGE QUOTIDIEN</span><h2>Performance du jour</h2><p>Dernière photographie issue des sources réellement connectées. Les objectifs sont lus exclusivement depuis la base de paramétrage.</p></div><div className={styles.heroMeta}><small>DATE DE DONNÉE</small><strong>{latest.label}</strong><small style={{marginTop:8}}>SOURCE</small><strong>{latest.source}</strong><small style={{marginTop:8}}>DERNIÈRE SYNCHRO FTP</small><strong>{dateTime(system?.ftpRefresh?.lastRefreshAt)}</strong></div></section>
     <section className={styles.kpis}><Kpi label="ENTRÉES VOP" value={fmt(latest.entries)} detail="Flux du jour"/><Kpi label="SORTIES VOP" value={fmt(latest.exits)} detail={targetFor("Sortie usine",objectives)!=null?`objectif ${targetFor("Sortie usine",objectives)}`:"objectif non configuré"}/><Kpi label="STOCK USINE" value={fmt(latest.stock)} detail={stockDelta==null?"première photo disponible":`${stockDelta>0?"+":""}${stockDelta} vs photo précédente`}/><Kpi label="STOCK >20 J" value={fmt(latest.over20)} detail={`${fmt(latest.stock?latest.over20/latest.stock*100:0,1)} % du parc`}/></section>
     <section className={styles.section}><div className={styles.sectionHead}><div><span className={styles.eyebrow}>PRODUCTION</span><h3>Réalisé vs objectif</h3></div><p>Aucun objectif n'est reconstitué côté interface : une valeur absente en base reste explicitement non configurée.</p></div><div className={styles.grid}>{latest.production.map(item=>{const target=targetFor(item.name,objectives);const ratio=target&&target>0?Math.min(item.value/target*100,100):0;const gap=target!=null?item.value-target:null;return <article key={item.name} className={styles.card}><span>{item.name.toUpperCase()}</span><strong>{fmt(item.value)}</strong><small>{target!=null?`Objectif ${fmt(target)} · écart ${gap!>0?"+":""}${fmt(gap)}`:"Objectif non configuré"}</small>{target!=null&&<div className={styles.bar}><i style={{width:`${ratio}%`}}/></div>}</article>;})}</div></section>
   </>;
