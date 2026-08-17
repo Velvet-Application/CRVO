@@ -15,6 +15,7 @@ function rewrite(url: URL, pathname: string) {
   } else if (pathname === "/direction") {
     target = "/api/kiosk/direction";
     if (source === "/api/dashboard") resource = "dashboard";
+    else if (source === "/api/objectives") resource = "objectives";
     else if (source === "/api/finance" || source === "/api/direction-finance") resource = "finance";
   }
 
