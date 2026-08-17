@@ -58,8 +58,20 @@ type PendingInvoices = {
   revenueAfterCatchup?:number|null;
 };
 type FinancePayload = { snapshot?:FinanceSnapshot|null; snapshots?:FinanceSnapshot[]; pendingInvoices?:PendingInvoices|null };
+type Objective = {
+  sectorKey:string;
+  sectorLabel:string;
+  dailyTarget:number;
+  minThreshold:number|null;
+  maxThreshold:number|null;
+};
+type ObjectivesPayload = {
+  objectives?:Objective[];
+  sortieDailyTargets?:Record<string,number>;
+  connected?:boolean;
+};
 
-const targets:Record<string,number> = {
+const fallbackTargets:Record<string,number> = {
   Expertise:90,
   "Mécanique":85,
   DSP:48,
@@ -67,6 +79,16 @@ const targets:Record<string,number> = {
   "Préparation":90,
   "Qualité":90,
   "Sortie usine":92,
+};
+
+const sectorKeys:Record<string,string> = {
+  Expertise:"expertise",
+  "Mécanique":"mecanique",
+  DSP:"dsp",
+  Carrosserie:"carrosserie",
+  "Préparation":"preparation",
+  "Qualité":"qualite",
+  "Sortie usine":"sortie_usine",
 };
 
 function num(value:unknown) { const n = Number(value); return Number.isFinite(n) ? n : 0; }
@@ -107,6 +129,14 @@ function workingDaysInMonth(dateIso:string) {
   }
   return out;
 }
+function targetFor(name:string, date:string, payload?:ObjectivesPayload) {
+  const key = sectorKeys[name];
+  const monthlyTarget = payload?.objectives?.find((item) => item.sectorKey === key)?.dailyTarget;
+  if (name === "Sortie usine") {
+    return payload?.sortieDailyTargets?.[date] ?? monthlyTarget ?? fallbackTargets[name] ?? 0;
+  }
+  return monthlyTarget ?? fallbackTargets[name] ?? 0;
+}
 
 function FinanceChart({ rows, budget, projection }:{ rows:FinanceSnapshot[]; budget:number; projection:number }) {
   const sorted = [...rows].sort((a,b) => a.date.localeCompare(b.date));
@@ -143,6 +173,7 @@ function FinanceChart({ rows, budget, projection }:{ rows:FinanceSnapshot[]; bud
 export default function DirectionPage() {
   const [dashboard, setDashboard] = useState<DashboardPayload|null>(null);
   const [finance, setFinance] = useState<FinancePayload|null>(null);
+  const [objectivesByMonth, setObjectivesByMonth] = useState<Record<string,ObjectivesPayload>>({});
   const [screenRefresh, setScreenRefresh] = useState<string>("");
   const [error, setError] = useState("");
 
@@ -151,7 +182,21 @@ export default function DirectionPage() {
       const response = await fetch(`/api/dashboard?history=1&_=${Date.now()}`, { cache:"no-store" });
       if (!response.ok) throw new Error("Production live indisponible");
       const payload = await response.json() as DashboardPayload;
+      const rows = payload.snapshots?.length ? payload.snapshots : payload.snapshot ? [payload.snapshot] : [];
+      const latest = rows.at(-1) ?? payload.snapshot ?? null;
+      const previous = latest ? [...rows].reverse().find((row) => row.date < latest.date) ?? null : null;
+      const months = [...new Set([latest?.date.slice(0,7), previous?.date.slice(0,7)].filter(Boolean) as string[])];
+      const objectivePairs = await Promise.all(months.map(async (month) => {
+        try {
+          const objectiveResponse = await fetch(`/api/kiosk/direction?resource=objectives&month=${month}&_=${Date.now()}`, { cache:"no-store" });
+          const objectivePayload = objectiveResponse.ok ? await objectiveResponse.json() as ObjectivesPayload : {};
+          return [month, objectivePayload] as const;
+        } catch {
+          return [month, {}] as const;
+        }
+      }));
       setDashboard(payload);
+      if (objectivePairs.length) setObjectivesByMonth((current) => ({ ...current, ...Object.fromEntries(objectivePairs) }));
       setScreenRefresh(new Intl.DateTimeFormat("fr-FR", { hour:"2-digit", minute:"2-digit", timeZone:"Europe/Paris" }).format(new Date()));
       setError("");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Production live indisponible"); }
@@ -212,13 +257,17 @@ export default function DirectionPage() {
 
   if (!live) return <main className={styles.loading}><img src="/crvo-logo.png" alt="CRVO"/><strong>Connexion à l'écran direction…</strong><span>{error}</span></main>;
 
+  const liveObjectives = objectivesByMonth[live.date.slice(0,7)];
+  const yesterdayObjectives = yesterday ? objectivesByMonth[yesterday.date.slice(0,7)] : undefined;
+  const liveExitTarget = targetFor("Sortie usine", live.date, liveObjectives);
+  const yesterdayExitTarget = yesterday ? targetFor("Sortie usine", yesterday.date, yesterdayObjectives) : fallbackTargets["Sortie usine"];
   const currentFlow = dashboard?.liveFlow?.date === live.date ? dashboard.liveFlow : null;
   const todayOperations = [
     { key:"received", label:"Véhicules reçus", value:currentFlow?.received ?? live.entries, source:"FTP TOTAUX", detail:"réceptions de la journée" },
     { key:"prep", label:"Prépa restant", value:currentFlow?.preparationRemaining ?? 0, source:"FTP PARC USINE", detail:"en attente / en cours Prépa" },
     { key:"quality", label:"Qualité restant", value:currentFlow?.qualityRemaining ?? 0, source:"FTP PARC USINE", detail:"en attente / en cours Qualité" },
     { key:"photo", label:"Photo restant", value:currentFlow?.photoRemaining ?? 0, source:"FTP PARC USINE", detail:"en attente / en cours Photo" },
-    { key:"exits", label:"Sorties usine", value:currentFlow?.exits ?? live.exits, source:"FTP TOTAUX", detail:`objectif ${targets["Sortie usine"]}` },
+    { key:"exits", label:"Sorties usine", value:currentFlow?.exits ?? live.exits, source:"FTP TOTAUX", detail:`objectif ${liveExitTarget}` },
   ];
 
   return <main className={`${styles.page} ${tv.page}`}>
@@ -236,12 +285,12 @@ export default function DirectionPage() {
         {yesterday ? <div className={`${styles.yesterdayBody} ${tv.yesterdayBody}`}>
           <div className={`${styles.yesterdaySummary} ${tv.yesterdaySummary}`}>
             <div><em>EN</em><span>Entrées</span><strong>{yesterday.entries}</strong><small>véhicules reçus</small></div>
-            <div><em>SO</em><span>Sorties</span><strong>{yesterday.exits}</strong><small className={yesterday.exits >= targets["Sortie usine"] ? styles.goodText : styles.badText}>{yesterday.exits >= targets["Sortie usine"] ? "+" : ""}{yesterday.exits-targets["Sortie usine"]} vs objectif</small></div>
+            <div><em>SO</em><span>Sorties</span><strong>{yesterday.exits}</strong><small className={yesterday.exits >= yesterdayExitTarget ? styles.goodText : styles.badText}>{yesterday.exits >= yesterdayExitTarget ? "+" : ""}{yesterday.exits-yesterdayExitTarget} vs objectif {yesterdayExitTarget}</small></div>
             <div><em>ST</em><span>Stock fin de journée</span><strong>{yesterday.stock}</strong><small>{dayBeforeYesterday ? `${yesterday.stock-dayBeforeYesterday.stock > 0 ? "+" : ""}${yesterday.stock-dayBeforeYesterday.stock} vs veille` : "stock usine"}</small></div>
           </div>
           <div className={`${styles.sectorHead} ${tv.sectorHead}`}><strong>PAR SECTEUR</strong><span>réalisé / objectif journalier</span></div>
           <div className={`${styles.prodStrip} ${tv.prodStrip}`}>{yesterday.production.map((item) => {
-            const target = targets[item.name] ?? 0;
+            const target = targetFor(item.name, yesterday.date, yesterdayObjectives);
             const pct = target ? Math.round(item.value/target*100) : 0;
             const delta = target ? item.value-target : 0;
             return <div key={item.name}>
@@ -269,7 +318,7 @@ export default function DirectionPage() {
 
     <section className={`${styles.livePanel} ${tv.livePanel}`}>
       <div className={`${styles.liveHero} ${tv.liveHero}`}>
-        <div><span>PRODUCTION DU JOUR · RÉALISÉ À {factoryTime}</span><h2>{live.exits}<small>/ {targets["Sortie usine"]}</small></h2><p>sorties usine · {fullDate(live.date)}</p></div>
+        <div><span>PRODUCTION DU JOUR · RÉALISÉ À {factoryTime}</span><h2>{live.exits}<small>/ {liveExitTarget}</small></h2><p>sorties usine · objectif du jour {liveExitTarget} · {fullDate(live.date)}</p></div>
         <div className={`${styles.liveHeroRight} ${tv.liveHeroRight}`}><span>Véhicules reçus</span><strong>{live.entries}</strong><span>Stock usine</span><strong>{live.stock}</strong></div>
       </div>
       <div className={`${styles.flowSourceBar} ${tv.flowSourceBar}`}><span>FTP TOTAUX</span><i/><span>FTP PARC USINE · ÉTAT À {parkTime}</span></div>
@@ -289,6 +338,6 @@ export default function DirectionPage() {
       <div className={`${styles.stockSignal} ${tv.stockSignal}`}><span>PARC &gt; 15 J</span><strong>{live.over15}</strong><i/><span>PARC &gt; 20 J</span><strong>{live.over20}</strong></div>
     </section>
 
-    <footer className={`${styles.footer} ${tv.footer}`}><span>CRVO Lens · écran direction</span><span>Écran {screenRefresh || "—"} · CA {financeLatest ? compactDate(financeLatest.date) : "—"} · production FTP {factoryTime} · parc FTP {parkTime}</span></footer>
+    <footer className={`${styles.footer} ${tv.footer}`}><span>CRVO Lens · écran direction</span><span>Écran {screenRefresh || "—"} · objectif du jour {liveExitTarget} · CA {financeLatest ? compactDate(financeLatest.date) : "—"} · production FTP {factoryTime} · parc FTP {parkTime}</span></footer>
   </main>;
 }
