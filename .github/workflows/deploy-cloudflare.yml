@@ -54,15 +54,20 @@ jobs:
           const part = (type) => parts.find((item) => item.type === type)?.value || "";
           const parisDate = `${part("year")}-${part("month")}-${part("day")}`;
           const parisMonth = parisDate.slice(0, 7);
-          const [healthResponse, protectedResponse, financeResponse, objectivesResponse] = await Promise.all([
+          const [healthResponse, protectedResponse, financeResponse, objectivesResponse, manifestResponse, workerResponse, iconResponse] = await Promise.all([
             fetch(`${origin}/api/health?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
             fetch(`${origin}/api/bottlenecks?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
             fetch(`${origin}/api/kiosk/direction?resource=finance&history=1&_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
             fetch(`${origin}/api/kiosk/direction?resource=objectives&month=${parisMonth}&_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+            fetch(`${origin}/manifest.webmanifest?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+            fetch(`${origin}/sw.js?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+            fetch(`${origin}/pwa-icon.svg?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
           ]);
           const health = await healthResponse.json().catch(() => ({}));
           const finance = await financeResponse.json().catch(() => ({}));
           const objectives = await objectivesResponse.json().catch(() => ({}));
+          const manifest = await manifestResponse.json().catch(() => ({}));
+          const workerText = await workerResponse.text().catch(() => "");
           const revenue = Number(finance?.snapshot?.metrics?.revenue_cumulative || 0);
           const budget = Number(finance?.snapshot?.metrics?.revenue_cumulative_target || finance?.budget || 0);
           const pending = finance?.pendingInvoices;
@@ -71,10 +76,13 @@ jobs:
           const overdueCount = Number(pending?.overdueCount ?? -1);
           const pendingWeight = Number(pending?.budgetWeightPct ?? -1);
           const dailyExitTarget = Number(objectives?.sortieDailyTargets?.[parisDate] ?? -1);
-          console.log(`health=${healthResponse.status} ok=${health.ok} data=${health.dataReady} bottlenecks=${health.bottlenecksReady} clients=${health.clientDashboardReady} protected=${protectedResponse.status} finance=${financeResponse.status} connected=${finance.connected} asOf=${finance.asOfDate} revenue=${revenue} budget=${budget} pendingOR=${pendingCount} pendingCA=${pendingRevenue} overdue=${overdueCount} weight=${pendingWeight}% workload=${pending?.workloadDate} park=${pending?.parkDate} parkModified=${pending?.parkModifiedAt} objectiveDate=${parisDate} dailyExitTarget=${dailyExitTarget}`);
+          console.log(`health=${healthResponse.status} ok=${health.ok} data=${health.dataReady} bottlenecks=${health.bottlenecksReady} clients=${health.clientDashboardReady} protected=${protectedResponse.status} finance=${financeResponse.status} connected=${finance.connected} asOf=${finance.asOfDate} revenue=${revenue} budget=${budget} pendingOR=${pendingCount} pendingCA=${pendingRevenue} overdue=${overdueCount} weight=${pendingWeight}% workload=${pending?.workloadDate} park=${pending?.parkDate} parkModified=${pending?.parkModifiedAt} objectiveDate=${parisDate} dailyExitTarget=${dailyExitTarget} pwaManifest=${manifestResponse.status} sw=${workerResponse.status} icon=${iconResponse.status} display=${manifest.display}`);
           if (!healthResponse.ok || health.ok !== true || health.dataReady !== true || health.bottlenecksReady !== true || health.clientDashboardReady !== true) process.exit(1);
           if (protectedResponse.status !== 401) process.exit(2);
           if (!financeResponse.ok || finance.connected !== true || !finance.snapshot || revenue <= 0 || budget <= 0) process.exit(3);
           if (!pending || pendingCount < 0 || pendingRevenue < 0 || overdueCount < 0 || pendingWeight < 0 || !pending.workloadDate || !pending.parkDate || !pending.parkModifiedAt) process.exit(4);
           if (!objectivesResponse.ok || objectives.connected !== true || dailyExitTarget <= 0) process.exit(5);
+          if (!manifestResponse.ok || manifest.name !== "KPI CRVO Lens" || manifest.display !== "standalone" || manifest.start_url !== "/" || !Array.isArray(manifest.icons) || manifest.icons.length < 1) process.exit(6);
+          if (!workerResponse.ok || !workerText.includes("serviceWorker") && !workerText.includes("addEventListener")) process.exit(7);
+          if (!iconResponse.ok) process.exit(8);
           NODE
