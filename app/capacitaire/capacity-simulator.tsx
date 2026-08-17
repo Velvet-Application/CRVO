@@ -33,7 +33,13 @@ type ProductivityRow = {
   soldHours: number | null;
   productivity: number | null;
 };
-type ProductivityPayload = { sectors?: ProductivityRow[]; collaborators?: ProductivityRow[]; month?: string; error?: string };
+type ProductivityPayload = {
+  sectors?: ProductivityRow[];
+  collaborators?: ProductivityRow[];
+  month?: string;
+  period?: { valid?: boolean; start?: string | null; end?: string | null };
+  error?: string;
+};
 type SettingsApiPayload = { settings?: unknown; updatedAt?: string | null; updatedBy?: string | null; error?: string };
 
 type StageSetting = {
@@ -72,8 +78,8 @@ type SimulatorSettings = {
   stages: Record<StageKey, StageSetting>;
   bodyshop: Record<BodyKey, BodySetting>;
 };
-type AutoMetric = { avgDaily: number; p90Daily: number; peakDaily: number; touchPct: number; etp: number; productivityPct: number | null; source: string };
-type AutoBodyMetric = { avgDaily: number; p90Daily: number; peakDaily: number; routeSharePct: number; etp: number; productivityPct: number | null; source: string };
+type AutoMetric = { avgDaily: number; p90Daily: number; peakDaily: number; touchPct: number; etp: number; productivityPct: number | null; boughtHoursPerDay: number; source: string };
+type AutoBodyMetric = { avgDaily: number; p90Daily: number; peakDaily: number; routeSharePct: number; etp: number; productivityPct: number | null; boughtHoursPerDay: number; source: string };
 type MonthResult = { month: string; worstLoad: number; bottleneck: string; stageLoads: Record<string, number>; stageDemands: Record<string, number>; stageCapacities: Record<string, number> };
 type ScenarioResult = { key: ScenarioKey; label: string; subtitle: string; months: MonthResult[]; worstLoad: number; bottleneck: string; firstSaturation: string | null };
 
@@ -98,6 +104,23 @@ const SCENARIOS: Array<{ key: ScenarioKey; label: string; subtitle: string }> = 
   { key: "s2", label: "S2 · Ressources", subtitle: "Renforts ETP avec ramp-up" },
   { key: "s3", label: "S3 · Cible", subtitle: "Performance + ETP + shifts + disponibilité + équipements" },
 ];
+
+const MINI_LENS_STANDARD = {
+  sampleVehicles: 569,
+  bodyHours: 4.61,
+  paintHours: 3.31,
+  mechanicsHours: 1.17,
+  damageCount: 9.9,
+};
+const MINI_BODYSHOP_HOURS = MINI_LENS_STANDARD.bodyHours + MINI_LENS_STANDARD.paintHours;
+const MINI_DEFLEET_LENS: Record<string, number> = {
+  "2026-08": 29,
+  "2026-09": 65,
+  "2026-10": 113,
+  "2026-11": 134,
+  "2026-12": 50,
+};
+const MINI_DEFLEET_LENS_TOTAL = 393;
 
 function clamp(value: number, min: number, max: number) { return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min)); }
 function n(value: unknown) { const out = Number(value); return Number.isFinite(out) ? out : 0; }
@@ -126,6 +149,16 @@ function monthLabel(month: string) {
 function monthDiff(from: string, to: string) {
   const [fy, fm] = from.split("-").map(Number); const [ty, tm] = to.split("-").map(Number);
   return (ty - fy) * 12 + (tm - fm);
+}
+function businessDaysInclusive(start?: string | null, end?: string | null) {
+  if (!start || !end) return 0;
+  const from = new Date(`${start}T12:00:00Z`); const to = new Date(`${end}T12:00:00Z`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to < from) return 0;
+  let count = 0;
+  for (let cursor = new Date(from); cursor <= to; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    const day = cursor.getUTCDay(); if (day !== 0 && day !== 6) count += 1;
+  }
+  return count;
 }
 function stageMatch(row: Pick<ProductivityRow, "sectorLabel" | "workcenterLabel">, key: StageKey) {
   const text = norm(`${row.sectorLabel} ${row.workcenterLabel}`);
@@ -160,13 +193,13 @@ function defaultBody(firstMonth: string): BodySetting {
 function defaultSettings(): SimulatorSettings {
   const months = nextMonths(6); const firstMonth = months[0];
   return {
-    version: 1,
+    version: 2,
     baselineWindowDays: 30,
     workdaysPerMonth: 22,
     availabilityCurrentPct: 100,
     availabilityTargetPct: 100,
     rampUpPct: [40, 60, 75, 90, 100],
-    forecast: months.map((month) => ({ month, bmw: 0, mini: 0, other: 0 })),
+    forecast: months.map((month) => ({ month, bmw: 0, mini: MINI_DEFLEET_LENS[month] ?? 0, other: 0 })),
     stages: Object.fromEntries(STAGES.map(({ key }) => [key, defaultStage(key, firstMonth)])) as Record<StageKey, StageSetting>,
     bodyshop: Object.fromEntries(BODY.map(({ key }) => [key, defaultBody(firstMonth)])) as Record<BodyKey, BodySetting>,
   };
@@ -182,7 +215,7 @@ function normalizeSettings(raw: unknown): SimulatorSettings {
   return {
     ...base,
     ...source,
-    version: 1,
+    version: 2,
     baselineWindowDays: clamp(n(source.baselineWindowDays ?? base.baselineWindowDays), 5, 120),
     workdaysPerMonth: clamp(n(source.workdaysPerMonth ?? base.workdaysPerMonth), 15, 31),
     availabilityCurrentPct: clamp(n(source.availabilityCurrentPct ?? base.availabilityCurrentPct), 50, 110),
@@ -200,11 +233,14 @@ function autoMetrics(dashboard: DashboardPayload | null, productivity: Productiv
   const entriesAvg = avg(entries);
   const collaborators = productivity?.collaborators ?? [];
   const sectors = productivity?.sectors ?? [];
+  const periodWorkdays = productivity?.period?.valid ? businessDaysInclusive(productivity.period.start, productivity.period.end) : 0;
   const result = {} as Record<StageKey, AutoMetric>;
   for (const stage of STAGES) {
     const values = snapshots.map((row) => productionValue(row, stage.key));
     const selectedSectors = sectors.filter((row) => stageMatch(row, stage.key));
-    const people = new Set(collaborators.filter((row) => stageMatch(row, stage.key)).map((row) => row.mechanicName).filter(Boolean));
+    const selectedCollaborators = collaborators.filter((row) => stageMatch(row, stage.key));
+    const people = new Set(selectedCollaborators.map((row) => row.mechanicName).filter(Boolean));
+    const boughtHours = selectedCollaborators.reduce((sum, row) => sum + n(row.boughtHours), 0);
     const average = avg(values);
     result[stage.key] = {
       avgDaily: average,
@@ -213,15 +249,17 @@ function autoMetrics(dashboard: DashboardPayload | null, productivity: Productiv
       touchPct: entriesAvg > 0 ? clamp(average / entriesAvg * 100, 0, 180) : 0,
       etp: people.size,
       productivityPct: weightedProductivity(selectedSectors),
+      boughtHoursPerDay: periodWorkdays > 0 ? boughtHours / periodWorkdays : 0,
       source: stage.key === "jantes" ? "À renseigner" : "KPI réel · historique",
     };
   }
-  return { stages: result, entriesAvg, snapshots };
+  return { stages: result, entriesAvg, snapshots, periodWorkdays };
 }
 function autoBodyMetrics(bodyshop: BodyshopPayload | null, productivity: ProductivityPayload | null, windowDays: number) {
   const rows = (bodyshop?.production?.daily ?? []).slice(-windowDays);
   const collaborators = productivity?.collaborators ?? [];
   const sectors = productivity?.sectors ?? [];
+  const periodWorkdays = productivity?.period?.valid ? businessDaysInclusive(productivity.period.start, productivity.period.end) : 0;
   const totalAvg = avg(rows.map((row) => n(row.total)));
   const fixValues = rows.map((row) => n(row.fixline1) + n(row.fixline2) + n(row.fixline3));
   const boxValues = rows.map((row) => n(row.boxHeavy));
@@ -232,11 +270,13 @@ function autoBodyMetrics(bodyshop: BodyshopPayload | null, productivity: Product
     const values = byKey[item.key];
     const average = avg(values);
     const sectorRows = sectors.filter((row) => bodyMatch(row, item.key));
+    const collaboratorRows = collaborators.filter((row) => bodyMatch(row, item.key));
+    const boughtHours = collaboratorRows.reduce((sum, row) => sum + n(row.boughtHours), 0);
     let etp = 0;
     if (item.key === "fixline") etp = staff.filter((row) => row.workcenter?.startsWith("fixline")).length;
     if (item.key === "box") etp = staff.filter((row) => row.workcenter === "box" || row.workcenter === "mixed").length;
     if (item.key === "tolerie") etp = staff.filter((row) => row.workcenter === "heavy").length;
-    if (!etp) etp = new Set(collaborators.filter((row) => bodyMatch(row, item.key)).map((row) => row.mechanicName).filter(Boolean)).size;
+    if (!etp) etp = new Set(collaboratorRows.map((row) => row.mechanicName).filter(Boolean)).size;
     result[item.key] = {
       avgDaily: average,
       p90Daily: percentile(values, 90),
@@ -244,10 +284,11 @@ function autoBodyMetrics(bodyshop: BodyshopPayload | null, productivity: Product
       routeSharePct: totalAvg > 0 ? clamp(average / totalAvg * 100, 0, 100) : 0,
       etp,
       productivityPct: weightedProductivity(sectorRows),
+      boughtHoursPerDay: periodWorkdays > 0 ? boughtHours / periodWorkdays : 0,
       source: item.key === "tolerie" ? "Capacité à renseigner si flux dédié" : "KPI carrosserie réel",
     };
   }
-  return { bodyshop: result, totalAvg, rows };
+  return { bodyshop: result, totalAvg, rows, periodWorkdays };
 }
 
 function inputNumber(value: number | null, onChange: (value: number | null) => void, placeholder?: string, step = 1, min = 0, max = 9999) {
@@ -312,10 +353,8 @@ export default function CapacitySimulator() {
     if (index < 0) return 0;
     return (settings.rampUpPct[Math.min(index, settings.rampUpPct.length - 1)] ?? settings.rampUpPct.at(-1) ?? 100) / 100;
   };
-  const scenarioStageCapacity = (key: StageKey, scenario: ScenarioKey, month: string) => {
+  const scenarioStageFactor = (key: StageKey, scenario: ScenarioKey, month: string) => {
     const cfg = settings.stages[key]; const current = effectiveStage(key);
-    const base = current.capacity;
-    if (base <= 0) return 0;
     const currentProd = current.productivity && current.productivity > 0 ? current.productivity : cfg.targetProductivityPct;
     const productivityFactor = scenario === "s1" || scenario === "s3" ? Math.max(1, cfg.targetProductivityPct / Math.max(1, currentProd)) : 1;
     const effectiveHires = (scenario === "s2" || scenario === "s3") ? cfg.hires * rampFor(cfg.hireStartMonth, month) : 0;
@@ -323,26 +362,35 @@ export default function CapacitySimulator() {
     const shiftFactor = scenario === "s3" ? Math.max(1, cfg.targetShifts / Math.max(.25, cfg.currentShifts)) : 1;
     const availabilityFactor = scenario === "s3" ? Math.max(1, settings.availabilityTargetPct / Math.max(1, settings.availabilityCurrentPct)) : 1;
     const equipmentFactor = scenario === "s3" ? 1 + Math.max(0, cfg.equipmentGainPct) / 100 : 1;
-    return base * productivityFactor * etpFactor * shiftFactor * availabilityFactor * equipmentFactor;
+    return productivityFactor * etpFactor * shiftFactor * availabilityFactor * equipmentFactor;
+  };
+  const scenarioBodyFactor = (key: BodyKey, scenario: ScenarioKey, month: string) => {
+    const cfg = settings.bodyshop[key]; const current = effectiveBody(key);
+    const currentProd = current.productivity && current.productivity > 0 ? current.productivity : cfg.targetProductivityPct;
+    const productivityFactor = scenario === "s1" || scenario === "s3" ? Math.max(1, cfg.targetProductivityPct / Math.max(1, currentProd)) : 1;
+    const effectiveHires = (scenario === "s2" || scenario === "s3") ? cfg.hires * rampFor(cfg.hireStartMonth, month) : 0;
+    const etpFactor = current.etp > 0 ? (current.etp + effectiveHires) / current.etp : 1;
+    const shiftFactor = scenario === "s3" ? Math.max(1, cfg.targetShifts / Math.max(.25, cfg.currentShifts)) : 1;
+    const availabilityFactor = scenario === "s3" ? Math.max(1, settings.availabilityTargetPct / Math.max(1, settings.availabilityCurrentPct)) : 1;
+    const equipmentFactor = scenario === "s3" ? 1 + Math.max(0, cfg.equipmentGainPct) / 100 : 1;
+    return productivityFactor * etpFactor * shiftFactor * availabilityFactor * equipmentFactor;
+  };
+  const scenarioStageCapacity = (key: StageKey, scenario: ScenarioKey, month: string) => {
+    const base = effectiveStage(key).capacity;
+    return base > 0 ? base * scenarioStageFactor(key, scenario, month) : 0;
   };
   const scenarioBodyCapacity = (key: BodyKey, scenario: ScenarioKey, month: string) => {
-    const cfg = settings.bodyshop[key]; const current = effectiveBody(key);
-    const base = current.capacity;
-    if (base <= 0) return 0;
-    const currentProd = current.productivity && current.productivity > 0 ? current.productivity : cfg.targetProductivityPct;
-    const productivityFactor = scenario === "s1" || scenario === "s3" ? Math.max(1, cfg.targetProductivityPct / Math.max(1, currentProd)) : 1;
-    const effectiveHires = (scenario === "s2" || scenario === "s3") ? cfg.hires * rampFor(cfg.hireStartMonth, month) : 0;
-    const etpFactor = current.etp > 0 ? (current.etp + effectiveHires) / current.etp : 1;
-    const shiftFactor = scenario === "s3" ? Math.max(1, cfg.targetShifts / Math.max(.25, cfg.currentShifts)) : 1;
-    const availabilityFactor = scenario === "s3" ? Math.max(1, settings.availabilityTargetPct / Math.max(1, settings.availabilityCurrentPct)) : 1;
-    const equipmentFactor = scenario === "s3" ? 1 + Math.max(0, cfg.equipmentGainPct) / 100 : 1;
-    return base * productivityFactor * etpFactor * shiftFactor * availabilityFactor * equipmentFactor;
+    const base = effectiveBody(key).capacity;
+    return base > 0 ? base * scenarioBodyFactor(key, scenario, month) : 0;
   };
+  const scenarioStageHourCapacity = (key: StageKey, scenario: ScenarioKey, month: string) => auto.stages[key].boughtHoursPerDay * scenarioStageFactor(key, scenario, month);
+  const scenarioBodyHourCapacity = (key: BodyKey, scenario: ScenarioKey, month: string) => autoBody.bodyshop[key].boughtHoursPerDay * scenarioBodyFactor(key, scenario, month);
   const brandTouch = (key: StageKey, brand: "bmw" | "mini" | "other") => {
     const cfg = settings.stages[key];
     const manual = brand === "bmw" ? cfg.bmwTouchPct : brand === "mini" ? cfg.miniTouchPct : cfg.otherTouchPct;
     return manual == null ? auto.stages[key].touchPct : manual;
   };
+  const miniHoursForStage = (key: StageKey) => key === "mecanique" ? MINI_LENS_STANDARD.mechanicsHours : key === "carrosserie" ? MINI_BODYSHOP_HOURS : 0;
 
   const scenarioResults = useMemo(() => {
     const results = {} as Record<ScenarioKey, ScenarioResult>;
@@ -351,20 +399,47 @@ export default function CapacitySimulator() {
         const loads: Record<string, number> = {}; const demands: Record<string, number> = {}; const capacities: Record<string, number> = {};
         for (const stage of STAGES) {
           const baseDemand = auto.stages[stage.key].avgDaily;
-          const extra = (forecast.bmw * brandTouch(stage.key, "bmw") / 100 + forecast.mini * brandTouch(stage.key, "mini") / 100 + forecast.other * brandTouch(stage.key, "other") / 100) / settings.workdaysPerMonth;
-          const demand = baseDemand + extra;
+          const miniUsesHours = stage.key === "mecanique" || stage.key === "carrosserie";
+          const regularExtra = (forecast.bmw * brandTouch(stage.key, "bmw") / 100 + forecast.other * brandTouch(stage.key, "other") / 100 + (miniUsesHours ? 0 : forecast.mini * brandTouch(stage.key, "mini") / 100)) / settings.workdaysPerMonth;
           const capacity = scenarioStageCapacity(stage.key, def.key, forecast.month);
-          const load = demand <= .01 ? 0 : capacity > 0 ? demand / capacity * 100 : 999;
+          let demand = baseDemand + regularExtra;
+          let load = demand <= .01 ? 0 : capacity > 0 ? demand / capacity * 100 : 999;
+          if (miniUsesHours && forecast.mini > 0) {
+            const miniHoursDaily = forecast.mini * miniHoursForStage(stage.key) / settings.workdaysPerMonth;
+            const hourCapacity = scenarioStageHourCapacity(stage.key, def.key, forecast.month);
+            if (hourCapacity > .01 && capacity > 0) {
+              const miniLoad = miniHoursDaily / hourCapacity * 100;
+              load += miniLoad;
+              demand += capacity * miniLoad / 100;
+            } else {
+              const fallbackMini = forecast.mini * brandTouch(stage.key, "mini") / 100 / settings.workdaysPerMonth;
+              demand += fallbackMini;
+              load = demand <= .01 ? 0 : capacity > 0 ? demand / capacity * 100 : 999;
+            }
+          }
           loads[stage.label] = load; demands[stage.label] = demand; capacities[stage.label] = capacity;
         }
         const carrossTouch = { bmw: brandTouch("carrosserie", "bmw"), mini: brandTouch("carrosserie", "mini"), other: brandTouch("carrosserie", "other") };
         for (const bodyDef of BODY) {
           const share = effectiveBody(bodyDef.key).share / 100;
           if (share <= 0 && autoBody.bodyshop[bodyDef.key].avgDaily <= .01) continue;
-          const extraBody = (forecast.bmw * carrossTouch.bmw / 100 + forecast.mini * carrossTouch.mini / 100 + forecast.other * carrossTouch.other / 100) / settings.workdaysPerMonth * share;
-          const demand = autoBody.bodyshop[bodyDef.key].avgDaily + extraBody;
           const capacity = scenarioBodyCapacity(bodyDef.key, def.key, forecast.month);
-          const load = demand <= .01 ? 0 : capacity > 0 ? demand / capacity * 100 : 999;
+          const regularExtraBody = (forecast.bmw * carrossTouch.bmw / 100 + forecast.other * carrossTouch.other / 100) / settings.workdaysPerMonth * share;
+          let demand = autoBody.bodyshop[bodyDef.key].avgDaily + regularExtraBody;
+          let load = demand <= .01 ? 0 : capacity > 0 ? demand / capacity * 100 : 999;
+          if (forecast.mini > 0 && share > 0) {
+            const miniHoursDaily = forecast.mini * MINI_BODYSHOP_HOURS / settings.workdaysPerMonth * share;
+            const hourCapacity = scenarioBodyHourCapacity(bodyDef.key, def.key, forecast.month);
+            if (hourCapacity > .01 && capacity > 0) {
+              const miniLoad = miniHoursDaily / hourCapacity * 100;
+              load += miniLoad;
+              demand += capacity * miniLoad / 100;
+            } else {
+              const fallbackMiniBody = forecast.mini * carrossTouch.mini / 100 / settings.workdaysPerMonth * share;
+              demand += fallbackMiniBody;
+              load = demand <= .01 ? 0 : capacity > 0 ? demand / capacity * 100 : 999;
+            }
+          }
           const label = `Carrosserie · ${bodyDef.label}`;
           loads[label] = load; demands[label] = demand; capacities[label] = capacity;
         }
@@ -391,7 +466,8 @@ export default function CapacitySimulator() {
     for (const def of STAGES) {
       const cfg = settings.stages[def.key]; const metric = effectiveStage(def.key);
       const currentProd = metric.productivity ?? cfg.targetProductivityPct;
-      const futureDemanded = settings.forecast.some((row) => row.bmw + row.mini + row.other > 0 && (brandTouch(def.key, "bmw") + brandTouch(def.key, "mini") + brandTouch(def.key, "other")) > 0);
+      const miniHoursDriven = (def.key === "mecanique" || def.key === "carrosserie") && settings.forecast.some((row) => row.mini > 0);
+      const futureDemanded = miniHoursDriven || settings.forecast.some((row) => row.bmw + row.mini + row.other > 0 && (brandTouch(def.key, "bmw") + brandTouch(def.key, "mini") + brandTouch(def.key, "other")) > 0);
       if (futureDemanded && metric.capacity <= 0) rows.push({ priority: "Critique", action: `Renseigner / créer la capacité ${def.label}`, pilot: "Direction / CDS", impact: "Simulation bloquée" });
       if (cfg.targetProductivityPct > currentProd + 1) rows.push({ priority: "Haute", action: `${def.label} · atteindre ${fmt(cfg.targetProductivityPct, 0)} % de productivité`, pilot: "CDS / CE", impact: `+${fmt((cfg.targetProductivityPct / Math.max(1, currentProd) - 1) * 100, 0)} % capacité` });
       if (cfg.hires > 0) rows.push({ priority: "Haute", action: `${def.label} · recruter ${fmt(cfg.hires, cfg.hires % 1 ? 1 : 0)} ETP dès ${monthLabel(cfg.hireStartMonth)}`, pilot: "Direction / RH", impact: `Ramp-up ${settings.rampUpPct.join(" → ")} %` });
@@ -447,8 +523,8 @@ export default function CapacitySimulator() {
   return <main className={styles.page}>
     <header className={styles.hero}>
       <div className={styles.heroTop}><a href="/" className={styles.back}>← KPI CRVO</a><div className={styles.heroActions}><button onClick={() => window.print()}>Exporter PDF</button><button onClick={() => void load()} disabled={loading}>Actualiser KPI</button><button className={styles.primary} onClick={() => void save()} disabled={saving}>{saving ? "Enregistrement…" : "Enregistrer l'étude"}</button></div></div>
-      <div className={styles.heroGrid}><div><span className={styles.eyebrow}>PLANIFICATION INDUSTRIELLE · LENS</span><h1>Simulateur capacitaire</h1><p>Projection des volumes BMW / MINI, charge par métier, goulots, ramp-up, scénarios et plan d'action. Les cadences démontrées sont recalculées depuis les données KPI réelles.</p></div><div className={`${styles.decision} ${styles[decision.tone]}`}><span>DÉCISION VOLUME</span><strong>{decision.title}</strong><p>{decision.text}</p></div></div>
-      <div className={styles.meta}><span>Source opérationnelle : <b>{dashboard?.latestSource ?? "—"}</b></span><span>Fenêtre : <b>{settings.baselineWindowDays} jours</b></span><span>Dernière sauvegarde : <b>{savedMeta.at ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(savedMeta.at)) : "jamais"}</b>{savedMeta.by ? ` · ${savedMeta.by}` : ""}</span></div>
+      <div className={styles.heroGrid}><div><span className={styles.eyebrow}>PLANIFICATION INDUSTRIELLE · LENS</span><h1>Simulateur capacitaire</h1><p>Projection des volumes BMW / MINI, charge par métier, goulots, ramp-up, scénarios et plan d'action. Les cadences démontrées sont recalculées depuis les données KPI réelles et la charge MINI utilise désormais le standard temps réel observé à Lens.</p></div><div className={`${styles.decision} ${styles[decision.tone]}`}><span>DÉCISION VOLUME</span><strong>{decision.title}</strong><p>{decision.text}</p></div></div>
+      <div className={styles.meta}><span>Source opérationnelle : <b>{dashboard?.latestSource ?? "—"}</b></span><span>MINI : <b>DEFLEET + standard Lens 569 dossiers</b></span><span>Fenêtre : <b>{settings.baselineWindowDays} jours</b></span><span>Dernière sauvegarde : <b>{savedMeta.at ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(savedMeta.at)) : "jamais"}</b>{savedMeta.by ? ` · ${savedMeta.by}` : ""}</span></div>
     </header>
 
     {error && <div className={styles.error}>{error}</div>}
@@ -463,8 +539,21 @@ export default function CapacitySimulator() {
     </section>
 
     <section className={styles.panel}>
-      <div className={styles.panelHead}><div><span>01 · VOLUMES</span><h2>Projection BMW / MINI</h2><p>Les volumes saisis sont additionnels au run-rate actuel. Les taux de passage par métier sont pré-remplis par le mix observé et restent modifiables.</p></div><div className={styles.inlineSettings}><label>Jours ouvrés / mois<input type="number" value={settings.workdaysPerMonth} min={15} max={31} onChange={(e) => setSettings((s) => ({ ...s, workdaysPerMonth: clamp(Number(e.target.value), 15, 31) }))} /></label><label>Historique KPI<input type="number" value={settings.baselineWindowDays} min={5} max={120} onChange={(e) => setSettings((s) => ({ ...s, baselineWindowDays: clamp(Number(e.target.value), 5, 120) }))} /><small>jours</small></label></div></div>
-      <div className={styles.forecastGrid}>{settings.forecast.map((row, index) => <article key={row.month}><strong>{monthLabel(row.month)}</strong><label>BMW<input type="number" min={0} value={row.bmw} onChange={(e) => updateForecast(index, { bmw: Math.max(0, Number(e.target.value) || 0) })} /></label><label>MINI<input type="number" min={0} value={row.mini} onChange={(e) => updateForecast(index, { mini: Math.max(0, Number(e.target.value) || 0) })} /></label><label>Autres<input type="number" min={0} value={row.other} onChange={(e) => updateForecast(index, { other: Math.max(0, Number(e.target.value) || 0) })} /></label><small>Total additionnel : <b>{fmt(row.bmw + row.mini + row.other, 0)} VO</b></small></article>)}</div>
+      <div className={styles.panelHead}><div><span>01 · VOLUMES</span><h2>Projection BMW / MINI</h2><p>Les volumes saisis sont additionnels au run-rate actuel. Le plan MINI est préchargé depuis le DEFLEET Lens : septembre 65, octobre 113, novembre 134 et décembre 50. Les valeurs restent modifiables si le plan évolue.</p></div><div className={styles.inlineSettings}><label>Jours ouvrés / mois<input type="number" value={settings.workdaysPerMonth} min={15} max={31} onChange={(e) => setSettings((s) => ({ ...s, workdaysPerMonth: clamp(Number(e.target.value), 15, 31) }))} /></label><label>Historique KPI<input type="number" value={settings.baselineWindowDays} min={5} max={120} onChange={(e) => setSettings((s) => ({ ...s, baselineWindowDays: clamp(Number(e.target.value), 5, 120) }))} /><small>jours</small></label></div></div>
+      <div className={styles.forecastGrid}>{settings.forecast.map((row, index) => <article key={row.month}><strong>{monthLabel(row.month)}</strong><label>BMW<input type="number" min={0} value={row.bmw} onChange={(e) => updateForecast(index, { bmw: Math.max(0, Number(e.target.value) || 0) })} /></label><label>MINI<input type="number" min={0} value={row.mini} onChange={(e) => updateForecast(index, { mini: Math.max(0, Number(e.target.value) || 0) })} /></label><label>Autres<input type="number" min={0} value={row.other} onChange={(e) => updateForecast(index, { other: Math.max(0, Number(e.target.value) || 0) })} /></label><small>Total additionnel : <b>{fmt(row.bmw + row.mini + row.other, 0)} VO</b>{row.mini > 0 ? ` · MINI ${fmt(row.mini * MINI_BODYSHOP_HOURS, 0)} h carro+peinture / ${fmt(row.mini * MINI_LENS_STANDARD.mechanicsHours, 0)} h méca` : ""}</small></article>)}</div>
+    </section>
+
+    <section className={styles.panel}>
+      <div className={styles.panelHead}><div><span>01B · RÉFÉRENCE MINI LENS</span><h2>Standard de charge dossier MINI</h2><p>Base observée sur 569 MINI traitées à Lens. Ces temps ne sont pas ajoutés comme un simple taux de passage : ils alimentent directement la charge horaire mécanique et carrosserie du simulateur afin de ne pas sous-estimer les volumes MINI.</p></div></div>
+      <div className={styles.forecastGrid}>
+        <article><strong>{fmt(MINI_LENS_STANDARD.bodyHours, 2)} h</strong><small>Carrosserie moyenne / dossier MINI</small></article>
+        <article><strong>{fmt(MINI_LENS_STANDARD.paintHours, 2)} h</strong><small>Peinture moyenne / dossier MINI</small></article>
+        <article><strong>{fmt(MINI_BODYSHOP_HOURS, 2)} h</strong><small>Charge carrosserie + peinture utilisée dans le modèle</small></article>
+        <article><strong>{fmt(MINI_LENS_STANDARD.mechanicsHours, 2)} h</strong><small>Mécanique moyenne / dossier MINI</small></article>
+        <article><strong>{fmt(MINI_LENS_STANDARD.damageCount, 1)}</strong><small>Damage count moyen · indicateur de complexité, sans double comptage des heures</small></article>
+        <article><strong>{fmt(MINI_DEFLEET_LENS_TOTAL, 0)} MINI</strong><small>DEFLEET Lens total : 2 avril + 29 août + 65 sept. + 113 oct. + 134 nov. + 50 déc.</small></article>
+      </div>
+      <p className={styles.tableNote}>Si la période Productivité est certifiée, le modèle compare les heures MINI nécessaires aux heures achetées réelles disponibles par jour. Si la capacité horaire n'est pas exploitable, il revient automatiquement au taux de passage pour ne pas bloquer l'étude.</p>
     </section>
 
     <section className={styles.panel}>
@@ -474,14 +563,14 @@ export default function CapacitySimulator() {
     </section>
 
     <section className={styles.panel}>
-      <div className={styles.panelHead}><div><span>03 · CHAÎNE DE VALEUR</span><h2>Capacité par métier</h2><p>Capacité par défaut = P90 réellement démontré sur la fenêtre sélectionnée. Une valeur manuelle prend le dessus sans supprimer la donnée réelle de référence.</p></div></div>
-      <div className={styles.tableWrap}><table className={styles.capacityTable}><thead><tr><th>Métier</th><th>Run-rate</th><th>P90 réel</th><th>Capacité retenue</th><th>ETP</th><th>Productivité</th><th>Cible</th><th>+ ETP</th><th>Début ramp-up</th><th>Shifts act. → cible</th><th>Gain outil</th><th>Passage BMW</th><th>Passage MINI</th><th>Charge S0</th><th>Charge S3</th></tr></thead><tbody>{STAGES.map((def) => { const metric = auto.stages[def.key]; const cfg = settings.stages[def.key]; const effective = effectiveStage(def.key); const s0 = latestS0?.stageLoads[def.label] ?? 0; const s3 = latestS3?.stageLoads[def.label] ?? 0; return <tr key={def.key}><td><strong>{def.label}</strong><small>{metric.source}</small></td><td>{fmt(metric.avgDaily)}<small>VO/j</small></td><td>{fmt(metric.p90Daily)}<small>pic {fmt(metric.peakDaily)}</small></td><td>{inputNumber(cfg.capacityManual, (value) => updateStage(def.key, { capacityManual: value }), metric.p90Daily ? fmt(metric.p90Daily) : "manuel", .1)}</td><td>{inputNumber(cfg.etpManual, (value) => updateStage(def.key, { etpManual: value }), effective.etp ? fmt(effective.etp, 0) : "auto", .5)}</td><td>{metric.productivityPct == null ? "—" : pct(metric.productivityPct)}</td><td>{inputNumber(cfg.targetProductivityPct, (value) => updateStage(def.key, { targetProductivityPct: value ?? 100 }), "100", 1, 50, 250)}</td><td>{inputNumber(cfg.hires, (value) => updateStage(def.key, { hires: value ?? 0 }), "0", .5, 0, 100)}</td><td><select value={cfg.hireStartMonth} onChange={(e) => updateStage(def.key, { hireStartMonth: e.target.value })}>{settings.forecast.map((row) => <option key={row.month} value={row.month}>{monthLabel(row.month)}</option>)}</select></td><td><div className={styles.dual}>{inputNumber(cfg.currentShifts, (value) => updateStage(def.key, { currentShifts: value ?? 1 }), "1", .5, .5, 4)}<span>→</span>{inputNumber(cfg.targetShifts, (value) => updateStage(def.key, { targetShifts: value ?? 1 }), "1", .5, .5, 4)}</div></td><td>{inputNumber(cfg.equipmentGainPct, (value) => updateStage(def.key, { equipmentGainPct: value ?? 0 }), "0", 1, 0, 200)}</td><td>{inputNumber(cfg.bmwTouchPct, (value) => updateStage(def.key, { bmwTouchPct: value }), fmt(metric.touchPct, 0), 1, 0, 200)}</td><td>{inputNumber(cfg.miniTouchPct, (value) => updateStage(def.key, { miniTouchPct: value }), fmt(metric.touchPct, 0), 1, 0, 200)}</td><td><span className={s0 > 100 ? styles.loadBad : s0 > 90 ? styles.loadWatch : styles.loadGood}>{fmt(s0, 0)} %</span></td><td><span className={s3 > 100 ? styles.loadBad : s3 > 90 ? styles.loadWatch : styles.loadGood}>{fmt(s3, 0)} %</span></td></tr>; })}</tbody></table></div>
-      <p className={styles.tableNote}>Les champs vides utilisent automatiquement la valeur KPI. Jantes et éventuels flux dédiés non présents dans les sources doivent être paramétrés manuellement avant décision.</p>
+      <div className={styles.panelHead}><div><span>03 · CHAÎNE DE VALEUR</span><h2>Capacité par métier</h2><p>Capacité par défaut = P90 réellement démontré sur la fenêtre sélectionnée. Pour MINI, la mécanique et la carrosserie utilisent le standard horaire Lens ; les autres métiers conservent un taux de passage modifiable.</p></div></div>
+      <div className={styles.tableWrap}><table className={styles.capacityTable}><thead><tr><th>Métier</th><th>Run-rate</th><th>P90 réel</th><th>Capacité retenue</th><th>ETP</th><th>Productivité</th><th>Cible</th><th>+ ETP</th><th>Début ramp-up</th><th>Shifts act. → cible</th><th>Gain outil</th><th>Passage BMW</th><th>MINI · règle</th><th>Charge S0</th><th>Charge S3</th></tr></thead><tbody>{STAGES.map((def) => { const metric = auto.stages[def.key]; const cfg = settings.stages[def.key]; const effective = effectiveStage(def.key); const s0 = latestS0?.stageLoads[def.label] ?? 0; const s3 = latestS3?.stageLoads[def.label] ?? 0; const miniHours = miniHoursForStage(def.key); return <tr key={def.key}><td><strong>{def.label}</strong><small>{metric.source}</small></td><td>{fmt(metric.avgDaily)}<small>VO/j</small></td><td>{fmt(metric.p90Daily)}<small>pic {fmt(metric.peakDaily)}</small></td><td>{inputNumber(cfg.capacityManual, (value) => updateStage(def.key, { capacityManual: value }), metric.p90Daily ? fmt(metric.p90Daily) : "manuel", .1)}</td><td>{inputNumber(cfg.etpManual, (value) => updateStage(def.key, { etpManual: value }), effective.etp ? fmt(effective.etp, 0) : "auto", .5)}</td><td>{metric.productivityPct == null ? "—" : pct(metric.productivityPct)}</td><td>{inputNumber(cfg.targetProductivityPct, (value) => updateStage(def.key, { targetProductivityPct: value ?? 100 }), "100", 1, 50, 250)}</td><td>{inputNumber(cfg.hires, (value) => updateStage(def.key, { hires: value ?? 0 }), "0", .5, 0, 100)}</td><td><select value={cfg.hireStartMonth} onChange={(e) => updateStage(def.key, { hireStartMonth: e.target.value })}>{settings.forecast.map((row) => <option key={row.month} value={row.month}>{monthLabel(row.month)}</option>)}</select></td><td><div className={styles.dual}>{inputNumber(cfg.currentShifts, (value) => updateStage(def.key, { currentShifts: value ?? 1 }), "1", .5, .5, 4)}<span>→</span>{inputNumber(cfg.targetShifts, (value) => updateStage(def.key, { targetShifts: value ?? 1 }), "1", .5, .5, 4)}</div></td><td>{inputNumber(cfg.equipmentGainPct, (value) => updateStage(def.key, { equipmentGainPct: value ?? 0 }), "0", 1, 0, 200)}</td><td>{inputNumber(cfg.bmwTouchPct, (value) => updateStage(def.key, { bmwTouchPct: value }), fmt(metric.touchPct, 0), 1, 0, 200)}</td><td>{miniHours > 0 ? <><strong>{fmt(miniHours, 2)} h/VO</strong><small>{def.key === "carrosserie" ? "4,61 carro + 3,31 peinture" : "standard Lens"}</small></> : inputNumber(cfg.miniTouchPct, (value) => updateStage(def.key, { miniTouchPct: value }), fmt(metric.touchPct, 0), 1, 0, 200)}</td><td><span className={s0 > 100 ? styles.loadBad : s0 > 90 ? styles.loadWatch : styles.loadGood}>{fmt(s0, 0)} %</span></td><td><span className={s3 > 100 ? styles.loadBad : s3 > 90 ? styles.loadWatch : styles.loadGood}>{fmt(s3, 0)} %</span></td></tr>; })}</tbody></table></div>
+      <p className={styles.tableNote}>Les champs vides utilisent automatiquement la valeur KPI. MINI : carrosserie et mécanique sont calculées en charge horaire réelle Lens ; Jantes et flux non présents dans les sources doivent rester paramétrés manuellement avant décision.</p>
     </section>
 
     <section className={styles.twoColumns}>
       <div className={styles.panel}>
-        <div className={styles.panelHead}><div><span>04 · CARROSSERIE</span><h2>Fixline / BOX / Tôlerie</h2><p>Le sous-process le plus chargé peut devenir le vrai goulot même si le total carrosserie semble absorbable.</p></div></div>
+        <div className={styles.panelHead}><div><span>04 · CARROSSERIE</span><h2>Fixline / BOX / Tôlerie</h2><p>Le sous-process le plus chargé peut devenir le vrai goulot même si le total carrosserie semble absorbable. La charge MINI de 7,92 h/dossier est répartie selon la part de flux retenue.</p></div></div>
         <div className={styles.tableWrap}><table className={styles.bodyTable}><thead><tr><th>Flux</th><th>P90</th><th>Part du flux</th><th>ETP</th><th>Prod. actuelle</th><th>Cible</th><th>+ ETP</th><th>Shifts</th><th>Gain outil</th></tr></thead><tbody>{BODY.map((def) => { const metric = autoBody.bodyshop[def.key]; const cfg = settings.bodyshop[def.key]; const effective = effectiveBody(def.key); return <tr key={def.key}><td><strong>{def.label}</strong><small>{metric.source}</small></td><td>{fmt(metric.p90Daily)}</td><td>{inputNumber(cfg.routeSharePct, (value) => updateBody(def.key, { routeSharePct: value }), fmt(metric.routeSharePct, 0), 1, 0, 100)}</td><td>{inputNumber(cfg.etpManual, (value) => updateBody(def.key, { etpManual: value }), effective.etp ? fmt(effective.etp, 0) : "auto", .5)}</td><td>{metric.productivityPct == null ? "—" : pct(metric.productivityPct)}</td><td>{inputNumber(cfg.targetProductivityPct, (value) => updateBody(def.key, { targetProductivityPct: value ?? 100 }), "100", 1, 50, 250)}</td><td>{inputNumber(cfg.hires, (value) => updateBody(def.key, { hires: value ?? 0 }), "0", .5, 0, 100)}</td><td><div className={styles.dual}>{inputNumber(cfg.currentShifts, (value) => updateBody(def.key, { currentShifts: value ?? 1 }), "3", .5, .5, 4)}<span>→</span>{inputNumber(cfg.targetShifts, (value) => updateBody(def.key, { targetShifts: value ?? 1 }), "3", .5, .5, 4)}</div></td><td>{inputNumber(cfg.equipmentGainPct, (value) => updateBody(def.key, { equipmentGainPct: value ?? 0 }), "0", 1, 0, 200)}</td></tr>; })}</tbody></table></div>
       </div>
       <div className={styles.panel}>
@@ -501,6 +590,6 @@ export default function CapacitySimulator() {
       {actions.length ? <div className={styles.actionList}>{actions.map((action, index) => <article key={`${action.action}-${index}`}><span className={action.priority === "Critique" ? styles.priorityCritical : action.priority === "Haute" ? styles.priorityHigh : styles.priorityNormal}>{action.priority}</span><div><strong>{action.action}</strong><small>Pilote : {action.pilot}</small></div><b>{action.impact}</b></article>)}</div> : <div className={styles.empty}>Aucune action additionnelle configurée. Saisis les volumes et les leviers cibles pour générer le plan.</div>}
     </section>
 
-    <footer className={styles.footer}><div><b>Lecture de confiance</b><span>Les valeurs « réel / P90 / pic » viennent des sources KPI. Les volumes futurs, objectifs, capacités manuelles et leviers restent des hypothèses de simulation et sont audités à chaque sauvegarde.</span></div><button onClick={() => setSettings(defaultSettings())}>Réinitialiser les hypothèses</button></footer>
+    <footer className={styles.footer}><div><b>Lecture de confiance</b><span>Les valeurs « réel / P90 / pic » viennent des sources KPI. Les volumes MINI sont préchargés depuis le DEFLEET Lens et les temps MINI viennent de l'échantillon Lens de 569 dossiers. Les autres volumes futurs, objectifs, capacités manuelles et leviers restent des hypothèses de simulation et sont audités à chaque sauvegarde.</span></div><button onClick={() => setSettings(defaultSettings())}>Réinitialiser les hypothèses</button></footer>
   </main>;
 }
