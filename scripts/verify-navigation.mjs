@@ -48,9 +48,10 @@ if(!files.layout.includes("KioskFetchBridge")||!files.kioskBridge.includes('/api
 if(!files.layout.includes("ActivityColorBinder"))failures.push("La règle couleur par activité doit être montée globalement.");
 for(const [label,hex] of [["Expertise","#eb5b56"],["Mécanique","#55b779"],["Jantes","#f5a623"],["Carrosserie","#009edb"],["DSP","#004f9f"],["Préparation","#8d5ec7"],["Qualité / Photo","#c66a1b"],["Sortie usine","#7b8794"]]){if(!files.colors.includes(hex))failures.push(`Couleur activité absente : ${label} ${hex}`);}
 
-if(!files.atelier.includes('setInterval(() => setMode')||!files.atelier.includes('15000'))failures.push("Ecran ATELIER doit alterner automatiquement entre le live et la dernière journée clôturée toutes les 15 secondes.");
+if(!files.atelier.includes("AUJOURD’HUI · EN COURS")||!files.atelier.includes("DERNIÈRE JOURNÉE CLÔTURÉE")||!files.atelier.includes("closedSnapshot"))failures.push("Ecran ATELIER doit réunir le live et la dernière journée clôturée sur le même écran.");
+if(files.atelier.includes('setInterval(() => setMode')||files.atelier.includes('15000'))failures.push("Ecran ATELIER ne doit plus alterner les deux journées : elles doivent rester visibles ensemble.");
+if(!files.atelier.includes("isBusinessDay"))failures.push("Ecran ATELIER doit sélectionner la dernière journée ouvrée clôturée.");
 if(!files.atelier.includes("FTP EN RETARD")||!files.atelier.includes("staleMinutes"))failures.push("Ecran ATELIER doit signaler visiblement une donnée FTP trop ancienne.");
-if(!files.atelier.includes("JOURNÉE CLÔTURÉE")||!files.atelier.includes("closedSnapshot"))failures.push("Ecran ATELIER doit afficher la dernière journée clôturée dans la rotation.");
 if(!files.kioskAtelier.includes('resource === "verified-metrics"')||!files.atelier.includes("verified-metrics"))failures.push("Ecran ATELIER doit appliquer les métriques de clôture vérifiées.");
 if(!files.verifiedMetricsMigration.includes("kpi_daily_verified_metrics")||!files.verifiedMetricsMigration.includes("date '2026-08-14'")||!files.verifiedMetricsMigration.includes("'exits_vop',83")||!files.verifiedMetricsMigration.includes("'production_factory_exit',83"))failures.push("La clôture vérifiée du vendredi 14/08 doit conserver 83 sorties usine.");
 
@@ -66,10 +67,11 @@ if(!files.dailyObjectivesMigration.includes("delete from public.kpi_daily_exit_o
 if(!files.capacity.includes("MINI ADDITIONNELLES")||!files.capacity.includes("PRODUCTIVITÉ À GAGNER")||!files.capacity.includes("ETP À AJOUTER"))failures.push("Le simulateur doit répondre directement en volume MINI, points de productivité et ETP.");
 for(const jargon of ["P90","Run-rate","S0 · Sans action","S1 · Performance","S2 · Ressources","S3 · Cible"]){if(files.capacity.includes(jargon))failures.push(`Jargon capacitaire interdit dans l'interface simplifiée : ${jargon}`);}
 if(!files.capacity.includes('fetch("/api/capacity-simple"'))failures.push("Le simulateur doit utiliser l'API capacitaire légère dédiée.");
+if(!files.capacity.includes("HIDDEN_MINI_SECTORS")||!files.capacity.includes('"jantes"')||!files.capacity.includes('"photo"')||!files.capacity.includes(".filter(visibleMiniSector)"))failures.push("Le simulateur MINI doit occulter Jantes et Photo du calcul visible et du verdict.");
 if(!files.capacityApi.includes("kpi_capacity_simple")||!files.capacityApi.includes("57014"))failures.push("L'API capacitaire légère doit utiliser le RPC dédié et gérer explicitement les timeouts.");
 if(!files.productivity.includes("MÉTIERS PRODUCTIFS UNIQUEMENT"))failures.push("La page Productivité doit expliquer le périmètre productif.");
 for(const key of ["expertise","mecanique","dsp","jantes","carrosserie","preparation","qualite","photo"]){if(!files.capacityMigration.includes(`'${key}'`))failures.push(`Métier productif absent de la migration : ${key}`);}
 if(!files.capacityMigration.includes("kpi_is_productive_sector")||!files.capacityMigration.includes("kpi_capacity_simple"))failures.push("La migration doit verrouiller le filtre productif et le calcul capacitaire léger.");
 
 if(failures.length){console.error("Contrat de navigation CRVO invalide :\n- "+failures.join("\n- "));process.exit(1);}
-console.log(`Navigation CRVO validée : ${labels.length} libellés, droits, simulateur présent dans les 3 menus, rotation ATELIER live/clôture, alerte fraîcheur FTP, sorties clôturées vérifiées, productivité limitée aux métiers productifs et simulateur MINI simplifié.`);
+console.log(`Navigation CRVO validée : ${labels.length} libellés, droits, simulateur présent dans les 3 menus, comparaison ATELIER live/clôture sur une page, alerte fraîcheur FTP, sorties clôturées vérifiées, productivité limitée aux métiers productifs et simulateur MINI simplifié sans Jantes/Photo.`);
