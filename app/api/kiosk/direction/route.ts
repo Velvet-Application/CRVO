@@ -1,35 +1,18 @@
 import { NextResponse } from "next/server";
-import { GET as getDashboard } from "../../dashboard/route";
-import { GET as getFinance } from "../../finance/route";
+import { loadKioskDashboard, loadKioskFinance } from "../kiosk-data";
 
 export const dynamic = "force-dynamic";
 
-type JsonPayload = {
-  connected?: boolean;
-  snapshot?: unknown;
-  snapshots?: unknown[];
-  liveFreshness?: unknown;
-};
-
 export async function GET(request: Request) {
-  const origin = new URL(request.url).origin;
-  const [dashboardResponse, financeResponse] = await Promise.all([
-    getDashboard(new Request(`${origin}/api/dashboard?history=1&_=${Date.now()}`, { headers: { "Cache-Control": "no-cache" } })),
-    getFinance(new Request(`${origin}/api/finance?history=1&_=${Date.now()}`, { headers: { "Cache-Control": "no-cache" } })),
-  ]);
-  const dashboard = await dashboardResponse.json() as JsonPayload;
-  const finance = await financeResponse.json() as JsonPayload;
-
-  return NextResponse.json({
-    dashboard: {
-      connected: Boolean(dashboard.connected),
-      snapshot: dashboard.snapshot ?? null,
-      snapshots: Array.isArray(dashboard.snapshots) ? dashboard.snapshots : [],
-      liveFreshness: dashboard.liveFreshness ?? null,
-    },
-    finance: {
-      snapshot: finance.snapshot ?? null,
-      snapshots: Array.isArray(finance.snapshots) ? finance.snapshots : [],
-    },
-  }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
+  const url = new URL(request.url);
+  const resource = url.searchParams.get("resource") ?? "dashboard";
+  try {
+    if (resource === "finance") {
+      return NextResponse.json(await loadKioskFinance(url.searchParams.get("history") === "1"), { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
+    }
+    const requestedDate = url.searchParams.get("date")?.match(/^\d{4}-\d{2}-\d{2}$/)?.[0] ?? null;
+    return NextResponse.json(await loadKioskDashboard(url.searchParams.get("history") === "1", requestedDate), { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
+  } catch (error) {
+    return NextResponse.json({ connected: false, error: error instanceof Error ? error.message : "Écran direction indisponible." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
 }
