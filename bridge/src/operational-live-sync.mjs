@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { Writable } from "node:stream";
+import { setTimeout as wait } from "node:timers/promises";
 import { Client as FtpClient } from "basic-ftp";
 import * as XLSX from "@e965/xlsx";
 import { computeSectorBacklog, parseEtatduParcVehicleState } from "./ftp-vehicle-state.mjs";
@@ -39,10 +40,20 @@ function isoTime(value) {
   return `${match[1].padStart(2, "0")}:${match[2]}:${match[3] ?? "00"}`;
 }
 async function post(action, body) {
-  const response = await fetch(`${operationalUrl}?action=${encodeURIComponent(action)}`, { method: "POST", headers: { "x-kpi-bridge-token": token, "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Operational gateway ${response.status}: ${payload.error ?? "unknown error"}`);
-  return payload;
+  let lastStatus = 0;
+  let lastError = "unknown error";
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const response = await fetch(`${operationalUrl}?action=${encodeURIComponent(action)}`, { method: "POST", headers: { "x-kpi-bridge-token": token, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok) return payload;
+    lastStatus = response.status;
+    lastError = payload.error ?? "unknown error";
+    const transient = [429, 502, 503, 504].includes(response.status);
+    log("operational_gateway_attempt_failed", { action, attempt, status: response.status, transient });
+    if (!transient || attempt === 3) break;
+    await wait(attempt * 1500);
+  }
+  throw new Error(`Operational gateway ${lastStatus}: ${lastError}`);
 }
 async function download(client, remoteDir, filename) {
   const chunks = [];
