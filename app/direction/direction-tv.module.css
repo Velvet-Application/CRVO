@@ -1,0 +1,102 @@
+.page,.header,.brand,.liveStatus,.topGrid,.panel,.yesterdayCard,.yesterdayHero,.yesterdayBody,.yesterdaySummary,.sectorHead,.prodStrip,.financeCard,.sectionHead,.financeNumbers,.budgetCard,.financeSvg,.chartEmpty,.livePanel,.liveHero,.liveHeroRight,.flowSourceBar,.todayFlow,.flowCard,.flowIcon,.stockPanel,.stockLead,.agingBar,.agingCards,.stockSignal,.footer{--tv-layout:1}
+
+@media (min-width:1400px) and (min-height:800px){
+  .page{
+    box-sizing:border-box;
+    width:100vw;
+    height:100vh;
+    min-height:100vh!important;
+    padding:clamp(16px,1.25vh,32px) clamp(20px,1.3vw,50px) clamp(12px,1vh,24px)!important;
+    display:grid;
+    grid-template-rows:auto minmax(0,1.28fr) minmax(0,.95fr) minmax(0,.58fr) auto;
+    gap:clamp(10px,.85vh,22px);
+    overflow:hidden;
+  }
+  .header{margin:0!important;min-height:0}
+  .brand{gap:clamp(16px,1vw,34px)}
+  .brand img{width:clamp(128px,6.8vw,260px)!important}
+  .brand span{font-size:clamp(10px,.52vw,20px)!important}
+  .brand h1{font-size:clamp(34px,1.75vw,66px)!important}
+  .liveStatus{padding:clamp(10px,.7vw,22px) clamp(14px,.9vw,32px)!important;border-radius:clamp(14px,.7vw,26px)!important}
+  .liveStatus>i{width:clamp(9px,.45vw,17px)!important;height:clamp(9px,.45vw,17px)!important}
+  .liveStatus strong{font-size:clamp(11px,.58vw,22px)!important}
+  .liveStatus span{font-size:clamp(10px,.5vw,19px)!important}
+
+  .topGrid{min-height:0;gap:clamp(14px,.9vw,30px)!important;grid-template-columns:1.1fr .9fr!important}
+  .panel{height:100%;min-height:0;box-sizing:border-box;border-radius:clamp(18px,.8vw,30px)!important}
+  .yesterdayCard{display:flex;flex-direction:column}
+  .yesterdayHero{flex:0 0 auto;min-height:clamp(118px,12vh,255px)!important;padding:clamp(20px,1.25vw,46px)!important}
+  .yesterdayHero span{font-size:clamp(9px,.48vw,18px)!important}
+  .yesterdayHero h2{font-size:clamp(24px,1.25vw,48px)!important}
+  .yesterdayHero>b{font-size:clamp(22px,1.25vw,48px)!important;padding:clamp(10px,.65vw,24px) clamp(13px,.8vw,30px)!important}
+  .yesterdayHero>b small{font-size:clamp(10px,.5vw,19px)!important}
+  .yesterdayBody{flex:1;min-height:0;display:flex;flex-direction:column;padding:clamp(14px,.9vw,32px)!important}
+  .yesterdaySummary{grid-template-columns:repeat(3,1fr)!important;gap:clamp(9px,.55vw,20px)!important;margin-top:clamp(-70px,-3.3vh,-36px)!important}
+  .yesterdaySummary>div{min-height:clamp(105px,9.4vh,205px)!important;padding:clamp(13px,.75vw,28px)!important;border-radius:clamp(13px,.65vw,24px)!important}
+  .yesterdaySummary em{width:clamp(34px,1.8vw,68px)!important;height:clamp(34px,1.8vw,68px)!important;font-size:clamp(9px,.48vw,18px)!important}
+  .yesterdaySummary span{font-size:clamp(8px,.42vw,16px)!important}
+  .yesterdaySummary strong{font-size:clamp(28px,1.55vw,58px)!important}
+  .yesterdaySummary small{font-size:clamp(8px,.42vw,16px)!important}
+  .sectorHead{margin:clamp(12px,1vh,24px) 2px clamp(7px,.55vh,14px)!important}
+  .sectorHead strong{font-size:clamp(9px,.46vw,18px)!important}
+  .sectorHead span{font-size:clamp(8px,.4vw,16px)!important}
+  .prodStrip{flex:1;min-height:0;grid-template-columns:repeat(7,1fr)!important;gap:clamp(7px,.42vw,16px)!important;align-items:stretch}
+  .prodStrip>div{min-height:0;padding:clamp(10px,.6vw,22px)!important;border-radius:clamp(10px,.55vw,20px)!important;display:flex;flex-direction:column;justify-content:center}
+  .prodStrip span{font-size:clamp(7px,.38vw,14px)!important;min-height:auto!important}
+  .prodStrip strong{font-size:clamp(19px,1.05vw,40px)!important}
+  .prodStrip small,.prodStrip em{font-size:clamp(7px,.36vw,14px)!important}
+  .prodStrip>div>i{height:clamp(4px,.28vw,10px)!important;margin-top:clamp(7px,.4vh,12px)!important}
+
+  .financeCard{display:flex;flex-direction:column;padding:clamp(18px,1vw,38px)!important}
+  .sectionHead{margin-bottom:clamp(12px,.85vh,22px)!important}
+  .sectionHead span{font-size:clamp(10px,.5vw,19px)!important}
+  .sectionHead h2{font-size:clamp(20px,1.18vw,44px)!important}
+  .sectionHead small{font-size:clamp(10px,.48vw,18px)!important;text-transform:capitalize}
+  .financeNumbers{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:clamp(8px,.5vw,18px)!important;margin-bottom:clamp(6px,.5vh,14px)!important}
+  .financeNumbers>div{padding:clamp(10px,.72vw,26px)!important;border-left-width:clamp(4px,.22vw,8px)!important;border-radius:clamp(8px,.45vw,16px)!important}
+  .financeNumbers span{font-size:clamp(9px,.43vw,16px)!important}
+  .financeNumbers strong{font-size:clamp(23px,1.25vw,47px)!important;white-space:nowrap}
+  .financeNumbers small{font-size:clamp(9px,.4vw,15px)!important;line-height:1.25}
+  .budgetCard{border-left-color:#fec82f!important}
+  .financeSvg{flex:1;min-height:0;height:auto!important;width:100%!important}
+  .chartEmpty{flex:1;min-height:0;height:auto!important;font-size:clamp(12px,.55vw,21px)!important}
+
+  .livePanel{min-height:0;margin:0!important;padding:clamp(18px,1vw,38px)!important;border-radius:clamp(18px,.8vw,30px)!important;display:flex;flex-direction:column}
+  .liveHero{flex:0 0 auto}
+  .liveHero span{font-size:clamp(10px,.52vw,20px)!important}
+  .liveHero h2{font-size:clamp(64px,3.35vw,126px)!important}
+  .liveHero h2 small{font-size:clamp(24px,1.3vw,50px)!important}
+  .liveHero p{font-size:clamp(11px,.55vw,21px)!important}
+  .liveHeroRight{gap:clamp(2px,.2vh,7px) clamp(16px,.9vw,32px)!important;padding:clamp(10px,.65vw,24px)!important}
+  .liveHeroRight span{font-size:clamp(8px,.4vw,15px)!important}
+  .liveHeroRight strong{font-size:clamp(27px,1.5vw,56px)!important}
+  .flowSourceBar{margin-top:clamp(10px,.7vh,18px)!important;font-size:clamp(7px,.34vw,13px)!important}
+  .todayFlow{flex:1;min-height:0;grid-template-columns:repeat(5,1fr)!important;gap:clamp(9px,.55vw,20px)!important;margin-top:clamp(8px,.6vh,16px)!important;align-items:stretch}
+  .flowCard{min-height:0!important;height:100%;padding:clamp(12px,.7vw,26px)!important;border-radius:clamp(13px,.65vw,24px)!important}
+  .flowIcon{width:clamp(35px,1.8vw,68px)!important;height:clamp(35px,1.8vw,68px)!important;border-radius:clamp(11px,.55vw,21px)!important;font-size:clamp(13px,.68vw,26px)!important}
+  .flowCard>span{font-size:clamp(8px,.42vw,16px)!important;margin-top:clamp(8px,.55vh,16px)!important}
+  .flowCard>strong{font-size:clamp(30px,1.65vw,62px)!important}
+  .flowCard>small{font-size:clamp(8px,.4vw,15px)!important}
+  .flowCard>em{font-size:clamp(6px,.32vw,12px)!important}
+
+  .stockPanel{min-height:0;margin:0!important;padding:clamp(14px,.85vw,30px)!important;border-radius:clamp(18px,.8vw,30px)!important;display:grid;grid-template-rows:auto auto 1fr auto;align-content:stretch}
+  .stockLead>span{font-size:clamp(10px,.5vw,19px)!important}
+  .stockLead h2{font-size:clamp(45px,2.4vw,90px)!important}
+  .stockLead p{font-size:clamp(11px,.55vw,21px)!important}
+  .agingBar{height:clamp(14px,.7vw,26px)!important;margin:clamp(8px,.55vh,16px) 0!important}
+  .agingCards{grid-template-columns:repeat(3,1fr)!important;gap:clamp(8px,.5vw,18px)!important;align-items:stretch}
+  .agingCards>div{padding:clamp(10px,.65vw,24px)!important;border-radius:clamp(10px,.5vw,18px)!important;display:flex;align-items:center;gap:clamp(10px,.7vw,24px)}
+  .agingCards span{font-size:clamp(9px,.44vw,17px)!important}
+  .agingCards strong{font-size:clamp(25px,1.35vw,51px)!important;margin-left:auto}
+  .agingCards small{font-size:clamp(8px,.4vw,15px)!important}
+  .stockSignal{margin-top:clamp(8px,.5vh,14px)!important;font-size:clamp(9px,.44vw,17px)!important}
+  .stockSignal strong{font-size:clamp(18px,1vw,38px)!important}
+  .footer{padding:0!important;font-size:clamp(8px,.36vw,14px)!important;align-items:center}
+}
+
+@media (min-width:2560px) and (min-height:1400px){
+  .page{grid-template-rows:auto minmax(0,1.3fr) minmax(0,.94fr) minmax(0,.6fr) auto}
+  .financeSvg{min-height:310px}
+  .yesterdayHero{min-height:240px!important}
+  .flowCard{justify-content:center}
+}
