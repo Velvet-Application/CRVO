@@ -6,14 +6,14 @@ type GroupKey="book"|"animation"|"cockpit"|"client"|"settings";
 type Me={role:"admin"|"user";accessProfile:"admin"|"service_manager"|"team_manager"|"custom";pagePermissions:string[]};
 const CLOSED:Record<GroupKey,boolean>={book:false,animation:false,cockpit:false,client:false,settings:false};
 function rootHref(view:string){return `/?nav=${encodeURIComponent(view)}`;}
-function activeGroup(path:string):GroupKey|null{if(path.startsWith("/performance/productivite")||path.startsWith("/animation-mensuelle"))return"animation";if(path.startsWith("/cockpit-v2")||path.startsWith("/intelligence"))return"cockpit";if(path.startsWith("/dashboard-client")||path.startsWith("/clients"))return"client";if(/^\/(account|data-rh|sources)/.test(path))return"settings";return null;}
+function activeGroup(path:string):GroupKey|null{if(path.startsWith("/performance/productivite")||path.startsWith("/animation-mensuelle")||path.startsWith("/animation-centre/rh"))return"animation";if(path.startsWith("/cockpit-v2")||path.startsWith("/intelligence"))return"cockpit";if(path.startsWith("/dashboard-client")||path.startsWith("/clients"))return"client";if(/^\/(account|data-rh|sources)/.test(path))return"settings";return null;}
 
 export default function GlobalNavDrawer(){
   const [me,setMe]=useState<Me|null>(null);const [drawer,setDrawer]=useState(false);const [open,setOpen]=useState<Record<GroupKey,boolean>>(CLOSED);
   const admin=me?.role==="admin";const allowed=(key:string)=>Boolean(me&&(admin||me.pagePermissions?.includes("*")||me.pagePermissions?.includes(key)));
   useEffect(()=>{let cancelled=false;fetch("/api/auth/me",{cache:"no-store"}).then(async r=>r.ok?r.json():null).then(p=>{if(!cancelled)setMe(p?.user??null);}).catch(()=>{if(!cancelled)setMe(null);});return()=>{cancelled=true;};},[]);
   useEffect(()=>{const group=activeGroup(window.location.pathname);if(group)setOpen({...CLOSED,[group]:true});},[]);
-  const animationVisible=allowed("productivity")||allowed("monthly_animation")||admin;const cockpitVisible=allowed("cockpit")||allowed("bodyshop")||allowed("intelligence")||admin;const clientVisible=allowed("client_dashboard");
+  const animationVisible=allowed("data_rh")||allowed("productivity")||allowed("monthly_animation")||admin;const cockpitVisible=allowed("cockpit")||allowed("bodyshop")||allowed("intelligence")||admin;const clientVisible=allowed("client_dashboard");
   const profile=useMemo(()=>!me?"":admin?"ADMIN":me.accessProfile==="service_manager"?"CHEF DE SERVICE":me.accessProfile==="team_manager"?"CHEF D'ÉQUIPE":"ACCÈS PERSONNALISÉ",[me,admin]);
   if(!me)return null;
   const toggle=(key:GroupKey)=>setOpen(current=>({...CLOSED,[key]:!current[key]}));
@@ -24,7 +24,7 @@ export default function GlobalNavDrawer(){
     {drawer&&<><button className="gn-backdrop" type="button" aria-label="Fermer le menu" onClick={()=>setDrawer(false)}/><aside className="gn-drawer" aria-label="Menu général KPI CRVO"><header><div className="gn-logo"><img src="/crvo-logo.png" alt="CRVO"/></div><button type="button" aria-label="Fermer" onClick={()=>setDrawer(false)}>×</button><p>PILOTAGE CRVO LENS</p></header><nav>
       {allowed("reporting")&&link(rootHref("today"),"Performance du jour")}
       {allowed("book")&&group("book","BOOK",<>{link(rootHref("yesterday"),"Dashboard")}{link(rootHref("bottlenecks"),"Goulot")}{link(rootHref("walking"),"Walking Dead")}{link(rootHref("finance"),"Chiffre d'affaire")}</>)}
-      {animationVisible&&group("animation","Animation du centre",<>{allowed("productivity")&&link("/performance/productivite","Productivité")}{allowed("monthly_animation")&&link("/animation-mensuelle","Variable")}{admin&&link("/animation-mensuelle/acces","Accès Workflow",true)}{admin&&link("/animation-mensuelle/payplan","Payplan",true)}</>)}
+      {animationVisible&&group("animation","Animation du centre",<>{allowed("data_rh")&&link("/animation-centre/rh","RH & Polycompétences")}{allowed("productivity")&&link("/performance/productivite","Productivité")}{allowed("monthly_animation")&&link("/animation-mensuelle","Variable")}{admin&&link("/animation-mensuelle/acces","Accès Workflow",true)}{admin&&link("/animation-mensuelle/payplan","Payplan",true)}</>)}
       {cockpitVisible&&group("cockpit","Cockpit V2",<>{allowed("cockpit")&&link("/cockpit-v2?section=pilotage","Pilotage du jour")}{allowed("cockpit")&&link("/cockpit-v2?section=synthese","Synthèse manager")}{allowed("cockpit")&&link("/cockpit-v2?section=decision","Aide à la décision")}{allowed("cockpit")&&link("/cockpit-v2?section=prevision","Prévision fin de journée")}{allowed("bodyshop")&&link("/cockpit-v2/carrosserie","Focus carrosserie")}{allowed("intelligence")&&link("/intelligence","Analyse")}</>)}
       {clientVisible&&group("client","Dashboard client",<>{link("/dashboard-client?scope=reseau","Réseau EFF & EFB")}{link("/dashboard-client?scope=bmw-mini","BMW / MINI")}</>)}
       {group("settings","Paramètre",<>{allowed("settings")&&link(rootHref("objectives"),"Objectif & seuil")}{allowed("settings")&&link("/sources","Source & Connexion")}{link("/account","Accès")}{allowed("data_rh")&&link("/data-rh","Data RH")}</>)}
