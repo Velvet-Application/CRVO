@@ -8,6 +8,9 @@ const files={
   layout:fs.readFileSync("app/layout.tsx","utf8"),
   kioskBridge:fs.readFileSync("app/kiosk-fetch-bridge.tsx","utf8"),
   colors:fs.readFileSync("app/activity-colors.ts","utf8"),
+  home:fs.readFileSync("app/home-dashboard.tsx","utf8"),
+  objectivesApi:fs.readFileSync("app/api/objectives/route.ts","utf8"),
+  dailyObjectivesMigration:fs.readFileSync("supabase/migrations/20260817092000_daily_exit_objectives_full_month_save.sql","utf8"),
 };
 
 const labels=[
@@ -70,8 +73,17 @@ for(const [label,hex] of [["Expertise","#eb5b56"],["Mécanique","#55b779"],["Jan
   if(!files.colors.includes(hex))failures.push(`Couleur activité absente : ${label} ${hex}`);
 }
 
+if(!files.home.includes("function dailyExitTarget("))failures.push("Performance du jour doit disposer d'une résolution de l'objectif Sortie usine par date exacte.");
+if(!files.home.includes('detail={sortieTarget!=null?`objectif journalier'))failures.push("La carte Sorties VOP doit afficher l'objectif journalier de la date.");
+if(files.home.includes('detail={targetFor("Sortie usine",objectives)!=null?`objectif'))failures.push("La carte Sorties VOP ne doit plus utiliser l'objectif mensuel standard comme objectif du jour.");
+if(!files.home.includes("OBJECTIF SORTIE USINE · JOUR PAR JOUR"))failures.push("Le paramétrage doit exposer le planning Sortie usine jour par jour.");
+if(!files.home.includes("sortieDailyTargets:dailyTargetsDraft"))failures.push("La sauvegarde objectifs doit persister le planning quotidien réellement saisi.");
+if(!files.objectivesApi.includes("legacyDailyTargetsRecovered"))failures.push("L'API objectifs doit récupérer l'ancien planning navigateur lorsqu'il existe encore.");
+if(!files.objectivesApi.includes("legacyCookie(request, key)"))failures.push("L'API objectifs doit lire l'ancien cookie de planning uniquement pour récupération.");
+if(!files.dailyObjectivesMigration.includes("delete from public.kpi_daily_exit_objectives"))failures.push("La sauvegarde du planning quotidien doit remplacer proprement le mois complet pour permettre d'effacer une date.");
+
 if(failures.length){
   console.error("Contrat de navigation CRVO invalide :\n- "+failures.join("\n- "));
   process.exit(1);
 }
-console.log(`Navigation CRVO validée : ${labels.length} libellés, droits, simulateur séparé sous les écrans, kiosks sans session et palette activités contrôlés.`);
+console.log(`Navigation CRVO validée : ${labels.length} libellés, droits, simulateur séparé sous les écrans, objectifs journaliers Sortie usine, kiosks sans session et palette activités contrôlés.`);
