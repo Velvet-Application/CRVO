@@ -11,6 +11,8 @@ import GlobalNavDrawer from "./global-nav-drawer";
 import HomeSideMenu from "./home-side-menu";
 import DataTrustGuard from "./data-trust-guard";
 import AuthNav from "./auth-nav";
+import ActivityColorBinder from "./activity-color-binder";
+import KioskFetchBridge from "./kiosk-fetch-bridge";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -21,6 +23,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="fr"><body>
+    <KioskFetchBridge />
+    <ActivityColorBinder />
     <GlobalNavDrawer />
     <HomeSideMenu />
     <DataTrustGuard />
