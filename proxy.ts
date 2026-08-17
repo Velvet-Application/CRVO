@@ -17,7 +17,7 @@ type Session={
 
 async function sha256Hex(value:string){const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,"0")).join("");}
 async function validate(token:string){const tokenHash=await sha256Hex(token);const response=await fetch(`${SUPABASE_URL}/rest/v1/rpc/crvo_auth_context_v2`,{method:"POST",headers:{apikey:SUPABASE_KEY,"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({p_token_hash:tokenHash}),cache:"no-store"});if(!response.ok)throw new Error(`auth ${response.status}`);const rows=await response.json() as Session[];return rows[0]??null;}
-function isStatic(pathname:string){return pathname.startsWith("/_next/")||pathname.startsWith("/assets/")||pathname==="/favicon.svg"||/\.(?:css|js|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|map)$/i.test(pathname);}
+function isStatic(pathname:string){return pathname.startsWith("/_next/")||pathname.startsWith("/assets/")||pathname==="/favicon.svg"||pathname==="/manifest.webmanifest"||/\.(?:css|js|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|map|webmanifest)$/i.test(pathname);}
 function isPublicKioskPath(path:string){return path==="/atelier"||path==="/direction"||path==="/api/kiosk/atelier"||path==="/api/kiosk/direction";}
 function apiUnauthorized(status=401,message="Authentification requise."){return NextResponse.json({error:message},{status,headers:{"Cache-Control":"no-store"}});}
 function has(session:Session,key:string){return session.role==="admin"||session.page_permissions?.includes("*")||session.page_permissions?.includes(key);}
