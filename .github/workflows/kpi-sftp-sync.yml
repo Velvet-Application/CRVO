@@ -15,6 +15,7 @@ on:
   schedule:
     # Redondance industrielle : tentative toutes les 5 minutes.
     # GitHub Actions restant best-effort, la fraicheur réelle est surveillée par /api/health.
+    # Contrat de service : heartbeat réussi < 15 min, incident critique au-delà de 30 min.
     - cron: "*/5 * * * *"
 
 permissions:
