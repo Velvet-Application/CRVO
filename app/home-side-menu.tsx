@@ -96,6 +96,7 @@ export default function HomeSideMenu() {
       </>)}
 
       {admin && <div className="hsm-admin">
+        {direct("/capacitaire", "Simulateur capacitaire", false, true)}
         {direct("/atelier", "Ecran ATELIER", false, true)}
         {direct("/direction", "Ecran DIRECTION", false, true)}
       </div>}
