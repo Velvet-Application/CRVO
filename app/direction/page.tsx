@@ -42,7 +42,22 @@ type FinanceSnapshot = {
   source:string;
   metrics:Record<string,number|string|null>;
 };
-type FinancePayload = { snapshot?:FinanceSnapshot|null; snapshots?:FinanceSnapshot[] };
+type PendingInvoices = {
+  workloadDate?:string|null;
+  parkDate?:string|null;
+  parkModifiedAt?:string|null;
+  invoiceCutoff?:string|null;
+  count?:number|null;
+  revenue?:number|null;
+  overdueCount?:number|null;
+  overdueRevenue?:number|null;
+  recentCount?:number|null;
+  recentRevenue?:number|null;
+  budgetWeightPct?:number|null;
+  currentRevenueWeightPct?:number|null;
+  revenueAfterCatchup?:number|null;
+};
+type FinancePayload = { snapshot?:FinanceSnapshot|null; snapshots?:FinanceSnapshot[]; pendingInvoices?:PendingInvoices|null };
 
 const targets:Record<string,number> = {
   Expertise:90,
@@ -178,6 +193,12 @@ export default function DirectionPage() {
   const projection = elapsed > 0 ? cumulativeRevenue / elapsed * businessDays.length : 0;
   const projectionPct = budget > 0 ? Math.round(projection / budget * 100) : 0;
   const budgetGap = budget > 0 ? projection-budget : 0;
+  const pendingInvoices = finance?.pendingInvoices ?? null;
+  const pendingCount = num(pendingInvoices?.count);
+  const pendingRevenue = num(pendingInvoices?.revenue);
+  const overdueCount = num(pendingInvoices?.overdueCount);
+  const overdueRevenue = num(pendingInvoices?.overdueRevenue);
+  const pendingBudgetWeight = num(pendingInvoices?.budgetWeightPct);
 
   const stock = live?.stock ?? 0;
   const age0to15 = Math.max(stock - (live?.over15 ?? 0), 0);
@@ -235,11 +256,12 @@ export default function DirectionPage() {
       </article>
 
       <article className={`${styles.financeCard} ${tv.panel} ${tv.financeCard}`}>
-        <div className={`${styles.sectionHead} ${tv.sectionHead}`}><div><span>FACTURATION · MOIS EN COURS</span><h2>CA réel · projection · budget</h2></div>{financeLatest && <small>Arrêté au {financeDate(financeLatest.date)}</small>}</div>
+        <div className={`${styles.sectionHead} ${tv.sectionHead}`}><div><span>FACTURATION · MOIS EN COURS</span><h2>CA réel · projection · budget · reste à facturer</h2></div>{financeLatest && <small>Arrêté au {financeDate(financeLatest.date)}</small>}</div>
         <div className={`${styles.financeNumbers} ${tv.financeNumbers}`}>
           <div><span>CA À DATE</span><strong>{shortEuro(cumulativeRevenue)}</strong><small>{financeLatest ? `clôturé au ${financeDate(financeLatest.date)}` : "données en attente"}</small></div>
           <div className={projectionPct >= 100 ? styles.positive : styles.negative}><span>PROJECTION FIN DE MOIS</span><strong>{shortEuro(projection)}</strong><small>{budget > 0 ? `${projectionPct}% du budget` : "budget non configuré"}</small></div>
           <div className={`${tv.budgetCard} ${budget > 0 && budgetGap >= 0 ? styles.positive : styles.negative}`}><span>BUDGET MENSUEL</span><strong>{budget > 0 ? shortEuro(budget) : "—"}</strong><small>{budget > 0 ? `${budgetGap >= 0 ? "+" : ""}${shortEuro(budgetGap)} projeté vs budget` : "à configurer"}</small></div>
+          <div className={tv.pendingCard}><span>FACTURES RESTANTES</span><strong>{pendingInvoices ? `${pendingCount} OR` : "—"}</strong><small>{pendingInvoices ? `${shortEuro(pendingRevenue)} · ${pendingBudgetWeight.toLocaleString("fr-FR", { maximumFractionDigits:1 })}% du budget · dont ${overdueCount} en retard (${shortEuro(overdueRevenue)})` : "comparaison OR encours / parc FTP en attente"}</small></div>
         </div>
         <FinanceChart rows={financeRows} budget={budget} projection={projection}/>
       </article>
