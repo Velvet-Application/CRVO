@@ -13,9 +13,9 @@ on:
       - "bridge/package-lock.json"
       - ".github/workflows/kpi-sftp-sync.yml"
   schedule:
-    # Source opérationnelle terrain : contrôle toutes les 10 minutes.
-    # Un job live reste court et n'attend jamais les traitements historiques lourds.
-    - cron: "7,17,27,37,47,57 * * * *"
+    # Redondance industrielle : tentative toutes les 5 minutes.
+    # GitHub Actions restant best-effort, la fraicheur réelle est surveillée par /api/health.
+    - cron: "*/5 * * * *"
 
 permissions:
   contents: read
@@ -54,3 +54,13 @@ jobs:
         run: npm run sync
       - name: Refresh live Factory and certify previous day
         run: node src/factory-live-sync.mjs
+      - name: Verify industrial freshness contract
+        working-directory: .
+        run: |
+          node <<'NODE'
+          const response=await fetch('https://kpi-crvo.cyril-gay.workers.dev/api/health?_='+Date.now(),{headers:{'Cache-Control':'no-cache'}});
+          const health=await response.json().catch(()=>({}));
+          const age=Number(health?.ftp?.syncAgeMinutes ?? 99999);
+          console.log(`health=${response.status} trust=${health?.trustLevel} ftpSyncAge=${age}m sourceAge=${health?.production?.sourceAgeMinutes}m`);
+          if(!response.ok || health?.dataReady!==true || !Number.isFinite(age) || age>15) process.exit(1);
+          NODE
