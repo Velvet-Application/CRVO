@@ -5,6 +5,8 @@ export const dynamic = "force-dynamic";
 
 const MAX_ROWS_PER_CHUNK = 2500;
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
+const SAFE_COMMIT_DAYS = 7;
+const MAX_FINISH_STEPS = 120;
 
 type StartBody = {
   action: "start";
@@ -36,10 +38,34 @@ type CommitBody = { action: "commit"; batchId?: string; days?: number };
 type FinishBody = { action: "finish"; batchId?: string };
 type Body = StartBody | ChunkBody | CommitBody | FinishBody;
 
-type CommitResult = Record<string, unknown> & { imported?: boolean; remainingRows?: number };
+type CommitResult = Record<string, unknown> & { imported?: boolean; remainingRows?: number; committedRows?: number };
 
 function noStore(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
+}
+
+function isStatementTimeout(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return message.includes("57014") || /statement timeout/i.test(message) || /canceling statement/i.test(message);
+}
+
+async function commitWithRetry(tokenHash: string, batchId: string, requestedDays = SAFE_COMMIT_DAYS) {
+  let days = Math.max(1, Math.min(Number(requestedDays) || SAFE_COMMIT_DAYS, 14));
+  let lastError: unknown = null;
+  while (days >= 1) {
+    try {
+      return await authRpc<CommitResult>("kpi_rh_batch_commit_step_admin", {
+        p_session_hash: tokenHash,
+        p_batch_id: batchId,
+        p_days: days,
+      });
+    } catch (error) {
+      lastError = error;
+      if (!isStatementTimeout(error) || days === 1) throw error;
+      days = Math.max(1, Math.floor(days / 2));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Consolidation RH impossible.");
 }
 
 export async function POST(request: Request) {
@@ -90,33 +116,28 @@ export async function POST(request: Request) {
     if (!/^[0-9a-f-]{36}$/i.test(batchId)) return noStore({ error: "Lot RH invalide." }, 400);
 
     if (body.action === "commit") {
-      const days = Math.max(1, Math.min(Number(body.days ?? 60) || 60, 90));
-      const result = await authRpc<CommitResult>("kpi_rh_batch_commit_step_admin", {
-        p_session_hash: current.tokenHash,
-        p_batch_id: batchId,
-        p_days: days,
-      });
+      const days = Math.max(1, Math.min(Number(body.days ?? SAFE_COMMIT_DAYS) || SAFE_COMMIT_DAYS, 14));
+      const result = await commitWithRetry(current.tokenHash, batchId, days);
       return noStore(result);
     }
 
     let result: CommitResult = {};
-    for (let step = 0; step < 12; step++) {
-      result = await authRpc<CommitResult>("kpi_rh_batch_commit_step_admin", {
-        p_session_hash: current.tokenHash,
-        p_batch_id: batchId,
-        p_days: 90,
-      });
+    for (let step = 0; step < MAX_FINISH_STEPS; step++) {
+      result = await commitWithRetry(current.tokenHash, batchId, SAFE_COMMIT_DAYS);
       if (result.imported) return noStore(result);
       if (Number(result.remainingRows ?? 0) <= 0) break;
     }
 
     return noStore({
-      error: "La finalisation RH n’est pas terminée. Relance l’import : le lot est conservé et reprendra sans perdre les blocs reçus.",
+      error: "La consolidation RH est protégée par lots courts mais n’a pas pu terminer dans cette requête. Le lot est conservé et peut reprendre sans perte.",
       ...result,
     }, 409);
   } catch (error) {
+    const timeout = isStatementTimeout(error);
     return noStore({
-      error: error instanceof Error ? `Import RH impossible : ${error.message}` : "Import RH impossible.",
-    }, 500);
+      error: timeout
+        ? "Import RH ralenti par la base. La transaction a été annulée sans perte ; relance l’import pour reprendre par lots plus petits."
+        : error instanceof Error ? `Import RH impossible : ${error.message}` : "Import RH impossible.",
+    }, timeout ? 503 : 500);
   }
 }
