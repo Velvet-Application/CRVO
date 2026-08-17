@@ -12,6 +12,10 @@ type StaffMember = {
   sectorLabel?: string | null;
   teamCode?: string | null;
   included: boolean;
+  boughtHours?: number;
+  soldHours?: number;
+  productivity?: number | null;
+  comparable?: boolean;
 };
 
 type CapacityPayload = {
