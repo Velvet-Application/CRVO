@@ -50,12 +50,17 @@ jobs:
           node <<'NODE'
           const origin = "https://kpi-crvo.cyril-gay.workers.dev";
           const stamp = Date.now();
-          const [healthResponse, protectedResponse] = await Promise.all([
+          const [healthResponse, protectedResponse, financeResponse] = await Promise.all([
             fetch(`${origin}/api/health?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
             fetch(`${origin}/api/bottlenecks?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+            fetch(`${origin}/api/kiosk/direction?resource=finance&history=1&_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
           ]);
           const health = await healthResponse.json().catch(() => ({}));
-          console.log(`health=${healthResponse.status} ok=${health.ok} data=${health.dataReady} bottlenecks=${health.bottlenecksReady} clients=${health.clientDashboardReady} protected=${protectedResponse.status}`);
+          const finance = await financeResponse.json().catch(() => ({}));
+          const revenue = Number(finance?.snapshot?.metrics?.revenue_cumulative || 0);
+          const budget = Number(finance?.snapshot?.metrics?.revenue_cumulative_target || finance?.budget || 0);
+          console.log(`health=${healthResponse.status} ok=${health.ok} data=${health.dataReady} bottlenecks=${health.bottlenecksReady} clients=${health.clientDashboardReady} protected=${protectedResponse.status} finance=${financeResponse.status} connected=${finance.connected} asOf=${finance.asOfDate} revenue=${revenue} budget=${budget}`);
           if (!healthResponse.ok || health.ok !== true || health.dataReady !== true || health.bottlenecksReady !== true || health.clientDashboardReady !== true) process.exit(1);
           if (protectedResponse.status !== 401) process.exit(2);
+          if (!financeResponse.ok || finance.connected !== true || !finance.snapshot || revenue <= 0 || budget <= 0) process.exit(3);
           NODE
