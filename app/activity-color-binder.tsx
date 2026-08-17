@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { ACTIVITY_COLORS, activityColor, activityKey } from "./activity-colors";
 
 const CANDIDATE_SELECTOR = [
@@ -62,7 +62,7 @@ function paint(root: ParentNode = document) {
 }
 
 export default function ActivityColorBinder() {
-  useEffect(() => {
+  useLayoutEffect(() => {
     let frame = 0;
     const schedule = () => {
       if (frame) cancelAnimationFrame(frame);
