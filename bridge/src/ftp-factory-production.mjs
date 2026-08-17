@@ -13,15 +13,15 @@ function isoDate(value) {
   return iso ? `${iso[1]}-${iso[2]}-${iso[3]}` : null;
 }
 
-export function parseFactoryToday(buffer, sourceModifiedAt) {
+function readRows(buffer) {
   const workbook = XLSX.read(buffer, { type: "buffer", raw: true, dense: false });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  if (!sheet) return [];
-  const rows = XLSX.utils.sheet_to_json(sheet, { raw: false, defval: "", blankrows: false });
-  return rows.map((row) => ({
-    production_date: isoDate(row.CAL_DATE),
+  return sheet ? XLSX.utils.sheet_to_json(sheet, { raw: false, defval: "", blankrows: false }) : [];
+}
+
+function commonMetrics(row, sourceModifiedAt) {
+  return {
     source_modified_at: sourceModifiedAt ? new Date(sourceModifiedAt).toISOString() : null,
-    flow: String(row.RDT_LIBELLE ?? "").trim(),
     received: number(row["Réceptionnés"]),
     dynamic_expertise: number(row["Expertises Dynamiques"]),
     washing: number(row.Lavages),
@@ -37,7 +37,28 @@ export function parseFactoryToday(buffer, sourceModifiedAt) {
     quality: number(row["Qualités"]),
     wheels: number(row.Jantes),
     restor_fx: number(row["Restor-FX"]),
-    technical_control: number(row.CT),
+    technical_control: number(row.CT ?? row["CT OK"]),
     available: number(row.Disponibles),
+  };
+}
+
+export function parseFactoryToday(buffer, sourceModifiedAt) {
+  return readRows(buffer).map((row) => ({
+    production_date: isoDate(row.CAL_DATE),
+    flow: String(row.RDT_LIBELLE ?? "").trim(),
+    ...commonMetrics(row, sourceModifiedAt),
+  })).filter((row) => row.production_date && row.flow);
+}
+
+/**
+ * Factory-j-1 est le fichier de clôture du jour précédent. Il a priorité sur
+ * la photographie Factory-j+1 prise pendant la journée, car la colonne
+ * "Disponibles" peut encore évoluer après le dernier relevé live.
+ */
+export function parseFactoryPrevious(buffer, sourceModifiedAt) {
+  return readRows(buffer).map((row) => ({
+    production_date: isoDate(row.Date),
+    flow: String(row.Type ?? "").trim(),
+    ...commonMetrics(row, sourceModifiedAt),
   })).filter((row) => row.production_date && row.flow);
 }
