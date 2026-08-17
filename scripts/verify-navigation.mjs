@@ -21,15 +21,19 @@ const files={
   productivity:fs.readFileSync("app/performance/productivite/page.tsx","utf8"),
   capacityMigration:fs.readFileSync("supabase/migrations/20260817073500_productive_only_and_simple_capacity.sql","utf8"),
   capacityBillingMigration:fs.readFileSync("supabase/migrations/20260817151500_capacity_volume_from_billed_average.sql","utf8"),
+  rhClient:fs.readFileSync("app/data-rh/effectif/effectif-client.tsx","utf8"),
+  rhApi:fs.readFileSync("app/api/staff/operational/route.ts","utf8"),
+  rhPage:fs.readFileSync("app/animation-centre/rh/page.tsx","utf8"),
+  rhMigration:fs.readFileSync("supabase/migrations/20260817163000_rh_operational_animation_centre.sql","utf8"),
 };
 
 const labels=[
-  "Performance du jour","BOOK","Dashboard","Goulot","Walking Dead","Chiffre d'affaire","Animation du centre","Productivité","Variable","Accès Workflow","Payplan","Cockpit V2","Pilotage du jour","Synthèse manager","Aide à la décision","Prévision fin de journée","Focus carrosserie","Simulateur capacitaire","Analyse","Dashboard client","Réseau EFF & EFB","BMW / MINI","Paramètre","Objectif & seuil","Source & Connexion","Accès","Data RH","Ecran ATELIER","Ecran DIRECTION",
+  "Performance du jour","BOOK","Dashboard","Goulot","Walking Dead","Chiffre d'affaire","Animation du centre","RH & Polycompétences","Productivité","Variable","Accès Workflow","Payplan","Cockpit V2","Pilotage du jour","Synthèse manager","Aide à la décision","Prévision fin de journée","Focus carrosserie","Simulateur capacitaire","Analyse","Dashboard client","Réseau EFF & EFB","BMW / MINI","Paramètre","Objectif & seuil","Source & Connexion","Accès","Data RH","Ecran ATELIER","Ecran DIRECTION",
 ];
 
 const failures=[];
 for(const label of labels){if(!files.sidebar.includes(label)&&!files.drawer.includes(label)&&!files.homeMenu.includes(label))failures.push(`Libellé absent : ${label}`);}
-for(const path of ["/animation-mensuelle/payplan","/animation-mensuelle/acces","/capacitaire","/api/capacity-simulator","/api/capacity-simple","/atelier","/direction"]){if(!files.proxy.includes(path))failures.push(`Règle serveur absente : ${path}`);}
+for(const path of ["/animation-mensuelle/payplan","/animation-mensuelle/acces","/animation-centre/rh","/api/staff/operational","/capacitaire","/api/capacity-simulator","/api/capacity-simple","/atelier","/direction"]){if(!files.proxy.includes(path))failures.push(`Règle serveur absente : ${path}`);}
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/acces"'))failures.push("Accès Workflow doit rester ADMIN dans le menu latéral.");
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/payplan"'))failures.push("Payplan doit rester ADMIN dans le menu latéral.");
 if(!files.sidebar.includes('admin?createPortal(<div className="architecture-admin-screens"')||!files.sidebar.includes('topLink("/capacitaire","Simulateur capacitaire")'))failures.push("Simulateur capacitaire doit rester ADMIN sous les raccourcis Ecran dans le menu latéral.");
@@ -41,8 +45,15 @@ if(!files.drawer.includes('admin&&<div className="gn-admin"')||!files.drawer.inc
 if(!files.drawer.includes('admin&&<div className="gn-admin"')||!files.drawer.includes('link("/direction","Ecran DIRECTION",true)'))failures.push("Ecran DIRECTION doit rester ADMIN dans le menu global.");
 if(!files.sidebar.includes('allowed("data_rh")?link("/data-rh","Data RH")'))failures.push("Data RH doit suivre la permission data_rh dans le menu latéral.");
 if(!files.drawer.includes('allowed("data_rh")&&link("/data-rh","Data RH")'))failures.push("Data RH doit suivre la permission data_rh dans le menu global.");
+if(!files.sidebar.includes('allowed("data_rh")?link("/animation-centre/rh","RH & Polycompétences")'))failures.push("Le module RH opérationnel doit être visible dans Animation du centre du menu latéral.");
+if(!files.drawer.includes('allowed("data_rh")&&link("/animation-centre/rh","RH & Polycompétences")'))failures.push("Le module RH opérationnel doit être visible dans Animation du centre du menu global.");
+if(!files.homeMenu.includes('allowed("data_rh") && direct("/animation-centre/rh", "RH & Polycompétences")'))failures.push("Le module RH opérationnel doit être visible dans Animation du centre du menu principal.");
 if(!files.proxy.includes('return "data_rh"'))failures.push("La route Data RH doit être protégée par la permission data_rh.");
 if(!files.account.includes('key:"settings"')||!files.account.includes('key:"data_rh"'))failures.push("Les permissions Paramètres métier et Data RH doivent être configurables dans Accès.");
+if(!files.rhPage.includes('context="animation"'))failures.push("La route Animation du centre RH doit réutiliser la vue RH opérationnelle.");
+if(!files.rhClient.includes("Neutraliser dans les calculs KPI")||!files.rhClient.includes("/api/staff/operational")||!files.rhClient.includes("Performance sur cette compétence")||!files.rhClient.includes("Ajouter une polycompétence"))failures.push("Le module RH doit gérer neutralisation, affectation, performance par compétence et ajout de polycompétence.");
+if(!files.rhApi.includes("kpi_rh_update_staff_operational")||!files.rhApi.includes("Droit Data RH requis"))failures.push("L'API RH opérationnelle doit utiliser le RPC sécurisé Data RH.");
+if(!files.rhMigration.includes("kpi_staff_operational_overrides")||!files.rhMigration.includes("kpi_staff_operational_events")||!files.rhMigration.includes("kpi_staff_effective")||!files.rhMigration.includes("kpi_staff_alias_neutralized")||!files.rhMigration.includes("productivity90d"))failures.push("La migration RH doit conserver les overrides, l'audit, la neutralisation et la performance des polycompétences.");
 
 if(!files.proxy.includes('isPublicKioskPath(path)'))failures.push("Les écrans kiosk doivent contourner l'identification uniquement via la règle kiosk dédiée.");
 for(const path of ["/api/kiosk/atelier","/api/kiosk/direction"]){if(!files.proxy.includes(path))failures.push(`Passerelle kiosk absente : ${path}`);}
@@ -82,4 +93,4 @@ for(const key of ["expertise","mecanique","dsp","jantes","carrosserie","preparat
 if(!files.capacityMigration.includes("kpi_is_productive_sector")||!files.capacityMigration.includes("kpi_capacity_simple"))failures.push("La migration doit verrouiller le filtre productif et le calcul capacitaire léger.");
 
 if(failures.length){console.error("Contrat de navigation CRVO invalide :\n- "+failures.join("\n- "));process.exit(1);}
-console.log(`Navigation CRVO validée : ${labels.length} libellés, droits, simulateur présent dans les 3 menus, comparaison ATELIER live/clôture sur une page, alerte fraîcheur FTP, sorties clôturées vérifiées, productivité limitée aux métiers productifs, volume MINI basé sur les heures vendues / moyenne facturée, matrice Box × Fixline et export PPT CRVO.`);
+console.log(`Navigation CRVO validée : ${labels.length} libellés, module RH opérationnel dans Animation du centre, droits Data RH, neutralisation et affectations historisées, simulateur présent dans les 3 menus, comparaison ATELIER live/clôture sur une page, alerte fraîcheur FTP, sorties clôturées vérifiées, productivité limitée aux métiers productifs, volume MINI basé sur les heures vendues / moyenne facturée, matrice Box × Fixline et export PPT CRVO.`);
