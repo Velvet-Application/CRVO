@@ -16,7 +16,9 @@ function rewrite(url: URL, pathname: string) {
     target = "/api/kiosk/direction";
     if (source === "/api/dashboard") resource = "dashboard";
     else if (source === "/api/objectives") resource = "objectives";
-    else if (source === "/api/finance" || source === "/api/direction-finance") resource = "finance";
+    // La finance Direction reste sur /api/finance : cette API authentifiée
+    // utilise le même moteur certifié que le kiosk et évite une dépendance
+    // au pont client pour un indicateur critique.
   }
 
   if (!target || !resource) return null;
