@@ -8,6 +8,7 @@ type SnapshotRow = {
   snapshot_at: string;
   source_name: string;
   metrics: Record<string, number | string | null>;
+  verifiedMetrics?: string[];
 };
 
 type LiveRow = SnapshotRow & {
@@ -22,6 +23,14 @@ type DirectionLiveFlowRow = {
   preparation_remaining: number | string | null;
   quality_remaining: number | string | null;
   photo_remaining: number | string | null;
+};
+
+type VerifiedMetricRow = {
+  metric_date: string;
+  metric_key: string;
+  metric_value: number | string;
+  source_label: string;
+  verified_at: string;
 };
 
 const SATURDAY_ADDITIVE_METRICS = [
@@ -77,12 +86,6 @@ function hasMeaningfulMetrics(row: SnapshotRow) {
   return [...SATURDAY_ADDITIVE_METRICS, ...STOCK_METRICS].some((key) => metricValue(row.metrics, key) > 0);
 }
 
-/**
- * Règle métier CRVO :
- * - les récapitulatifs quotidiens sont exclusivement du lundi au vendredi ;
- * - la production du samedi est rattachée au vendredi précédent ;
- * - le dimanche n'est jamais exposé comme journée de performance/veille.
- */
 function normalizeBusinessDays(rows: SnapshotRow[]) {
   const byDate = new Map(rows.map((row) => [row.snapshot_at, { ...row, metrics: { ...row.metrics } }]));
 
@@ -93,9 +96,7 @@ function normalizeBusinessDays(rows: SnapshotRow[]) {
 
     if (friday) {
       const metrics = { ...friday.metrics };
-      for (const key of SATURDAY_ADDITIVE_METRICS) {
-        metrics[key] = metricValue(friday.metrics, key) + metricValue(saturday.metrics, key);
-      }
+      for (const key of SATURDAY_ADDITIVE_METRICS) metrics[key] = metricValue(friday.metrics, key) + metricValue(saturday.metrics, key);
       for (const key of STOCK_METRICS) {
         const saturdayValue = metricValue(saturday.metrics, key);
         if (saturdayValue > 0) metrics[key] = saturdayValue;
@@ -113,17 +114,11 @@ function normalizeBusinessDays(rows: SnapshotRow[]) {
         metrics: { ...saturday.metrics },
       });
     }
-
     byDate.delete(saturday.snapshot_at);
   }
 
-  for (const row of [...byDate.values()]) {
-    if (utcDay(row.snapshot_at) === 0) byDate.delete(row.snapshot_at);
-  }
-
-  return [...byDate.values()]
-    .filter((row) => BUSINESS_DAYS.has(utcDay(row.snapshot_at)))
-    .sort((a, b) => a.snapshot_at.localeCompare(b.snapshot_at));
+  for (const row of [...byDate.values()]) if (utcDay(row.snapshot_at) === 0) byDate.delete(row.snapshot_at);
+  return [...byDate.values()].filter((row) => BUSINESS_DAYS.has(utcDay(row.snapshot_at))).sort((a, b) => a.snapshot_at.localeCompare(b.snapshot_at));
 }
 
 function mergeRealRows(rows: SnapshotRow[]) {
@@ -135,6 +130,27 @@ function mergeRealRows(rows: SnapshotRow[]) {
   return [...byDate.values()].sort((a, b) => a.snapshot_at.localeCompare(b.snapshot_at));
 }
 
+function applyVerifiedMetrics(rows: SnapshotRow[], verifiedRows: VerifiedMetricRow[]) {
+  const byDate = new Map<string, VerifiedMetricRow[]>();
+  for (const item of verifiedRows) {
+    const bucket = byDate.get(item.metric_date) ?? [];
+    bucket.push(item);
+    byDate.set(item.metric_date, bucket);
+  }
+  return rows.map((row) => {
+    const verified = byDate.get(row.snapshot_at) ?? [];
+    if (!verified.length) return row;
+    const metrics = { ...row.metrics };
+    for (const item of verified) metrics[item.metric_key] = Number(item.metric_value);
+    return {
+      ...row,
+      metrics,
+      verifiedMetrics: verified.map((item) => item.metric_key),
+      source_name: `${row.source_name} · clôture vérifiée`,
+    };
+  });
+}
+
 function formatSnapshot(row: SnapshotRow) {
   const metrics = row.metrics ?? {};
   return {
@@ -142,6 +158,7 @@ function formatSnapshot(row: SnapshotRow) {
     label: new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${row.snapshot_at}T12:00:00Z`)),
     source: row.source_name,
     sourceMode: sourceMode(row.source_name),
+    verifiedMetrics: row.verifiedMetrics ?? [],
     entries: metricValue(metrics, "entries_vop"),
     exits: metricValue(metrics, "exits_vop"),
     stock: metricValue(metrics, "factory_stock"),
@@ -179,22 +196,24 @@ export async function GET(request: Request) {
   const requestedDate = url.searchParams.get("date")?.match(/^\d{4}-\d{2}-\d{2}$/)?.[0] ?? null;
 
   try {
-    const [historyRows, liveRows, directionRows] = await Promise.all([
+    const [historyRows, liveRows, directionRows, verifiedRows] = await Promise.all([
       rest<SnapshotRow[]>(db.supabaseUrl, db.readKey, "kpi_public_dashboard_snapshots?select=snapshot_at,source_name,metrics&order=snapshot_at.asc&limit=180"),
       rest<LiveRow[]>(db.supabaseUrl, db.readKey, "kpi_ftp_live_dashboard?select=snapshot_at,source_name,metrics,source_modified_at,factory_modified_at,park_modified_at&limit=1"),
       rest<DirectionLiveFlowRow[]>(db.supabaseUrl, db.readKey, "kpi_ftp_direction_live_flow?select=snapshot_at,park_modified_at,preparation_remaining,quality_remaining,photo_remaining&limit=1").catch(() => []),
+      rest<VerifiedMetricRow[]>(db.supabaseUrl, db.readKey, "kpi_daily_verified_metrics?select=metric_date,metric_key,metric_value,source_label,verified_at&order=metric_date.asc&limit=1000").catch(() => []),
     ]);
-    const all = normalizeBusinessDays(mergeRealRows([...historyRows, ...liveRows]));
+    const all = applyVerifiedMetrics(normalizeBusinessDays(mergeRealRows([...historyRows, ...liveRows])), verifiedRows);
     if (!all.length) return NextResponse.json({ connected: false, error: "Aucune donnée opérationnelle réelle n'est disponible." }, { status: 503, headers: { "Cache-Control": "no-store" } });
     const source = requestedDate ? all.find((row) => row.snapshot_at === requestedDate) : all.at(-1);
     if (!source) return NextResponse.json({ connected: true, error: "Aucune donnée réelle pour la date demandée." }, { status: 404, headers: { "Cache-Control": "no-store" } });
 
     const live = liveRows[0] ?? null;
     const direction = directionRows[0] ?? null;
-    const liveMetrics = live?.metrics ?? {};
+    const liveOverride = live ? applyVerifiedMetrics([live], verifiedRows)[0] : null;
+    const liveMetrics = liveOverride?.metrics ?? live?.metrics ?? {};
     return NextResponse.json({
       connected: true,
-      backend: "supabase-real-sources",
+      backend: "supabase-real-sources-verified",
       sourceMode: sourceMode(source.source_name),
       latestSource: source.source_name,
       snapshot: formatSnapshot(source),
