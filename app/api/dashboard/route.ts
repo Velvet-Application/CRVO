@@ -146,7 +146,7 @@ function applyVerifiedMetrics(rows: SnapshotRow[], verifiedRows: VerifiedMetricR
       ...row,
       metrics,
       verifiedMetrics: verified.map((item) => item.metric_key),
-      source_name: `${row.source_name} · clôture vérifiée`,
+      source_name: row.source_name.includes("clôture vérifiée") ? row.source_name : `${row.source_name} · clôture vérifiée`,
     };
   });
 }
