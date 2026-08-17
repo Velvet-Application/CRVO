@@ -1,5 +1,5 @@
-import EffectifClient from "../../data-rh/effectif/effectif-client";
+import { redirect } from "next/navigation";
 
 export default function AnimationCentreRhPage(){
-  return <EffectifClient context="animation"/>;
+  redirect("/data-rh/effectif?from=animation");
 }
