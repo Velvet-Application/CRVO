@@ -22,6 +22,7 @@ function shortText(node: Element | null) {
 function activityLabel(element: HTMLElement) {
   const candidates = [
     element.getAttribute("data-activity") ?? "",
+    element.tagName === "BUTTON" ? shortText(element) : "",
     shortText(element.querySelector(":scope > span")),
     shortText(element.querySelector(":scope > h3")),
     shortText(element.querySelector(":scope > header span")),
