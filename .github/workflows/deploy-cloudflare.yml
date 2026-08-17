@@ -45,45 +45,34 @@ jobs:
         run: npx tsc --noEmit
       - name: Build, deploy and verify production
         run: npm run build
-      - name: Verify protected production health
+      - name: Verify industrial production health and confidentiality
         run: |
           node <<'NODE'
-          const origin = "https://kpi-crvo.cyril-gay.workers.dev";
-          const stamp = Date.now();
-          const parts = new Intl.DateTimeFormat("fr-CA", { timeZone:"Europe/Paris", year:"numeric", month:"2-digit", day:"2-digit" }).formatToParts(new Date());
-          const part = (type) => parts.find((item) => item.type === type)?.value || "";
-          const parisDate = `${part("year")}-${part("month")}-${part("day")}`;
-          const parisMonth = parisDate.slice(0, 7);
-          const [healthResponse, protectedResponse, financeResponse, objectivesResponse, manifestResponse, workerResponse, iconResponse] = await Promise.all([
-            fetch(`${origin}/api/health?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
-            fetch(`${origin}/api/bottlenecks?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
-            fetch(`${origin}/api/kiosk/direction?resource=finance&history=1&_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
-            fetch(`${origin}/api/kiosk/direction?resource=objectives&month=${parisMonth}&_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
-            fetch(`${origin}/manifest.webmanifest?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
-            fetch(`${origin}/sw.js?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
-            fetch(`${origin}/pwa-icon.svg?_=${stamp}`, { headers: { "Cache-Control": "no-cache" } }),
+          const origin="https://kpi-crvo.cyril-gay.workers.dev";
+          const stamp=Date.now();
+          const [healthResponse,protectedResponse,directionFinanceResponse,directionObjectivesResponse,atelierResponse,manifestResponse,workerResponse,iconResponse]=await Promise.all([
+            fetch(`${origin}/api/health?_=${stamp}`,{headers:{"Cache-Control":"no-cache"}}),
+            fetch(`${origin}/api/bottlenecks?_=${stamp}`,{headers:{"Cache-Control":"no-cache"}}),
+            fetch(`${origin}/api/kiosk/direction?resource=finance&_=${stamp}`,{headers:{"Cache-Control":"no-cache"},redirect:"manual"}),
+            fetch(`${origin}/api/kiosk/direction?resource=objectives&_=${stamp}`,{headers:{"Cache-Control":"no-cache"},redirect:"manual"}),
+            fetch(`${origin}/api/kiosk/atelier?resource=dashboard&_=${stamp}`,{headers:{"Cache-Control":"no-cache"},redirect:"manual"}),
+            fetch(`${origin}/manifest.webmanifest?_=${stamp}`,{headers:{"Cache-Control":"no-cache"}}),
+            fetch(`${origin}/sw.js?_=${stamp}`,{headers:{"Cache-Control":"no-cache"}}),
+            fetch(`${origin}/pwa-icon.svg?_=${stamp}`,{headers:{"Cache-Control":"no-cache"}}),
           ]);
-          const health = await healthResponse.json().catch(() => ({}));
-          const finance = await financeResponse.json().catch(() => ({}));
-          const objectives = await objectivesResponse.json().catch(() => ({}));
-          const manifest = await manifestResponse.json().catch(() => ({}));
-          const workerText = await workerResponse.text().catch(() => "");
-          const revenue = Number(finance?.snapshot?.metrics?.revenue_cumulative || 0);
-          const budget = Number(finance?.snapshot?.metrics?.revenue_cumulative_target || finance?.budget || 0);
-          const pending = finance?.pendingInvoices;
-          const pendingCount = Number(pending?.count ?? -1);
-          const pendingRevenue = Number(pending?.revenue ?? -1);
-          const overdueCount = Number(pending?.overdueCount ?? -1);
-          const pendingWeight = Number(pending?.budgetWeightPct ?? -1);
-          const dailyExitTarget = Number(objectives?.sortieDailyTargets?.[parisDate] ?? -1);
-          console.log(`health=${healthResponse.status} ok=${health.ok} trust=${health.trustLevel} dataTrustOk=${health.dataTrustOk} data=${health.dataReady} bottlenecks=${health.bottlenecksReady} clients=${health.clientDashboardReady} ftpAge=${health?.ftp?.syncAgeMinutes} sourceAge=${health?.production?.sourceAgeMinutes} protected=${protectedResponse.status} finance=${financeResponse.status} connected=${finance.connected} asOf=${finance.asOfDate} revenue=${revenue} budget=${budget} pendingOR=${pendingCount} pendingCA=${pendingRevenue} overdue=${overdueCount} weight=${pendingWeight}% workload=${pending?.workloadDate} park=${pending?.parkDate} parkModified=${pending?.parkModifiedAt} objectiveDate=${parisDate} dailyExitTarget=${dailyExitTarget} pwaManifest=${manifestResponse.status} sw=${workerResponse.status} icon=${iconResponse.status} display=${manifest.display}`);
-          if (!healthResponse.ok || health.ok !== true || health.dataReady !== true || health.bottlenecksReady !== true || health.clientDashboardReady !== true) process.exit(1);
-          if (health.dataTrustOk === false || health.trustLevel === "red") process.exit(9);
-          if (protectedResponse.status !== 401) process.exit(2);
-          if (!financeResponse.ok || finance.connected !== true || !finance.snapshot || revenue <= 0 || budget <= 0) process.exit(3);
-          if (!pending || pendingCount < 0 || pendingRevenue < 0 || overdueCount < 0 || pendingWeight < 0 || !pending.workloadDate || !pending.parkDate || !pending.parkModifiedAt) process.exit(4);
-          if (!objectivesResponse.ok || objectives.connected !== true || dailyExitTarget <= 0) process.exit(5);
-          if (!manifestResponse.ok || manifest.name !== "KPI CRVO Lens" || manifest.display !== "standalone" || manifest.start_url !== "/" || !Array.isArray(manifest.icons) || manifest.icons.length < 1) process.exit(6);
-          if (!workerResponse.ok || !workerText.includes("serviceWorker") && !workerText.includes("addEventListener")) process.exit(7);
-          if (!iconResponse.ok) process.exit(8);
+          const health=await healthResponse.json().catch(()=>({}));
+          const manifest=await manifestResponse.json().catch(()=>({}));
+          const workerText=await workerResponse.text().catch(()=>"");
+          const finance=health?.financeHealth??{};
+          const revenue=Number(finance.revenue??0),budget=Number(finance.budget??0),pendingCount=Number(finance.pendingCount??-1),pendingRevenue=Number(finance.pendingRevenue??-1),overdueCount=Number(finance.overdueCount??-1),dailyExitTarget=Number(health?.production?.dailyExitTarget??-1);
+          console.log(`health=${healthResponse.status} ok=${health.ok} trust=${health.trustLevel} dataTrustOk=${health.dataTrustOk} data=${health.dataReady} bottlenecks=${health.bottlenecksReady} clients=${health.clientDashboardReady} ftpAge=${health?.ftp?.syncAgeMinutes} sourceAge=${health?.production?.sourceAgeMinutes} protected=${protectedResponse.status} kioskFinanceAnon=${directionFinanceResponse.status} kioskObjectivesAnon=${directionObjectivesResponse.status} kioskAtelierAnon=${atelierResponse.status} revenue=${revenue} budget=${budget} pendingOR=${pendingCount} pendingCA=${pendingRevenue} overdue=${overdueCount} dailyExitTarget=${dailyExitTarget} pwaManifest=${manifestResponse.status} sw=${workerResponse.status} icon=${iconResponse.status} display=${manifest.display}`);
+          if(!healthResponse.ok||health.ok!==true||health.dataReady!==true||health.bottlenecksReady!==true||health.clientDashboardReady!==true)process.exit(1);
+          if(health.dataTrustOk===false||health.trustLevel==="red")process.exit(9);
+          if(protectedResponse.status!==401)process.exit(2);
+          if(directionFinanceResponse.status!==401||directionObjectivesResponse.status!==401||atelierResponse.status!==401)process.exit(10);
+          if(finance.ready!==true||revenue<=0||budget<=0||pendingCount<0||pendingRevenue<0||overdueCount<0||!finance.parkDate||!finance.parkModifiedAt)process.exit(3);
+          if(dailyExitTarget<=0)process.exit(5);
+          if(!manifestResponse.ok||manifest.name!=="KPI CRVO Lens"||manifest.display!=="standalone"||manifest.start_url!=="/"||!Array.isArray(manifest.icons)||manifest.icons.length<1)process.exit(6);
+          if(!workerResponse.ok||!workerText.includes("serviceWorker")&&!workerText.includes("addEventListener"))process.exit(7);
+          if(!iconResponse.ok)process.exit(8);
           NODE
