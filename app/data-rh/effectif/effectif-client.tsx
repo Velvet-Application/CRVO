@@ -25,6 +25,7 @@ type Directory = {
 };
 type StatusFilter = "active"|"neutralized"|"exited"|"all";
 type Props = { context?:"data-rh"|"animation" };
+type PendingConfirmation = { row:Staff; skill:Competency };
 
 function currentMonth(){const p=new Intl.DateTimeFormat("fr-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit"}).formatToParts(new Date());return `${p.find(x=>x.type==="year")?.value}-${p.find(x=>x.type==="month")?.value}`;}
 function todayIso(){return new Intl.DateTimeFormat("fr-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());}
@@ -47,6 +48,7 @@ export default function EffectifClient({context="data-rh"}:Props){
   const [service,setService]=useState("all");
   const [team,setTeam]=useState("all");
   const [selectedKey,setSelectedKey]=useState<string|null>(null);
+  const [showConfirmations,setShowConfirmations]=useState(false);
   const [skillKey,setSkillKey]=useState("");
   const [note,setNote]=useState("");
   const [validatedAt,setValidatedAt]=useState(todayIso());
@@ -79,6 +81,12 @@ export default function EffectifClient({context="data-rh"}:Props){
       return true;
     });
   },[data,status,service,team,search]);
+  const pendingConfirmations=useMemo<PendingConfirmation[]>(()=>{
+    return (data?.staff??[])
+      .filter(row=>row.active&&!row.neutralized)
+      .flatMap(row=>row.observedSkills.map(skill=>({row,skill})))
+      .sort((a,b)=>(b.skill.lastUsedDate??"").localeCompare(a.skill.lastUsedDate??"")||a.row.fullName.localeCompare(b.row.fullName,"fr"));
+  },[data]);
 
   const availableSkills=useMemo(()=>{
     if(!selected)return [];
@@ -87,16 +95,17 @@ export default function EffectifClient({context="data-rh"}:Props){
   },[data,selected]);
 
   function openStaff(row:Staff){
+    setShowConfirmations(false);
     setSelectedKey(row.employeeKey);setSkillKey("");setNote("");setValidatedAt(todayIso());
     setEditEntry(row.entryDate??"");setEditJob(row.primaryJobKey??"");setEditTeam(row.teamCode??"");
     setEditNeutralized(Boolean(row.neutralized));setEditNeutralReason(row.neutralizedReason??"");
   }
 
-  async function setCompetency(employeeKey:string,targetSkill:string,nextStatus:"active"|"training"|"inactive"){
+  async function setCompetency(employeeKey:string,targetSkill:string,nextStatus:"active"|"training"|"inactive",openAfter=true){
     setSaving(true);setError("");
     try{
       const r=await fetch("/api/staff/competencies",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({employeeKey,skillKey:targetSkill,status:nextStatus,validatedAt:nextStatus==="active"?validatedAt||null:null,note:note||null})});
-      const p=await r.json().catch(()=>({})) as {error?:string};if(!r.ok)throw new Error(p.error||"Mise à jour impossible.");setNote("");setSkillKey("");setValidatedAt(todayIso());await load();setSelectedKey(employeeKey);
+      const p=await r.json().catch(()=>({})) as {error?:string};if(!r.ok)throw new Error(p.error||"Mise à jour impossible.");setNote("");setSkillKey("");setValidatedAt(todayIso());await load();if(openAfter)setSelectedKey(employeeKey);
     }catch(e){setError(e instanceof Error?e.message:"Mise à jour impossible.");}
     finally{setSaving(false);}
   }
@@ -115,8 +124,9 @@ export default function EffectifClient({context="data-rh"}:Props){
   }
 
   const coverageWarning=Boolean(data && (data.counts.missingEntryDate>0||data.counts.missingPrimaryJob>0));
-  const backHref=context==="animation"?"/":"/data-rh";
-  const backLabel=context==="animation"?"← KPI CRVO":"← DATA RH";
+  const fromAnimation=context==="animation"||(typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("from")==="animation");
+  const backHref=fromAnimation?"/":"/data-rh";
+  const backLabel=fromAnimation?"← KPI CRVO":"← DATA RH";
 
   return <main className={styles.page}>
     <header className={styles.hero}>
@@ -131,7 +141,7 @@ export default function EffectifClient({context="data-rh"}:Props){
       <article><span>ACTIFS KPI</span><strong>{loading?"…":Math.max(0,(data?.counts.active??0)-(data?.counts.neutralized??0))}</strong><small>Collaborateurs actifs et comptabilisés</small></article>
       <article><span>NEUTRALISÉS KPI</span><strong>{loading?"…":data?.counts.neutralized??0}</strong><small>Historique conservé, calculs opérationnels exclus</small></article>
       <article><span>POLYCOMPÉTENTS VALIDÉS</span><strong>{loading?"…":data?.counts.polycompetent??0}</strong><small>Au moins une compétence active</small></article>
-      <article><span>COMPÉTENCES OBSERVÉES</span><strong>{loading?"…":data?.counts.observedUnconfirmed??0}</strong><small>Détectées dans le pointage, à confirmer RH</small></article>
+      <article className={styles.reviewKpi}><span>DEMANDES À CONFIRMER</span><strong>{loading?"…":pendingConfirmations.length}</strong><small>Polycompétences détectées dans le pointage</small><button type="button" disabled={loading||pendingConfirmations.length===0} onClick={()=>{setSelectedKey(null);setShowConfirmations(true);}}>VOIR TOUTES LES DEMANDES</button></article>
       <article><span>SORTIS</span><strong>{loading?"…":data?.counts.exited??0}</strong><small>Historique conservé</small></article>
     </section>
 
@@ -141,16 +151,26 @@ export default function EffectifClient({context="data-rh"}:Props){
         <select value={status} onChange={e=>setStatus(e.target.value as StatusFilter)}><option value="active">Actifs KPI</option><option value="neutralized">Neutralisés KPI</option><option value="exited">Sortis</option><option value="all">Tous</option></select>
         <select value={service} onChange={e=>setService(e.target.value)}><option value="all">Tous les services</option>{services.map(x=><option key={x} value={x}>{x}</option>)}</select>
         <select value={team} onChange={e=>setTeam(e.target.value)}><option value="all">Toutes les équipes</option>{teams.map(x=><option key={x} value={x}>Équipe {x}</option>)}</select>
-        <button onClick={()=>void load()}>ACTUALISER</button>
+        <button type="button" onClick={()=>void load()}>ACTUALISER</button>
       </div>
       <div className={styles.tableWrap}><table><thead><tr><th>Collaborateur</th><th>Statut</th><th>Embauche</th><th>Secteur / équipe</th><th>Métier principal</th><th>Performance {monthLabel(month)}</th><th>Polycompétences</th><th>Dernier passage</th><th/></tr></thead><tbody>
-        {!loading&&rows.map(row=><tr key={row.employeeKey} className={row.neutralized?styles.neutralizedRow:""}><td><strong>{row.fullName}</strong><small>{row.matricule??"Sans matricule"}</small></td><td>{row.neutralized?<span className={styles.neutralized}>NEUTRALISÉ KPI</span>:<span className={row.active?styles.active:styles.exited}>{row.active?"ACTIF":"SORTI"}</span>}{row.operationalOverride&&<small>Affectation ajustée</small>}</td><td>{dateLabel(row.entryDate)}</td><td><strong>{row.primarySectorLabel??row.service??"—"}</strong><small>{row.teamCode?`Équipe ${row.teamCode}`:"Équipe —"}</small></td><td><strong>{primaryLabel(row)}</strong><small>{row.service??""}</small></td><td><b className={row.productivity!=null&&row.productivity>=100?styles.good:row.productivity!=null&&row.productivity<85?styles.low:""}>{productivityLabel(row)}</b><small>{row.productivityMode==="individual"?`${hours(row.soldHours)} vendues / ${hours(row.boughtHours)} achetées`:row.productivityMode==="team_only"?"Mesure équipe":"Non applicable"}</small></td><td>{row.competencies.length?<span className={styles.skillCount}>{row.competencies.length}</span>:"—"}{row.competencies.slice(0,2).map(c=><small key={c.skillKey}>{c.label} · {dateLabel(c.lastUsedDate)}{c.productivity90d!=null?` · ${pct(c.productivity90d)}`:""}</small>)}{row.observedSkills.length>0&&<small>{row.observedSkills.length} observée(s) à confirmer</small>}</td><td>{dateLabel(row.lastPolyUse)}</td><td><button className={styles.manage} onClick={()=>openStaff(row)}>GÉRER</button></td></tr>)}
+        {!loading&&rows.map(row=><tr key={row.employeeKey} className={row.neutralized?styles.neutralizedRow:""}><td><strong>{row.fullName}</strong><small>{row.matricule??"Sans matricule"}</small></td><td>{row.neutralized?<span className={styles.neutralized}>NEUTRALISÉ KPI</span>:<span className={row.active?styles.active:styles.exited}>{row.active?"ACTIF":"SORTI"}</span>}{row.operationalOverride&&<small>Affectation ajustée</small>}</td><td>{dateLabel(row.entryDate)}</td><td><strong>{row.primarySectorLabel??row.service??"—"}</strong><small>{row.teamCode?`Équipe ${row.teamCode}`:"Équipe —"}</small></td><td><strong>{primaryLabel(row)}</strong><small>{row.service??""}</small></td><td><b className={row.productivity!=null&&row.productivity>=100?styles.good:row.productivity!=null&&row.productivity<85?styles.low:""}>{productivityLabel(row)}</b><small>{row.productivityMode==="individual"?`${hours(row.soldHours)} vendues / ${hours(row.boughtHours)} achetées`:row.productivityMode==="team_only"?"Mesure équipe":"Non applicable"}</small></td><td>{row.competencies.length?<span className={styles.skillCount}>{row.competencies.length}</span>:"—"}{row.competencies.slice(0,2).map(c=><small key={c.skillKey}>{c.label} · {dateLabel(c.lastUsedDate)}{c.productivity90d!=null?` · ${pct(c.productivity90d)}`:""}</small>)}{row.observedSkills.length>0&&<small>{row.observedSkills.length} demande(s) à confirmer</small>}</td><td>{dateLabel(row.lastPolyUse)}</td><td><button type="button" className={styles.manage} onClick={()=>openStaff(row)}>GÉRER</button></td></tr>)}
         {!loading&&!rows.length&&<tr><td colSpan={9} className={styles.empty}>Aucun collaborateur pour ces filtres.</td></tr>}
       </tbody></table></div>
     </section>
 
-    {selected&&<section className={styles.drawer}>
-      <div className={styles.drawerHead}><div><span>FICHE COLLABORATEUR</span><h2>{selected.fullName}</h2><p>{selected.matricule??"Sans matricule"} · {selected.service??"Service non renseigné"} · {selected.teamCode?`Équipe ${selected.teamCode}`:"Équipe non renseignée"}{selected.neutralized?" · NEUTRALISÉ KPI":""}</p></div><button onClick={()=>setSelectedKey(null)}>FERMER</button></div>
+    {showConfirmations&&<><button type="button" className={styles.modalBackdrop} aria-label="Fermer les demandes à confirmer" onClick={()=>setShowConfirmations(false)}/><section className={styles.reviewDrawer} role="dialog" aria-modal="true" aria-label="Demandes de polycompétence à confirmer">
+      <div className={styles.drawerHead}><div><span>VALIDATION RAPIDE</span><h2>Demandes à confirmer</h2><p>{pendingConfirmations.length} polycompétence(s) observée(s) dans le pointage · triées par dernier passage.</p></div><button type="button" onClick={()=>setShowConfirmations(false)}>FERMER</button></div>
+      <div className={styles.reviewList}>{pendingConfirmations.map(({row,skill})=><article key={`${row.employeeKey}:${skill.skillKey}`}>
+        <div className={styles.reviewPerson}><strong>{row.fullName}</strong><small>{row.matricule??"Sans matricule"} · {row.primarySectorLabel??row.service??"Secteur —"} · {row.teamCode?`Équipe ${row.teamCode}`:"Équipe —"}</small></div>
+        <div className={styles.reviewSkill}><strong>{skill.label}</strong><small>Dernier passage {dateLabel(skill.lastUsedDate)} · {Number(skill.hours90d??0).toLocaleString("fr-FR",{maximumFractionDigits:1})} h · {skill.jobs90d??0} dossier(s)</small><small>Performance observée : {skillPerf(skill)}</small></div>
+        <div className={styles.reviewActions}><button type="button" className={styles.openProfile} onClick={()=>openStaff(row)}>OUVRIR FICHE</button><button type="button" className={styles.quickConfirm} disabled={saving} onClick={()=>void setCompetency(row.employeeKey,skill.skillKey,"active",false)}>{saving?"…":"CONFIRMER"}</button></div>
+      </article>)}</div>
+      {!pendingConfirmations.length&&<p className={styles.blank}>Aucune demande à confirmer.</p>}
+    </section></>}
+
+    {selected&&<><button type="button" className={styles.modalBackdrop} aria-label="Fermer la fiche collaborateur" onClick={()=>setSelectedKey(null)}/><section className={styles.drawer} role="dialog" aria-modal="true" aria-label={`Fiche de ${selected.fullName}`}>
+      <div className={styles.drawerHead}><div><span>FICHE COLLABORATEUR</span><h2>{selected.fullName}</h2><p>{selected.matricule??"Sans matricule"} · {selected.service??"Service non renseigné"} · {selected.teamCode?`Équipe ${selected.teamCode}`:"Équipe non renseignée"}{selected.neutralized?" · NEUTRALISÉ KPI":""}</p></div><button type="button" onClick={()=>setSelectedKey(null)}>FERMER</button></div>
       <div className={styles.detailGrid}>
         <article><span>EMBAUCHE</span><strong>{dateLabel(selected.entryDate)}</strong><small>{selected.active?"Collaborateur actif":`Sortie ${dateLabel(selected.exitDate)}`}</small></article>
         <article><span>MÉTIER PRINCIPAL</span><strong>{primaryLabel(selected)}</strong><small>{selected.primarySectorLabel??"À qualifier"}</small></article>
@@ -167,17 +187,17 @@ export default function EffectifClient({context="data-rh"}:Props){
           <label>Équipe<select value={editTeam} onChange={e=>setEditTeam(e.target.value)} disabled={!selected.active||saving}><option value="">Non affectée</option><option value="A">Équipe A</option><option value="B">Équipe B</option><option value="C">Équipe C</option></select></label>
           <label className={styles.neutralizeToggle}><input type="checkbox" checked={editNeutralized} onChange={e=>setEditNeutralized(e.target.checked)} disabled={!selected.active||saving}/><span>Neutraliser dans les calculs KPI</span></label>
           {editNeutralized&&<label className={styles.reason}>Motif de neutralisation<input value={editNeutralReason} onChange={e=>setEditNeutralReason(e.target.value)} placeholder="Ex. formation longue, renfort ponctuel, situation à exclure…" disabled={saving}/></label>}
-          <button className={styles.saveAssignment} disabled={!selected.active||saving} onClick={()=>void saveOperational()}>{saving?"ENREGISTREMENT…":"ENREGISTRER L'AFFECTATION"}</button>
+          <button type="button" className={styles.saveAssignment} disabled={!selected.active||saving} onClick={()=>void saveOperational()}>{saving?"ENREGISTREMENT…":"ENREGISTRER L'AFFECTATION"}</button>
         </div>
       </div>
 
       <div className={styles.skillsBlock}><div className={styles.blockHead}><div><span>POLYCOMPÉTENCES VALIDÉES</span><h3>Compétences activables en production</h3></div></div>
-        {selected.competencies.length?<div className={styles.skillList}>{selected.competencies.map(c=><article key={c.skillKey}><div><strong>{c.label}</strong><small>{c.status==="training"?"En formation":"Validée"} · validation {dateLabel(c.validatedAt)} · dernier passage {dateLabel(c.lastUsedDate)}</small><small>{Number(c.hours90d??0).toLocaleString("fr-FR",{maximumFractionDigits:1})} h · {c.jobs90d??0} dossier(s) sur 90 jours</small><small className={c.productivity90d!=null&&c.productivity90d>=100?styles.skillGood:c.productivity90d!=null&&c.productivity90d<85?styles.skillLow:""}>Performance sur cette compétence : {skillPerf(c)}</small>{c.note&&<p>{c.note}</p>}</div><button disabled={saving} onClick={()=>void setCompetency(selected.employeeKey,c.skillKey,"inactive")}>DÉSACTIVER</button></article>)}</div>:<p className={styles.blank}>Aucune polycompétence validée.</p>}
+        {selected.competencies.length?<div className={styles.skillList}>{selected.competencies.map(c=><article key={c.skillKey}><div><strong>{c.label}</strong><small>{c.status==="training"?"En formation":"Validée"} · validation {dateLabel(c.validatedAt)} · dernier passage {dateLabel(c.lastUsedDate)}</small><small>{Number(c.hours90d??0).toLocaleString("fr-FR",{maximumFractionDigits:1})} h · {c.jobs90d??0} dossier(s) sur 90 jours</small><small className={c.productivity90d!=null&&c.productivity90d>=100?styles.skillGood:c.productivity90d!=null&&c.productivity90d<85?styles.skillLow:""}>Performance sur cette compétence : {skillPerf(c)}</small>{c.note&&<p>{c.note}</p>}</div><button type="button" disabled={saving} onClick={()=>void setCompetency(selected.employeeKey,c.skillKey,"inactive")}>DÉSACTIVER</button></article>)}</div>:<p className={styles.blank}>Aucune polycompétence validée.</p>}
       </div>
 
-      {selected.observedSkills.length>0&&<div className={styles.skillsBlock}><div className={styles.blockHead}><div><span>OBSERVÉ DANS LE POINTAGE</span><h3>Compétences à confirmer</h3></div><p>Une observation n'est jamais activée automatiquement.</p></div><div className={styles.skillList}>{selected.observedSkills.map(c=><article key={c.skillKey}><div><strong>{c.label}</strong><small>Dernier passage {dateLabel(c.lastUsedDate)}</small><small>{Number(c.hours90d??0).toLocaleString("fr-FR",{maximumFractionDigits:1})} h · {c.jobs90d??0} dossier(s) sur 90 jours</small><small>Performance observée : {skillPerf(c)}</small></div><button className={styles.confirm} disabled={saving} onClick={()=>void setCompetency(selected.employeeKey,c.skillKey,"active")}>ACTIVER</button></article>)}</div></div>}
+      {selected.observedSkills.length>0&&<div className={styles.skillsBlock}><div className={styles.blockHead}><div><span>OBSERVÉ DANS LE POINTAGE</span><h3>Compétences à confirmer</h3></div><p>Une observation n'est jamais activée automatiquement.</p></div><div className={styles.skillList}>{selected.observedSkills.map(c=><article key={c.skillKey}><div><strong>{c.label}</strong><small>Dernier passage {dateLabel(c.lastUsedDate)}</small><small>{Number(c.hours90d??0).toLocaleString("fr-FR",{maximumFractionDigits:1})} h · {c.jobs90d??0} dossier(s) sur 90 jours</small><small>Performance observée : {skillPerf(c)}</small></div><button type="button" className={styles.confirm} disabled={saving} onClick={()=>void setCompetency(selected.employeeKey,c.skillKey,"active")}>ACTIVER</button></article>)}</div></div>}
 
-      <div className={styles.addSkill}><div><span>AJOUT MANUEL</span><h3>Ajouter une polycompétence</h3><p>La déclaration RH devient la référence. La dernière utilisation et la performance sont ensuite rapprochées automatiquement du pointage lorsqu'elles sont mesurables.</p></div><div><select value={skillKey} onChange={e=>setSkillKey(e.target.value)}><option value="">Choisir une compétence</option>{availableSkills.map(s=><option key={s.skillKey} value={s.skillKey}>{s.sectorLabel} · {s.label}</option>)}</select><input type="date" value={validatedAt} onChange={e=>setValidatedAt(e.target.value)}/><input value={note} onChange={e=>setNote(e.target.value)} placeholder="Note facultative : habilitation, restriction…"/><button disabled={!skillKey||saving} onClick={()=>skillKey&&void setCompetency(selected.employeeKey,skillKey,"active")}>ACTIVER LA POLYCOMPÉTENCE</button></div></div>
-    </section>}
+      <div className={styles.addSkill}><div><span>AJOUT MANUEL</span><h3>Ajouter une polycompétence</h3><p>La déclaration RH devient la référence. La dernière utilisation et la performance sont ensuite rapprochées automatiquement du pointage lorsqu'elles sont mesurables.</p></div><div><select value={skillKey} onChange={e=>setSkillKey(e.target.value)}><option value="">Choisir une compétence</option>{availableSkills.map(s=><option key={s.skillKey} value={s.skillKey}>{s.sectorLabel} · {s.label}</option>)}</select><input type="date" value={validatedAt} onChange={e=>setValidatedAt(e.target.value)}/><input value={note} onChange={e=>setNote(e.target.value)} placeholder="Note facultative : habilitation, restriction…"/><button type="button" disabled={!skillKey||saving} onClick={()=>skillKey&&void setCompetency(selected.employeeKey,skillKey,"active")}>ACTIVER LA POLYCOMPÉTENCE</button></div></div>
+    </section></>}
   </main>;
 }
