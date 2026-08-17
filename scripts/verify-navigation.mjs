@@ -11,47 +11,19 @@ const files={
   home:fs.readFileSync("app/home-dashboard.tsx","utf8"),
   objectivesApi:fs.readFileSync("app/api/objectives/route.ts","utf8"),
   dailyObjectivesMigration:fs.readFileSync("supabase/migrations/20260817092000_daily_exit_objectives_full_month_save.sql","utf8"),
+  capacity:fs.readFileSync("app/capacitaire/capacity-simulator.tsx","utf8"),
+  capacityApi:fs.readFileSync("app/api/capacity-simple/route.ts","utf8"),
+  productivity:fs.readFileSync("app/performance/productivite/page.tsx","utf8"),
+  capacityMigration:fs.readFileSync("supabase/migrations/20260817073500_productive_only_and_simple_capacity.sql","utf8"),
 };
 
 const labels=[
-  "Performance du jour",
-  "BOOK",
-  "Dashboard",
-  "Goulot",
-  "Walking Dead",
-  "Chiffre d'affaire",
-  "Animation du centre",
-  "Productivité",
-  "Variable",
-  "Accès Workflow",
-  "Payplan",
-  "Cockpit V2",
-  "Pilotage du jour",
-  "Synthèse manager",
-  "Aide à la décision",
-  "Prévision fin de journée",
-  "Focus carrosserie",
-  "Simulateur capacitaire",
-  "Analyse",
-  "Dashboard client",
-  "Réseau EFF & EFB",
-  "BMW / MINI",
-  "Paramètre",
-  "Objectif & seuil",
-  "Source & Connexion",
-  "Accès",
-  "Data RH",
-  "Ecran ATELIER",
-  "Ecran DIRECTION",
+  "Performance du jour","BOOK","Dashboard","Goulot","Walking Dead","Chiffre d'affaire","Animation du centre","Productivité","Variable","Accès Workflow","Payplan","Cockpit V2","Pilotage du jour","Synthèse manager","Aide à la décision","Prévision fin de journée","Focus carrosserie","Simulateur capacitaire","Analyse","Dashboard client","Réseau EFF & EFB","BMW / MINI","Paramètre","Objectif & seuil","Source & Connexion","Accès","Data RH","Ecran ATELIER","Ecran DIRECTION",
 ];
 
 const failures=[];
-for(const label of labels){
-  if(!files.sidebar.includes(label)&&!files.drawer.includes(label))failures.push(`Libellé absent : ${label}`);
-}
-for(const path of ["/animation-mensuelle/payplan","/animation-mensuelle/acces","/capacitaire","/api/capacity-simulator","/atelier","/direction"]){
-  if(!files.proxy.includes(path))failures.push(`Règle serveur absente : ${path}`);
-}
+for(const label of labels){if(!files.sidebar.includes(label)&&!files.drawer.includes(label))failures.push(`Libellé absent : ${label}`);}
+for(const path of ["/animation-mensuelle/payplan","/animation-mensuelle/acces","/capacitaire","/api/capacity-simulator","/api/capacity-simple","/atelier","/direction"]){if(!files.proxy.includes(path))failures.push(`Règle serveur absente : ${path}`);}
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/acces"'))failures.push("Accès Workflow doit rester ADMIN dans le menu latéral.");
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/payplan"'))failures.push("Payplan doit rester ADMIN dans le menu latéral.");
 if(!files.sidebar.includes('admin?createPortal(<div className="architecture-admin-screens"')||!files.sidebar.includes('topLink("/capacitaire","Simulateur capacitaire")'))failures.push("Simulateur capacitaire doit rester ADMIN sous les raccourcis Ecran dans le menu latéral.");
@@ -69,9 +41,7 @@ if(!files.proxy.includes('isPublicKioskPath(path)'))failures.push("Les écrans k
 for(const path of ["/api/kiosk/atelier","/api/kiosk/direction"]){if(!files.proxy.includes(path))failures.push(`Passerelle kiosk absente : ${path}`);}
 if(!files.layout.includes("KioskFetchBridge")||!files.kioskBridge.includes('/api/kiosk/atelier')||!files.kioskBridge.includes('/api/kiosk/direction'))failures.push("Les écrans atelier/direction doivent lire uniquement les passerelles kiosk lorsqu'ils sont ouverts sans session.");
 if(!files.layout.includes("ActivityColorBinder"))failures.push("La règle couleur par activité doit être montée globalement.");
-for(const [label,hex] of [["Expertise","#eb5b56"],["Mécanique","#55b779"],["Jantes","#f5a623"],["Carrosserie","#009edb"],["DSP","#004f9f"],["Préparation","#8d5ec7"],["Qualité / Photo","#c66a1b"],["Sortie usine","#7b8794"]]){
-  if(!files.colors.includes(hex))failures.push(`Couleur activité absente : ${label} ${hex}`);
-}
+for(const [label,hex] of [["Expertise","#eb5b56"],["Mécanique","#55b779"],["Jantes","#f5a623"],["Carrosserie","#009edb"],["DSP","#004f9f"],["Préparation","#8d5ec7"],["Qualité / Photo","#c66a1b"],["Sortie usine","#7b8794"]]){if(!files.colors.includes(hex))failures.push(`Couleur activité absente : ${label} ${hex}`);}
 
 if(!files.home.includes("function dailyExitTarget("))failures.push("Performance du jour doit disposer d'une résolution de l'objectif Sortie usine par date exacte.");
 if(!files.home.includes('detail={sortieTarget!=null?`objectif journalier'))failures.push("La carte Sorties VOP doit afficher l'objectif journalier de la date.");
@@ -82,8 +52,13 @@ if(!files.objectivesApi.includes("legacyDailyTargetsRecovered"))failures.push("L
 if(!files.objectivesApi.includes("legacyCookie(request, key)"))failures.push("L'API objectifs doit lire l'ancien cookie de planning uniquement pour récupération.");
 if(!files.dailyObjectivesMigration.includes("delete from public.kpi_daily_exit_objectives"))failures.push("La sauvegarde du planning quotidien doit remplacer proprement le mois complet pour permettre d'effacer une date.");
 
-if(failures.length){
-  console.error("Contrat de navigation CRVO invalide :\n- "+failures.join("\n- "));
-  process.exit(1);
-}
-console.log(`Navigation CRVO validée : ${labels.length} libellés, droits, simulateur séparé sous les écrans, objectifs journaliers Sortie usine, kiosks sans session et palette activités contrôlés.`);
+if(!files.capacity.includes("MINI ADDITIONNELLES")||!files.capacity.includes("PRODUCTIVITÉ À GAGNER")||!files.capacity.includes("ETP À AJOUTER"))failures.push("Le simulateur doit répondre directement en volume MINI, points de productivité et ETP.");
+for(const jargon of ["P90","Run-rate","S0 · Sans action","S1 · Performance","S2 · Ressources","S3 · Cible"]){if(files.capacity.includes(jargon))failures.push(`Jargon capacitaire interdit dans l'interface simplifiée : ${jargon}`);}
+if(!files.capacity.includes('fetch("/api/capacity-simple"'))failures.push("Le simulateur doit utiliser l'API capacitaire légère dédiée.");
+if(!files.capacityApi.includes("kpi_capacity_simple")||!files.capacityApi.includes("57014"))failures.push("L'API capacitaire légère doit utiliser le RPC dédié et gérer explicitement les timeouts.");
+if(!files.productivity.includes("MÉTIERS PRODUCTIFS UNIQUEMENT"))failures.push("La page Productivité doit expliquer le périmètre productif.");
+for(const key of ["expertise","mecanique","dsp","jantes","carrosserie","preparation","qualite","photo"]){if(!files.capacityMigration.includes(`'${key}'`))failures.push(`Métier productif absent de la migration : ${key}`);}
+if(!files.capacityMigration.includes("kpi_is_productive_sector")||!files.capacityMigration.includes("kpi_capacity_simple"))failures.push("La migration doit verrouiller le filtre productif et le calcul capacitaire léger.");
+
+if(failures.length){console.error("Contrat de navigation CRVO invalide :\n- "+failures.join("\n- "));process.exit(1);}
+console.log(`Navigation CRVO validée : ${labels.length} libellés, droits, productivité limitée aux métiers productifs, simulateur MINI simplifié, objectifs journaliers Sortie usine, kiosks sans session et palette activités contrôlés.`);
