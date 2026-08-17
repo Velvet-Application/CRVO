@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import styles from "./atelier.module.css";
 
 type Production = { name: string; value: number; tone: string };
@@ -56,7 +56,8 @@ type VerifiedMetric = {
 };
 
 type VerifiedPayload = { rows?: VerifiedMetric[] };
-type ScreenMode = "live" | "closed";
+type TargetContext = { objectiveMap: Record<string, Objective>; exitTarget: number };
+type DecoratedProduction = Production & { target: number; percent: number; color: string };
 
 const fallbackTargets: Record<string, number> = {
   Expertise: 90,
@@ -115,7 +116,11 @@ function isBusinessDay(value: string) {
 }
 
 function displayDate(value: string) {
-  return new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "2-digit", month: "long", year: "numeric", timeZone: "Europe/Paris" }).format(new Date(`${value}T12:00:00+02:00`));
+  return new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "2-digit", month: "long", year: "numeric", timeZone: "Europe/Paris" }).format(new Date(`${value}T12:00:00Z`));
+}
+
+function shortDay(value: string) {
+  return new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "2-digit", month: "2-digit", timeZone: "Europe/Paris" }).format(new Date(`${value}T12:00:00Z`));
 }
 
 function clock() {
@@ -161,10 +166,32 @@ function applyVerifiedMetrics(rows: Snapshot[], verified: VerifiedMetric[]) {
   });
 }
 
+function targetContext(snapshot: Snapshot | null, payload?: ObjectivesPayload): TargetContext {
+  const objectives = payload?.objectives ?? [];
+  const objectiveMap = Object.fromEntries(objectives.map((item) => [item.sectorKey, item]));
+  const exitTarget = snapshot
+    ? (payload?.sortieDailyTargets?.[snapshot.date] ?? objectiveMap.sortie_usine?.dailyTarget ?? fallbackTargets["Sortie usine"])
+    : fallbackTargets["Sortie usine"];
+  return { objectiveMap, exitTarget };
+}
+
+function decoratedProduction(snapshot: Snapshot | null, context: TargetContext): DecoratedProduction[] {
+  if (!snapshot) return [];
+  return snapshot.production.map((item) => {
+    const key = sectorKeys[item.name];
+    const target = item.name === "Sortie usine" ? context.exitTarget : context.objectiveMap[key]?.dailyTarget ?? fallbackTargets[item.name] ?? 0;
+    const percent = target > 0 ? Math.round(item.value / target * 100) : 0;
+    return { ...item, target, percent, color: toneColors[item.tone] ?? "#009edb" };
+  });
+}
+
+function percent(value: number, target: number) {
+  return target > 0 ? Math.round(value / target * 100) : 0;
+}
+
 export default function AtelierScreen() {
   const [liveSnapshot, setLiveSnapshot] = useState<Snapshot | null>(null);
   const [closedSnapshot, setClosedSnapshot] = useState<Snapshot | null>(null);
-  const [mode, setMode] = useState<ScreenMode>("live");
   const [objectivesByMonth, setObjectivesByMonth] = useState<Record<string, ObjectivesPayload>>({});
   const [connected, setConnected] = useState(false);
   const [lastRefresh, setLastRefresh] = useState("");
@@ -187,12 +214,11 @@ export default function AtelierScreen() {
       const rawRows = dashboard.snapshots ?? (dashboard.snapshot ? [dashboard.snapshot] : []);
       const rows = applyVerifiedMetrics(rawRows, verifiedPayload?.rows ?? []);
       const today = parisToday();
-      const latest = rows.at(-1) ?? null;
-      const live = rows.find((row) => row.date === today) ?? latest;
+      const live = rows.find((row) => row.date === today) ?? null;
       const closed = [...rows].reverse().find((row) => row.date < today && isBusinessDay(row.date)) ?? null;
-      if (!live) throw new Error("Aucune donnée de production disponible.");
+      if (!live && !closed) throw new Error("Aucune donnée de production disponible.");
 
-      const months = [...new Set([live.date.slice(0, 7), closed?.date.slice(0, 7)].filter(Boolean) as string[])];
+      const months = [...new Set([live?.date.slice(0, 7), closed?.date.slice(0, 7)].filter(Boolean) as string[])];
       const objectivePairs = await Promise.all(months.map(async (month) => {
         const response = await fetch(`/api/kiosk/atelier?resource=objectives&month=${month}&_=${Date.now()}`, { cache: "no-store" });
         const payload = response.ok ? await response.json() as ObjectivesPayload : {};
@@ -205,7 +231,6 @@ export default function AtelierScreen() {
       setConnected(Boolean(dashboard.connected));
       setFtpLastRefreshAt(dashboard.liveFreshness?.factoryModifiedAt ?? dashboard.liveFreshness?.sourceModifiedAt ?? systemStatus?.ftpRefresh?.lastRefreshAt ?? null);
       setFtpLastDepositAt(dashboard.liveFreshness?.parkModifiedAt ?? dashboard.liveFreshness?.sourceModifiedAt ?? systemStatus?.ftpRefresh?.lastDepositAt ?? null);
-      if (live.date !== today && closed?.date === live.date) setMode("closed");
       setLastRefresh(clock());
       setError("");
     } catch (reason) {
@@ -221,48 +246,26 @@ export default function AtelierScreen() {
     return () => { window.clearInterval(refreshTimer); window.clearInterval(clockTimer); };
   }, []);
 
-  useEffect(() => {
-    if (!liveSnapshot || !closedSnapshot || liveSnapshot.date === closedSnapshot.date) return;
-    const rotation = window.setInterval(() => setMode((current) => current === "live" ? "closed" : "live"), 15000);
-    return () => window.clearInterval(rotation);
-  }, [liveSnapshot?.date, closedSnapshot?.date]);
-
-  const snapshot = mode === "closed" && closedSnapshot ? closedSnapshot : liveSnapshot;
-  const objectivePayload = snapshot ? objectivesByMonth[snapshot.date.slice(0, 7)] : undefined;
-  const objectives = objectivePayload?.objectives ?? [];
-  const exitTargets = objectivePayload?.sortieDailyTargets ?? {};
-  const objectiveMap = useMemo(() => Object.fromEntries(objectives.map((item) => [item.sectorKey, item])), [objectives]);
-  const exitTarget = snapshot ? (exitTargets[snapshot.date] ?? objectiveMap.sortie_usine?.dailyTarget ?? fallbackTargets["Sortie usine"]) : fallbackTargets["Sortie usine"];
-  const exitPercent = snapshot && exitTarget > 0 ? Math.round(snapshot.exits / exitTarget * 100) : 0;
-  const remaining = snapshot ? Math.max(exitTarget - snapshot.exits, 0) : exitTarget;
-  const isClosed = mode === "closed" && Boolean(closedSnapshot);
-  const isToday = snapshot?.date === parisToday();
-  const ftpStale = !isClosed && isToday && staleMinutes(ftpLastRefreshAt) > 25;
-  const exitsVerified = Boolean(snapshot?.verifiedMetrics?.some((key) => key === "exits_vop" || key === "production_factory_exit"));
-
-  const production = useMemo(() => {
-    if (!snapshot) return [];
-    return snapshot.production.map((item) => {
-      const key = sectorKeys[item.name];
-      const target = item.name === "Sortie usine" ? exitTarget : objectiveMap[key]?.dailyTarget ?? fallbackTargets[item.name] ?? 0;
-      const percent = target > 0 ? Math.round(item.value / target * 100) : 0;
-      return { ...item, target, percent, color: toneColors[item.tone] ?? "#009edb" };
-    });
-  }, [snapshot, objectiveMap, exitTarget]);
-
-  const pulseMessage = exitPercent >= 100
-    ? "OBJECTIF ATTEINT · BRAVO À TOUTE L’ÉQUIPE"
-    : exitPercent >= 85
-      ? "DERNIÈRE LIGNE DROITE"
-      : exitPercent >= 65
-        ? "BON RYTHME · ON GARDE LA CADENCE"
-        : "CAP SUR L’OBJECTIF DU JOUR";
-
-  if (!snapshot) {
+  if (!liveSnapshot && !closedSnapshot) {
     return <main className={styles.loading}><div className={styles.loader}/><strong>Connexion à la production atelier…</strong>{error && <span>{error}</span>}</main>;
   }
 
-  const statusLabel = isClosed ? "JOURNÉE CLÔTURÉE" : ftpStale ? "FTP EN RETARD" : isToday ? "EN DIRECT" : "DERNIER RELEVÉ";
+  const livePayload = liveSnapshot ? objectivesByMonth[liveSnapshot.date.slice(0, 7)] : undefined;
+  const closedPayload = closedSnapshot ? objectivesByMonth[closedSnapshot.date.slice(0, 7)] : undefined;
+  const liveContext = targetContext(liveSnapshot, livePayload);
+  const closedContext = targetContext(closedSnapshot, closedPayload);
+  const liveProduction = decoratedProduction(liveSnapshot, liveContext);
+  const closedProduction = decoratedProduction(closedSnapshot, closedContext);
+  const liveByName = new Map(liveProduction.map((item) => [item.name, item]));
+  const closedByName = new Map(closedProduction.map((item) => [item.name, item]));
+  const sectorNames = Object.keys(fallbackTargets).filter((name) => liveByName.has(name) || closedByName.has(name));
+
+  const liveExitPercent = liveSnapshot ? percent(liveSnapshot.exits, liveContext.exitTarget) : 0;
+  const closedExitPercent = closedSnapshot ? percent(closedSnapshot.exits, closedContext.exitTarget) : 0;
+  const liveRemaining = liveSnapshot ? Math.max(liveContext.exitTarget - liveSnapshot.exits, 0) : liveContext.exitTarget;
+  const ftpStale = Boolean(liveSnapshot) && staleMinutes(ftpLastRefreshAt) > 25;
+  const closedVerified = Boolean(closedSnapshot?.verifiedMetrics?.some((key) => key === "exits_vop" || key === "production_factory_exit"));
+  const liveStatus = !liveSnapshot ? "EN ATTENTE DU JOUR" : ftpStale ? "FTP EN RETARD" : "EN DIRECT";
 
   return <main className={styles.screen}>
     <header className={styles.header}>
@@ -271,42 +274,85 @@ export default function AtelierScreen() {
         <h1>PRODUCTION ATELIER</h1>
       </div>
       <div className={styles.headerRight}>
-        <div className={!isClosed && !ftpStale && isToday ? styles.live : styles.lastReading}><i/>{statusLabel}</div>
+        <div className={!ftpStale && liveSnapshot ? styles.live : styles.lastReading}><i/>{liveStatus}</div>
         <strong>{now}</strong>
-        <small>{displayDate(snapshot.date)}</small>
+        <small>Production FTP {ftpClock(ftpLastRefreshAt)} · Parc FTP {ftpClock(ftpLastDepositAt)}</small>
       </div>
     </header>
 
-    <section className={styles.hero}>
-      <div className={styles.heroCopy}>
-        <span>{isClosed ? `SORTIES USINE · JOURNÉE CLÔTURÉE${exitsVerified ? " · SORTIES VÉRIFIÉES" : ""}` : `SORTIES USINE · RÉALISÉ À ${ftpClock(ftpLastRefreshAt)}`}</span>
-        <div className={styles.heroNumbers}><strong>{snapshot.exits}</strong><b>/ {exitTarget}</b></div>
-        <p>{remaining === 0 ? "Objectif du jour atteint" : `${remaining} véhicule${remaining > 1 ? "s" : ""} à sortir pour atteindre l’objectif`}</p>
-        <div className={styles.heroTrack}><i style={{ width: `${Math.min(exitPercent, 100)}%` }}/><span style={{ left: `${Math.min(exitPercent, 100)}%` }}>{exitPercent}%</span></div>
-      </div>
-      <div className={styles.heroSignal}>
-        <span>{pulseMessage}</span>
-        <div className={exitPercent >= 100 ? styles.goalRingDone : styles.goalRing}>
-          <strong>{exitPercent}%</strong>
-          <small>de l’objectif</small>
+    <section className={styles.compareHero}>
+      <article className={styles.todayPanel}>
+        <div className={styles.dayTop}>
+          <div><span>AUJOURD’HUI · EN COURS</span><strong>{liveSnapshot ? displayDate(liveSnapshot.date) : "Première donnée attendue"}</strong></div>
+          <div className={!ftpStale && liveSnapshot ? styles.livePill : styles.warningPill}>{liveStatus}</div>
         </div>
-      </div>
+        <div className={styles.summaryRow}>
+          <div className={styles.summaryMain}>
+            <small>SORTIES USINE · RÉALISÉ À {ftpClock(ftpLastRefreshAt)}</small>
+            <div><strong>{liveSnapshot?.exits ?? "—"}</strong><b>/ {liveContext.exitTarget}</b></div>
+            <p>{liveSnapshot ? (liveRemaining === 0 ? "Objectif du jour atteint" : `${liveRemaining} véhicule${liveRemaining > 1 ? "s" : ""} restant${liveRemaining > 1 ? "s" : ""}`) : "En attente du premier relevé de production"}</p>
+          </div>
+          <div className={styles.livePercent}><strong>{liveSnapshot ? `${liveExitPercent}%` : "—"}</strong><span>de l’objectif</span></div>
+        </div>
+        <div className={styles.heroTrack}><i style={{ width: `${Math.min(liveExitPercent, 100)}%` }}/></div>
+        <div className={styles.miniStats}>
+          <div><span>ENTRÉES</span><strong>{liveSnapshot?.entries ?? "—"}</strong></div>
+          <div><span>STOCK</span><strong>{liveSnapshot?.stock ?? "—"}</strong></div>
+          <div><span>STOCK +20 J</span><strong>{liveSnapshot?.over20 ?? "—"}</strong></div>
+        </div>
+      </article>
+
+      <article className={styles.closedPanel}>
+        <div className={styles.dayTop}>
+          <div><span>DERNIÈRE JOURNÉE CLÔTURÉE</span><strong>{closedSnapshot ? displayDate(closedSnapshot.date) : "Aucune clôture disponible"}</strong></div>
+          <div className={closedVerified ? styles.verifiedPill : styles.closedPill}>{closedVerified ? "CLÔTURE VÉRIFIÉE" : "CLÔTURÉ"}</div>
+        </div>
+        <div className={styles.summaryRow}>
+          <div className={styles.summaryMain}>
+            <small>SORTIES USINE · CHIFFRE FINAL</small>
+            <div><strong>{closedSnapshot?.exits ?? "—"}</strong><b>/ {closedContext.exitTarget}</b></div>
+            <p>{closedSnapshot ? `${closedExitPercent}% de l’objectif de la journée` : "Pas encore de journée clôturée"}</p>
+          </div>
+          <div className={styles.closedPercent}><strong>{closedSnapshot ? `${closedExitPercent}%` : "—"}</strong><span>final</span></div>
+        </div>
+        <div className={styles.closedTrack}><i style={{ width: `${Math.min(closedExitPercent, 100)}%` }}/></div>
+        <div className={styles.miniStats}>
+          <div><span>ENTRÉES</span><strong>{closedSnapshot?.entries ?? "—"}</strong></div>
+          <div><span>STOCK</span><strong>{closedSnapshot?.stock ?? "—"}</strong></div>
+          <div><span>STOCK +20 J</span><strong>{closedSnapshot?.over20 ?? "—"}</strong></div>
+        </div>
+      </article>
     </section>
 
     <section className={styles.grid}>
-      {production.map((item) => <article key={item.name} className={`${styles.card} ${item.percent >= 100 ? styles.cardDone : item.percent >= 75 ? styles.cardNear : ""}`} style={{ "--sector-color": item.color } as React.CSSProperties}>
-        <div className={styles.cardHead}><span>{item.name.toUpperCase()}</span><b>{item.percent >= 100 ? "OBJECTIF ✓" : `${item.percent}%`}</b></div>
-        <div className={styles.cardValues}><strong>{item.value}</strong><span>/ {item.target}</span></div>
-        <div className={styles.cardTrack}><i style={{ width: `${Math.min(item.percent, 100)}%` }}/></div>
-        <small>{item.percent >= 100 ? `+${item.value - item.target} au-dessus de l’objectif` : `${Math.max(item.target - item.value, 0)} restant${Math.max(item.target - item.value, 0) > 1 ? "s" : ""}`}</small>
-      </article>)}
+      {sectorNames.map((name) => {
+        const live = liveByName.get(name);
+        const closed = closedByName.get(name);
+        const color = live?.color ?? closed?.color ?? "#009edb";
+        return <article key={name} className={styles.card} style={{ "--sector-color": color } as CSSProperties}>
+          <div className={styles.cardHead}><span>{name.toUpperCase()}</span><small>AUJOURD’HUI vs CLÔTURÉ</small></div>
+          <div className={styles.dualMetrics}>
+            <div className={styles.todayMetric}>
+              <span>AUJOURD’HUI</span>
+              <div><strong>{live?.value ?? "—"}</strong><b>/ {live?.target ?? fallbackTargets[name] ?? 0}</b></div>
+              <em>{live ? `${live.percent}%` : "—"}</em>
+              <div className={styles.metricTrack}><i style={{ width: `${Math.min(live?.percent ?? 0, 100)}%` }}/></div>
+            </div>
+            <div className={styles.closedMetric}>
+              <span>{closedSnapshot ? shortDay(closedSnapshot.date).toUpperCase() : "CLÔTURÉ"}</span>
+              <div><strong>{closed?.value ?? "—"}</strong><b>/ {closed?.target ?? fallbackTargets[name] ?? 0}</b></div>
+              <em>{closed ? `${closed.percent}%` : "—"}</em>
+              <div className={styles.metricTrack}><i style={{ width: `${Math.min(closed?.percent ?? 0, 100)}%` }}/></div>
+            </div>
+          </div>
+        </article>;
+      })}
     </section>
 
     <footer className={styles.footer}>
-      <div><span>ENTRÉES</span><strong>{snapshot.entries}</strong></div>
-      <div><span>STOCK USINE</span><strong>{snapshot.stock}</strong></div>
-      <div><span>STOCK +20 J</span><strong>{snapshot.over20}</strong></div>
-      <div className={styles.sync}><i className={!ftpStale && connected ? styles.syncOk : styles.syncFallback}/><span>{isClosed ? "ROTATION · DERNIÈRE JOURNÉE OUVRÉE CLÔTURÉE" : ftpStale ? "FTP EN RETARD · DONNÉE HORODATÉE" : connected ? "FTP LIVE CONNECTÉ" : "DERNIÈRE DONNÉE DISPONIBLE"}</span><small>écran {lastRefresh || now} · production FTP {ftpClock(ftpLastRefreshAt)} · parc FTP {ftpClock(ftpLastDepositAt)} · alternance 15 s</small></div>
+      <div className={styles.legendItem}><i className={styles.todayDot}/><span>CHIFFRES DU JOUR</span><strong>évolutifs</strong></div>
+      <div className={styles.legendItem}><i className={styles.closedDot}/><span>CHIFFRES CLÔTURÉS</span><strong>définitifs</strong></div>
+      <div className={styles.sync}><i className={!ftpStale && connected ? styles.syncOk : styles.syncFallback}/><span>{ftpStale ? "FTP EN RETARD · DONNÉE HORODATÉE" : connected ? "FTP LIVE CONNECTÉ" : "DERNIÈRE DONNÉE DISPONIBLE"}</span><small>écran {lastRefresh || now} · production {ftpClock(ftpLastRefreshAt)} · parc {ftpClock(ftpLastDepositAt)}</small></div>
     </footer>
 
     {error && <div className={styles.error}>{error}</div>}
