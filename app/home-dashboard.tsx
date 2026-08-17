@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
+import { activityColor } from "./activity-colors";
 import styles from "./home-dashboard.module.css";
 
 type View="today"|"yesterday"|"bottlenecks"|"walking"|"finance"|"objectives"|"sources";
@@ -19,6 +20,7 @@ type FinancialSnapshot={date:string;source:string;filename:string;metrics:Record
 type FinancePayload={connected?:boolean;backend?:string;asOfDate?:string;snapshot?:FinancialSnapshot|null;snapshots?:FinancialSnapshot[]|null;targetConfigured?:boolean;error?:string};
 type SystemStatus={supabase?:boolean;supabaseStatus?:string;ftpBridge?:boolean;ftpRefresh?:{lastRefreshAt?:string|null;lastDepositAt?:string|null;lastDepositFilename?:string|null}|null;error?:string};
 type Me={role:"admin"|"user";pagePermissions:string[]};
+type CurveSeries={label:string;values:Array<number|null>;color:string;dashed?:boolean};
 
 type LoadState={dashboard:DashboardPayload|null;objectives:ObjectivesPayload|null;bottlenecks:BottleneckPayload|null;intelligence:IntelligencePayload|null;finance:FinancePayload|null;system:SystemStatus|null;me:Me|null};
 const EMPTY:LoadState={dashboard:null,objectives:null,bottlenecks:null,intelligence:null,finance:null,system:null,me:null};
@@ -30,9 +32,60 @@ function euro(value:unknown){const n=Number(value);return Number.isFinite(n)?new
 function pct(value:number|null|undefined){return value==null?"—":`${value>0?"+":""}${fmt(value,1)} %`;}
 function dateLabel(value?:string|null){if(!value)return"—";const d=new Date(`${value.slice(0,10)}T12:00:00Z`);return Number.isNaN(d.getTime())?value:new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"long",year:"numeric",timeZone:"UTC"}).format(d);}
 function dateTime(value?:string|null){if(!value)return"—";const d=new Date(value);return Number.isNaN(d.getTime())?"—":new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",timeZone:"Europe/Paris"}).format(d);}
+function shortDate(value:string){const d=new Date(`${value.slice(0,10)}T12:00:00Z`);return Number.isNaN(d.getTime())?value:new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit",timeZone:"UTC"}).format(d);}
 function metric(snapshot:FinancialSnapshot|null|undefined,key:string){const n=Number(snapshot?.metrics?.[key]);return Number.isFinite(n)?n:null;}
 function targetFor(name:string,objectives:Objective[]){const key=sectorKeys[name];return objectives.find(item=>item.sectorKey===key)?.dailyTarget??null;}
 function allowed(me:Me|null,key:string){return Boolean(me&&(me.role==="admin"||me.pagePermissions?.includes("*")||me.pagePermissions?.includes(key)));}
+function average(values:number[]){return values.length?values.reduce((sum,value)=>sum+value,0)/values.length:0;}
+
+function trendProjection(values:number[],future=3){
+  if(!values.length)return Array.from({length:future},()=>0);
+  const sample=values.slice(-Math.min(8,values.length));
+  if(sample.length<2)return Array.from({length:future},()=>Math.max(0,Math.round(sample[0]??0)));
+  const n=sample.length;
+  const sx=(n-1)*n/2;
+  const sy=sample.reduce((sum,value)=>sum+value,0);
+  const sxx=sample.reduce((sum,_value,index)=>sum+index*index,0);
+  const sxy=sample.reduce((sum,value,index)=>sum+index*value,0);
+  const denominator=n*sxx-sx*sx;
+  const slope=denominator===0?0:(n*sxy-sx*sy)/denominator;
+  const last=sample.at(-1)??0;
+  return Array.from({length:future},(_,index)=>Math.max(0,Math.round(last+slope*(index+1))));
+}
+
+function businessDaysForMonth(reference:string){
+  const [year,month]=reference.slice(0,7).split("-").map(Number);
+  if(!year||!month)return [] as string[];
+  const lastDay=new Date(Date.UTC(year,month,0)).getUTCDate();
+  const days:string[]=[];
+  for(let day=1;day<=lastDay;day++){
+    const d=new Date(Date.UTC(year,month-1,day));
+    const weekday=d.getUTCDay();
+    if(weekday!==0&&weekday!==6)days.push(`${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`);
+  }
+  return days;
+}
+
+function CurveChart({series,labels,currentIndex,ariaLabel}:{series:CurveSeries[];labels:string[];currentIndex:number;ariaLabel:string}){
+  const numeric=series.flatMap(item=>item.values).filter((value):value is number=>value!=null&&Number.isFinite(value));
+  if(!numeric.length||!labels.length)return <small>Aucune donnée exploitable pour la courbe.</small>;
+  const width=1000,height=250,padLeft=34,padRight=18,padTop=18,padBottom=18;
+  const maxValue=Math.max(1,...numeric)*1.08;
+  const x=(index:number)=>padLeft+(width-padLeft-padRight)*(labels.length<=1?.5:index/(labels.length-1));
+  const y=(value:number)=>padTop+(height-padTop-padBottom)*(1-Math.max(0,value)/maxValue);
+  const path=(values:Array<number|null>)=>{let d="",started=false;values.forEach((value,index)=>{if(value==null||!Number.isFinite(value)){started=false;return;}d+=`${started?" L":"M"} ${x(index).toFixed(1)} ${y(value).toFixed(1)}`;started=true;});return d;};
+  const markerIndex=Math.max(0,Math.min(currentIndex,labels.length-1));
+  return <div className={styles.lineChart}>
+    <div className={styles.chartLegend}>{series.map(item=><span key={item.label}><i style={{borderTopColor:item.color,borderTopStyle:item.dashed?"dashed":"solid"}}/>{item.label}</span>)}</div>
+    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel} preserveAspectRatio="none">
+      {[0,.25,.5,.75,1].map((ratio)=><line key={ratio} x1={padLeft} x2={width-padRight} y1={padTop+(height-padTop-padBottom)*ratio} y2={padTop+(height-padTop-padBottom)*ratio} stroke="#e4edf2" strokeWidth="1" vectorEffect="non-scaling-stroke"/>)}
+      <line x1={x(markerIndex)} x2={x(markerIndex)} y1={padTop} y2={height-padBottom} stroke="#a9bbc7" strokeDasharray="4 5" strokeWidth="1" vectorEffect="non-scaling-stroke"/>
+      {series.map(item=>{const d=path(item.values);return d?<path key={item.label} d={d} fill="none" stroke={item.color} strokeWidth={item.dashed?2.2:3} strokeDasharray={item.dashed?"10 8":undefined} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke"/>:null;})}
+      {series.map(item=>{const value=item.values[markerIndex];return value==null?null:<circle key={`${item.label}-marker`} cx={x(markerIndex)} cy={y(value)} r="4" fill="#fff" stroke={item.color} strokeWidth="3" vectorEffect="non-scaling-stroke"/>;})}
+    </svg>
+    <div className={styles.chartAxis}><span>{labels[0]}</span><span>{labels[markerIndex]}</span><span>{labels.at(-1)}</span></div>
+  </div>;
+}
 
 async function readJson<T>(url:string):Promise<T>{const response=await fetch(url,{cache:"no-store",headers:{"Cache-Control":"no-cache"}});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error((payload as {error?:string}).error||`${url} · ${response.status}`);return payload as T;}
 
@@ -156,8 +209,19 @@ function Kpi({label,value,detail}:{label:string;value:string;detail:string}){ret
 
 function Bottlenecks({data,current,selected,onSelect}:{data:BottleneckPayload|null;current:BottleneckSector|null;selected:string;onSelect:(value:string)=>void}){
   if(!data?.connected||!data.sectors?.length)return <Empty title="Encours réels indisponibles" text="Le module n'affiche aucune série de secours. Il se remplira uniquement avec les photos EtatduParc reçues et figées en base."/>;
-  const firstDate=current?.points?.[0]?.date;const values=current?.points.map(point=>point.value)??[];const maxValue=Math.max(1,...values,current?.max??0);
-  return <><section className={styles.hero}><div><span>GOULOTS D'ÉTRANGLEMENT</span><h2>Encours par secteur</h2><p>Historique construit exclusivement à partir des photos EtatduParc réellement reçues.</p></div><div className={styles.heroMeta}><small>DERNIÈRE PHOTO</small><strong>{dateLabel(data.latestDate)}</strong><small style={{marginTop:8}}>SOURCE</small><strong>{data.source??"EtatduParc"}</strong></div></section><section className={styles.section}><div className={styles.sectorTabs}>{data.sectors.map(sector=><button key={sector.key} className={selected===sector.key?styles.active:""} onClick={()=>onSelect(sector.key)}>{sector.label}</button>)}</div>{current&&<div className={styles.grid}><article className={styles.card}><span>ENCOURS ACTUEL</span><strong>{fmt(current.actual)}</strong><small>{current.max!=null?`Seuil ${fmt(current.max)} · ${current.aboveMax?`${fmt(current.aboveMax)} au-dessus`:"sous le seuil"}`:"Seuil non configuré"}</small></article><article className={styles.card}><span>ÉVOLUTION</span><strong className={current.evolution>0?styles.negative:styles.positive}>{pct(current.evolution)}</strong><small>vs photo précédente</small></article><article className={styles.card}><span>CHARGE</span><strong>{current.workDays!=null?`${fmt(current.workDays,2)} j`:"—"}</strong><small>{current.cadence!=null?`cadence configurée ${fmt(current.cadence)} / j`:"cadence non configurée"}</small></article></div>}</section>{current&&<section className={styles.section}><div className={styles.sectionHead}><div><span className={styles.eyebrow}>HISTORIQUE RÉEL</span><h3>{current.label}</h3></div><p>{firstDate?`Données disponibles depuis le ${dateLabel(firstDate)}.`:"Aucune photo historique."}</p></div><article className={styles.card}>{values.length?<div className={styles.chart}>{values.map((value,index)=><i key={`${current.key}-${current.points[index].date}`} title={`${dateLabel(current.points[index].date)} · ${value}`} style={{height:`${Math.max(3,value/maxValue*100)}%`}}/>)}</div>:<small>Aucun historique réel disponible.</small>}</article></section>}</>;
+  const firstDate=current?.points?.[0]?.date;
+  const values=current?.points.map(point=>point.value)??[];
+  const projections=trendProjection(values,3);
+  const labels=[...(current?.points.map(point=>shortDate(point.date))??[]),"J+1","J+2","J+3"];
+  const workshopColor=current?activityColor(current.label,current.color):"#009edb";
+  const actualValues=[...values,...projections.map(()=>null)];
+  const projectedValues=[...Array(Math.max(0,values.length-1)).fill(null),values.at(-1)??0,...projections] as Array<number|null>;
+  const thresholdValues=current?.max!=null?Array.from({length:labels.length},()=>current.max):null;
+  const curveSeries:CurveSeries[]=[{label:"Encours réel",values:actualValues,color:workshopColor},{label:"Projection tendance",values:projectedValues,color:workshopColor,dashed:true}];
+  if(thresholdValues)curveSeries.push({label:"Seuil max",values:thresholdValues,color:"#eb5b56",dashed:true});
+  const projectedEnd=projections.at(-1)??current?.actual??0;
+  const projectedDelta=current?projectedEnd-current.actual:0;
+  return <><section className={styles.hero}><div><span>GOULOTS D'ÉTRANGLEMENT</span><h2>Encours par secteur</h2><p>Historique construit exclusivement à partir des photos EtatduParc réellement reçues.</p></div><div className={styles.heroMeta}><small>DERNIÈRE PHOTO</small><strong>{dateLabel(data.latestDate)}</strong><small style={{marginTop:8}}>SOURCE</small><strong>{data.source??"EtatduParc"}</strong></div></section><section className={styles.section}><div className={styles.sectorTabs}>{data.sectors.map(sector=><button key={sector.key} className={selected===sector.key?styles.active:""} onClick={()=>onSelect(sector.key)}>{sector.label}</button>)}</div>{current&&<div className={styles.grid}><article className={styles.card}><span>ENCOURS ACTUEL</span><strong style={{color:workshopColor}}>{fmt(current.actual)}</strong><small>{current.max!=null?`Seuil ${fmt(current.max)} · ${current.aboveMax?`${fmt(current.aboveMax)} au-dessus`:"sous le seuil"}`:"Seuil non configuré"}</small></article><article className={styles.card}><span>ÉVOLUTION</span><strong className={current.evolution>0?styles.negative:styles.positive}>{pct(current.evolution)}</strong><small>vs photo précédente</small></article><article className={styles.card}><span>CHARGE</span><strong>{current.workDays!=null?`${fmt(current.workDays,2)} j`:"—"}</strong><small>{current.cadence!=null?`cadence configurée ${fmt(current.cadence)} / j`:"cadence non configurée"}</small></article></div>}</section>{current&&<section className={styles.section}><div className={styles.sectionHead}><div><span className={styles.eyebrow}>HISTORIQUE + TENDANCE</span><h3>{current.label}</h3></div><p>{firstDate?`Données depuis le ${dateLabel(firstDate)} · projection J+3 basée sur les 8 derniers points disponibles.`:"Aucune photo historique."}</p></div><article className={styles.card}>{values.length?<><CurveChart series={curveSeries} labels={labels} currentIndex={Math.max(0,values.length-1)} ariaLabel={`Évolution des encours ${current.label} et projection de tendance à trois jours`}/><div className={styles.chartSummary}><div><span>Projection J+3</span><strong style={{color:workshopColor}}>{fmt(projectedEnd)}</strong><small>véhicules</small></div><div><span>Tendance projetée</span><strong className={projectedDelta>0?styles.negative:styles.positive}>{projectedDelta>0?"+":""}{fmt(projectedDelta)}</strong><small>vs encours actuel</small></div><div><span>Seuil atelier</span><strong>{current.max!=null?fmt(current.max):"—"}</strong><small>{current.max!=null&&projectedEnd>current.max?"projection au-dessus du seuil":"projection sous contrôle"}</small></div></div></>:<small>Aucun historique réel disponible.</small>}</article></section>}</>;
 }
 
 function Walking({vehicles,sourceModifiedAt}:{vehicles:WalkingVehicle[];sourceModifiedAt?:string|null}){
@@ -168,7 +232,25 @@ function Walking({vehicles,sourceModifiedAt}:{vehicles:WalkingVehicle[];sourceMo
 function Finance({snapshot,payload}:{snapshot:FinancialSnapshot|null;payload:FinancePayload|null}){
   if(!payload?.connected||!snapshot)return <Empty title="Données financières réelles indisponibles" text="Le module CA ne possède plus d'historique embarqué. Il attend exclusivement le reporting factures CRVO connecté."/>;
   const revenueDay=metric(snapshot,"revenue_day"),revenueCumulative=metric(snapshot,"revenue_cumulative"),dayTarget=metric(snapshot,"revenue_day_target"),monthTarget=metric(snapshot,"revenue_cumulative_target"),laborRevenue=metric(snapshot,"labor_revenue_cumulative"),invoices=metric(snapshot,"invoices_cumulative");
-  return <><section className={styles.hero}><div><span>CHIFFRE D'AFFAIRE</span><h2>Performance financière</h2><p>Calculée depuis les factures CRVO importées. Aucun chiffre historique n'est embarqué dans l'application.</p></div><div className={styles.heroMeta}><small>ARRÊTÉ AU</small><strong>{dateLabel(snapshot.date)}</strong><small style={{marginTop:8}}>SOURCE</small><strong>{snapshot.source}</strong></div></section><section className={styles.kpis}><Kpi label="CA JOUR" value={euro(revenueDay)} detail={dayTarget!=null?`objectif ${euro(dayTarget)}`:"objectif non configuré"}/><Kpi label="CA CUMULÉ" value={euro(revenueCumulative)} detail={monthTarget!=null?`objectif mensuel ${euro(monthTarget)}`:"objectif mensuel non configuré"}/><Kpi label="CA MAIN-D'ŒUVRE" value={euro(laborRevenue)} detail="cumul importé"/><Kpi label="FACTURES" value={fmt(invoices)} detail="cumul mois"/></section><section className={styles.section}><div className={styles.sectionHead}><div><span className={styles.eyebrow}>HISTORIQUE FACTURES</span><h3>CA quotidien réel</h3></div><p>{payload.backend??"Reporting factures CRVO"}</p></div><article className={styles.card}>{payload.snapshots?.length?<div className={styles.chart}>{[...payload.snapshots].reverse().map(row=>{const value=metric(row,"revenue_day")??0;const max=Math.max(1,...(payload.snapshots??[]).map(item=>metric(item,"revenue_day")??0));return <i key={row.date} title={`${dateLabel(row.date)} · ${euro(value)}`} style={{height:`${Math.max(3,value/max*100)}%`}}/>;})}</div>:<small>Aucun historique quotidien disponible.</small>}</article></section></>;
+  const ordered=[...(payload.snapshots??[])].sort((a,b)=>a.date.localeCompare(b.date));
+  const asOf=ordered.at(-1)?.date??snapshot.date;
+  const days=businessDaysForMonth(asOf);
+  let currentIndex=days.findIndex(day=>day===asOf);
+  if(currentIndex<0)currentIndex=Math.max(0,days.reduce((last,day,index)=>day<=asOf?index:last,0));
+  const cumulativeByDate=new Map(ordered.map(row=>[row.date,metric(row,"revenue_cumulative")??0]));
+  let carry=0;
+  const actualValues=days.map((day,index)=>{if(index>currentIndex)return null;const exact=cumulativeByDate.get(day);if(exact!=null)carry=exact;return carry;});
+  const recentDaily=ordered.slice(-5).map(row=>metric(row,"revenue_day")).filter((value):value is number=>value!=null&&Number.isFinite(value));
+  const runRate=recentDaily.length?average(recentDaily):ordered.length&&revenueCumulative!=null?revenueCumulative/ordered.length:0;
+  const projectionValues:Array<number|null>=days.map(()=>null);
+  let projected=revenueCumulative??0;
+  if(days.length){projectionValues[currentIndex]=projected;for(let index=currentIndex+1;index<days.length;index++){projected+=runRate;projectionValues[index]=projected;}}
+  const objectiveValues=monthTarget!=null&&days.length?days.map((_day,index)=>monthTarget*(index+1)/days.length):[];
+  const financeSeries:CurveSeries[]=[{label:"CA cumulé réel",values:actualValues,color:"#004f9f"},{label:"Projection fin de mois",values:projectionValues,color:"#009edb",dashed:true}];
+  if(objectiveValues.length)financeSeries.push({label:"Trajectoire objectif",values:objectiveValues,color:"#fec82f",dashed:true});
+  const projectedMonth=projectionValues.at(-1)??revenueCumulative??0;
+  const projectedGap=monthTarget!=null?projectedMonth-monthTarget:null;
+  return <><section className={styles.hero}><div><span>CHIFFRE D'AFFAIRE</span><h2>Performance financière</h2><p>Calculée depuis les factures CRVO importées. Aucun chiffre historique n'est embarqué dans l'application.</p></div><div className={styles.heroMeta}><small>ARRÊTÉ AU</small><strong>{dateLabel(snapshot.date)}</strong><small style={{marginTop:8}}>SOURCE</small><strong>{snapshot.source}</strong></div></section><section className={styles.kpis}><Kpi label="CA JOUR" value={euro(revenueDay)} detail={dayTarget!=null?`objectif ${euro(dayTarget)}`:"objectif non configuré"}/><Kpi label="CA CUMULÉ" value={euro(revenueCumulative)} detail={monthTarget!=null?`objectif mensuel ${euro(monthTarget)}`:"objectif mensuel non configuré"}/><Kpi label="CA MAIN-D'ŒUVRE" value={euro(laborRevenue)} detail="cumul importé"/><Kpi label="FACTURES" value={fmt(invoices)} detail="cumul mois"/></section><section className={styles.section}><div className={styles.sectionHead}><div><span className={styles.eyebrow}>CA CUMULÉ + PROJECTION</span><h3>Trajectoire vs objectif mensuel</h3></div><p>Réel jusqu'au dernier arrêté, puis projection au rythme moyen des 5 derniers jours facturés.</p></div><article className={styles.card}>{ordered.length&&days.length?<><CurveChart series={financeSeries} labels={days.map(shortDate)} currentIndex={currentIndex} ariaLabel="Chiffre d'affaires cumulé, projection fin de mois et trajectoire de l'objectif"/><div className={styles.chartSummary}><div><span>Rythme récent</span><strong>{euro(runRate)}</strong><small>moyenne des 5 derniers jours</small></div><div><span>Projection fin de mois</span><strong>{euro(projectedMonth)}</strong><small>{days.length-currentIndex-1} jours ouvrés restants</small></div><div><span>Écart projeté vs objectif</span><strong className={projectedGap!=null&&projectedGap<0?styles.negative:styles.positive}>{projectedGap==null?"—":`${projectedGap>0?"+":""}${euro(projectedGap)}`}</strong><small>{monthTarget!=null?`objectif ${euro(monthTarget)}`:"objectif non configuré"}</small></div></div></>:<small>Aucun historique quotidien disponible.</small>}</article></section></>;
 }
 
 function Objectives({rows,canEdit,onChange,onSave,saving}:{rows:Objective[];canEdit:boolean;onChange:(index:number,key:keyof Objective,value:string)=>void;onSave:()=>void;saving:boolean}){
