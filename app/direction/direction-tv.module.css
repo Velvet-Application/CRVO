@@ -1,4 +1,5 @@
-.page,.header,.brand,.liveStatus,.topGrid,.panel,.yesterdayCard,.yesterdayHero,.yesterdayBody,.yesterdaySummary,.sectorHead,.prodStrip,.financeCard,.sectionHead,.financeNumbers,.budgetCard,.financeSvg,.chartEmpty,.livePanel,.liveHero,.liveHeroRight,.flowSourceBar,.todayFlow,.flowCard,.flowIcon,.stockPanel,.stockLead,.agingBar,.agingCards,.stockSignal,.footer{--tv-layout:1}
+.page,.header,.brand,.liveStatus,.topGrid,.panel,.yesterdayCard,.yesterdayHero,.yesterdayBody,.yesterdaySummary,.sectorHead,.prodStrip,.financeCard,.sectionHead,.financeNumbers,.budgetCard,.pendingCard,.financeSvg,.chartEmpty,.livePanel,.liveHero,.liveHeroRight,.flowSourceBar,.todayFlow,.flowCard,.flowIcon,.stockPanel,.stockLead,.agingBar,.agingCards,.stockSignal,.footer{--tv-layout:1}
+.pendingCard{border-left-color:#fec82f!important}.pendingCard small{color:#a66a00!important}
 
 @media (min-width:1400px) and (min-height:800px){
   .page{
@@ -52,12 +53,13 @@
   .sectionHead span{font-size:clamp(10px,.5vw,19px)!important}
   .sectionHead h2{font-size:clamp(20px,1.18vw,44px)!important}
   .sectionHead small{font-size:clamp(10px,.48vw,18px)!important;text-transform:capitalize}
-  .financeNumbers{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:clamp(8px,.5vw,18px)!important;margin-bottom:clamp(6px,.5vh,14px)!important}
+  .financeNumbers{grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:clamp(8px,.5vw,18px)!important;margin-bottom:clamp(6px,.5vh,14px)!important}
   .financeNumbers>div{padding:clamp(10px,.72vw,26px)!important;border-left-width:clamp(4px,.22vw,8px)!important;border-radius:clamp(8px,.45vw,16px)!important}
   .financeNumbers span{font-size:clamp(9px,.43vw,16px)!important}
-  .financeNumbers strong{font-size:clamp(23px,1.25vw,47px)!important;white-space:nowrap}
-  .financeNumbers small{font-size:clamp(9px,.4vw,15px)!important;line-height:1.25}
+  .financeNumbers strong{font-size:clamp(21px,1.12vw,43px)!important;white-space:nowrap}
+  .financeNumbers small{font-size:clamp(8px,.37vw,14px)!important;line-height:1.25}
   .budgetCard{border-left-color:#fec82f!important}
+  .pendingCard{border-left-color:#fec82f!important;background:linear-gradient(180deg,#fffaf0 0%,#fff 100%)!important}
   .financeSvg{flex:1;min-height:0;height:auto!important;width:100%!important}
   .chartEmpty{flex:1;min-height:0;height:auto!important;font-size:clamp(12px,.55vw,21px)!important}
 
@@ -92,6 +94,10 @@
   .stockSignal{margin-top:clamp(8px,.5vh,14px)!important;font-size:clamp(9px,.44vw,17px)!important}
   .stockSignal strong{font-size:clamp(18px,1vw,38px)!important}
   .footer{padding:0!important;font-size:clamp(8px,.36vw,14px)!important;align-items:center}
+}
+
+@media (max-width:1399px){
+  .pendingCard{grid-column:1/-1}
 }
 
 @media (min-width:2560px) and (min-height:1400px){
