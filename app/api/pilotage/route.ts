@@ -20,7 +20,7 @@ export async function GET(){
     if(!allowed)return NextResponse.json({error:"Droit Cockpit requis."},{status:403,headers:{"Cache-Control":"no-store"}});
     const data=await authRpc<Payload>("kpi_pilotage_secure_payload",{p_session_hash:current.tokenHash});
     const targetExit=n(data.dailyExitTarget);if(targetExit<=0)throw new Error("Objectif Sortie usine du jour indisponible");
-    const targets={...baseTargets,sortie_usine:targetExit};const metrics=data.live?.metrics??{};
+    const targets:Record<string,number>={...baseTargets,sortie_usine:targetExit};const metrics=data.live?.metrics??{};
     const production=[{name:"Expertise",value:n(metrics.production_expertise),tone:"coral"},{name:"Mécanique",value:n(metrics.production_mechanics),tone:"green"},{name:"DSP",value:n(metrics.production_dsp),tone:"cyan"},{name:"Carrosserie",value:n(metrics.production_bodywork),tone:"red"},{name:"Préparation",value:n(metrics.production_preparation),tone:"purple"},{name:"Qualité",value:n(metrics.production_quality),tone:"orange"},{name:"Sortie usine",value:n(metrics.production_factory_exit??metrics.exits_vop),tone:"blue"}];
     const snapshot={date:data.live.snapshotAt,label:new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(`${data.live.snapshotAt}T12:00:00Z`)),source:data.live.sourceName,entries:n(metrics.entries_vop),exits:n(metrics.exits_vop),stock:n(metrics.factory_stock),over15:n(metrics.stock_over_15d),over20:n(metrics.stock_over_20d),production};
     const grouped=new Map<string,FifoRow[]>();for(const row of data.fifoRows??[]){const list=grouped.get(row.sector_key)??[];list.push(row);grouped.set(row.sector_key,list);}
