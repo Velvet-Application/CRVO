@@ -51,8 +51,10 @@ for(const path of ["/animation-mensuelle/payplan","/animation-mensuelle/acces","
 }
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/acces"'))failures.push("Accès Workflow doit rester ADMIN dans le menu latéral.");
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/payplan"'))failures.push("Payplan doit rester ADMIN dans le menu latéral.");
-if(!files.sidebar.includes('admin?link("/capacitaire","Simulateur capacitaire")'))failures.push("Simulateur capacitaire doit rester ADMIN dans le menu latéral.");
-if(!files.drawer.includes('admin&&link("/capacitaire","Simulateur capacitaire",true)'))failures.push("Simulateur capacitaire doit rester ADMIN dans le menu global.");
+if(!files.sidebar.includes('admin?createPortal(<div className="architecture-admin-screens"')||!files.sidebar.includes('topLink("/capacitaire","Simulateur capacitaire")'))failures.push("Simulateur capacitaire doit rester ADMIN sous les raccourcis Ecran dans le menu latéral.");
+if(files.sidebar.includes('admin?link("/capacitaire","Simulateur capacitaire")'))failures.push("Simulateur capacitaire ne doit plus être rangé dans le groupe Cockpit V2 du menu latéral.");
+if(!files.drawer.includes('admin&&<div className="gn-admin"')||!files.drawer.includes('link("/capacitaire","Simulateur capacitaire",true)'))failures.push("Simulateur capacitaire doit rester ADMIN sous les raccourcis Ecran dans le menu global.");
+if(files.drawer.includes('}{admin&&link("/capacitaire","Simulateur capacitaire",true)}{allowed("intelligence")'))failures.push("Simulateur capacitaire ne doit plus être rangé dans le groupe Cockpit V2 du menu global.");
 if(!files.drawer.includes('admin&&<div className="gn-admin"')||!files.drawer.includes('link("/atelier","Ecran ATELIER",true)'))failures.push("Ecran ATELIER doit rester ADMIN dans le menu global.");
 if(!files.drawer.includes('admin&&<div className="gn-admin"')||!files.drawer.includes('link("/direction","Ecran DIRECTION",true)'))failures.push("Ecran DIRECTION doit rester ADMIN dans le menu global.");
 if(!files.sidebar.includes('allowed("data_rh")?link("/data-rh","Data RH")'))failures.push("Data RH doit suivre la permission data_rh dans le menu latéral.");
@@ -72,4 +74,4 @@ if(failures.length){
   console.error("Contrat de navigation CRVO invalide :\n- "+failures.join("\n- "));
   process.exit(1);
 }
-console.log(`Navigation CRVO validée : ${labels.length} libellés, droits, simulateur, kiosks sans session et palette activités contrôlés.`);
+console.log(`Navigation CRVO validée : ${labels.length} libellés, droits, simulateur séparé sous les écrans, kiosks sans session et palette activités contrôlés.`);
