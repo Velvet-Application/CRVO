@@ -9,10 +9,12 @@ on:
       - "bridge/**"
       - ".github/workflows/kpi-sftp-sync.yml"
   schedule:
-    # Le FTP est une source opérationnelle : on contrôle toutes les 10 minutes.
-    # Les minutes sont volontairement décalées des heures pleines pour limiter les retards GitHub Actions.
-    # Les doublons sont ignorés par SHA-256 et seules les versions réellement modifiées sont retraitées.
-    - cron: "7,17,27,37,47,57 * * * *"
+    # Lecture opérationnelle légère toutes les 10 minutes.
+    - cron: "17,27,37,47,57 * * * *"
+    # Une fois par heure, la même lecture est complétée par l'historique lourd
+    # (Analyse-Temps-Bruts / LeadTime). Le cron distinct permet de conserver
+    # l'intention même si GitHub démarre le job avec quelques minutes de retard.
+    - cron: "7 * * * *"
 
 permissions:
   contents: read
@@ -47,9 +49,16 @@ jobs:
           cache-dependency-path: bridge/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm run check
-      - run: npm run sync
-      - run: node src/factory-live-sync.mjs
-      - run: node src/operational-live-sync.mjs
+      - name: Archive changed FTP files
+        run: npm run sync
+      - name: Refresh live Factory and certify previous day
+        run: node src/factory-live-sync.mjs
+      - name: Refresh deep operational history
+        if: github.event_name != 'schedule' || github.event.schedule == '7 * * * *'
+        run: node src/operational-live-sync.mjs
+      - name: Skip deep history on lightweight poll
+        if: github.event_name == 'schedule' && github.event.schedule != '7 * * * *'
+        run: echo "Lightweight 10-minute poll - deep status history intentionally skipped."
       - name: Freeze daily bottleneck photo at 20h Paris
         shell: bash
         run: |
