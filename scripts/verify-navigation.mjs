@@ -3,14 +3,18 @@ import fs from "node:fs";
 const files={
   sidebar:fs.readFileSync("app/pilotage-nav.tsx","utf8"),
   drawer:fs.readFileSync("app/global-nav-drawer.tsx","utf8"),
+  homeMenu:fs.readFileSync("app/home-side-menu.tsx","utf8"),
   proxy:fs.readFileSync("proxy.ts","utf8"),
   account:fs.readFileSync("app/account/page.tsx","utf8"),
   layout:fs.readFileSync("app/layout.tsx","utf8"),
   kioskBridge:fs.readFileSync("app/kiosk-fetch-bridge.tsx","utf8"),
+  kioskAtelier:fs.readFileSync("app/api/kiosk/atelier/route.ts","utf8"),
+  atelier:fs.readFileSync("app/atelier/page.tsx","utf8"),
   colors:fs.readFileSync("app/activity-colors.ts","utf8"),
   home:fs.readFileSync("app/home-dashboard.tsx","utf8"),
   objectivesApi:fs.readFileSync("app/api/objectives/route.ts","utf8"),
   dailyObjectivesMigration:fs.readFileSync("supabase/migrations/20260817092000_daily_exit_objectives_full_month_save.sql","utf8"),
+  verifiedMetricsMigration:fs.readFileSync("supabase/migrations/20260817095500_verified_daily_metrics_and_friday_exit_correction.sql","utf8"),
   capacity:fs.readFileSync("app/capacitaire/capacity-simulator.tsx","utf8"),
   capacityApi:fs.readFileSync("app/api/capacity-simple/route.ts","utf8"),
   productivity:fs.readFileSync("app/performance/productivite/page.tsx","utf8"),
@@ -22,7 +26,7 @@ const labels=[
 ];
 
 const failures=[];
-for(const label of labels){if(!files.sidebar.includes(label)&&!files.drawer.includes(label))failures.push(`Libellé absent : ${label}`);}
+for(const label of labels){if(!files.sidebar.includes(label)&&!files.drawer.includes(label)&&!files.homeMenu.includes(label))failures.push(`Libellé absent : ${label}`);}
 for(const path of ["/animation-mensuelle/payplan","/animation-mensuelle/acces","/capacitaire","/api/capacity-simulator","/api/capacity-simple","/atelier","/direction"]){if(!files.proxy.includes(path))failures.push(`Règle serveur absente : ${path}`);}
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/acces"'))failures.push("Accès Workflow doit rester ADMIN dans le menu latéral.");
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/payplan"'))failures.push("Payplan doit rester ADMIN dans le menu latéral.");
@@ -30,6 +34,7 @@ if(!files.sidebar.includes('admin?createPortal(<div className="architecture-admi
 if(files.sidebar.includes('admin?link("/capacitaire","Simulateur capacitaire")'))failures.push("Simulateur capacitaire ne doit plus être rangé dans le groupe Cockpit V2 du menu latéral.");
 if(!files.drawer.includes('admin&&<div className="gn-admin"')||!files.drawer.includes('link("/capacitaire","Simulateur capacitaire",true)'))failures.push("Simulateur capacitaire doit rester ADMIN sous les raccourcis Ecran dans le menu global.");
 if(files.drawer.includes('}{admin&&link("/capacitaire","Simulateur capacitaire",true)}{allowed("intelligence")'))failures.push("Simulateur capacitaire ne doit plus être rangé dans le groupe Cockpit V2 du menu global.");
+if(!files.homeMenu.includes('direct("/capacitaire", "Simulateur capacitaire", false, true)'))failures.push("Simulateur capacitaire doit rester visible dans le menu principal ADMIN.");
 if(!files.drawer.includes('admin&&<div className="gn-admin"')||!files.drawer.includes('link("/atelier","Ecran ATELIER",true)'))failures.push("Ecran ATELIER doit rester ADMIN dans le menu global.");
 if(!files.drawer.includes('admin&&<div className="gn-admin"')||!files.drawer.includes('link("/direction","Ecran DIRECTION",true)'))failures.push("Ecran DIRECTION doit rester ADMIN dans le menu global.");
 if(!files.sidebar.includes('allowed("data_rh")?link("/data-rh","Data RH")'))failures.push("Data RH doit suivre la permission data_rh dans le menu latéral.");
@@ -42,6 +47,12 @@ for(const path of ["/api/kiosk/atelier","/api/kiosk/direction"]){if(!files.proxy
 if(!files.layout.includes("KioskFetchBridge")||!files.kioskBridge.includes('/api/kiosk/atelier')||!files.kioskBridge.includes('/api/kiosk/direction'))failures.push("Les écrans atelier/direction doivent lire uniquement les passerelles kiosk lorsqu'ils sont ouverts sans session.");
 if(!files.layout.includes("ActivityColorBinder"))failures.push("La règle couleur par activité doit être montée globalement.");
 for(const [label,hex] of [["Expertise","#eb5b56"],["Mécanique","#55b779"],["Jantes","#f5a623"],["Carrosserie","#009edb"],["DSP","#004f9f"],["Préparation","#8d5ec7"],["Qualité / Photo","#c66a1b"],["Sortie usine","#7b8794"]]){if(!files.colors.includes(hex))failures.push(`Couleur activité absente : ${label} ${hex}`);}
+
+if(!files.atelier.includes('setInterval(() => setMode')||!files.atelier.includes('15000'))failures.push("Ecran ATELIER doit alterner automatiquement entre le live et la dernière journée clôturée toutes les 15 secondes.");
+if(!files.atelier.includes("FTP EN RETARD")||!files.atelier.includes("staleMinutes"))failures.push("Ecran ATELIER doit signaler visiblement une donnée FTP trop ancienne.");
+if(!files.atelier.includes("JOURNÉE CLÔTURÉE")||!files.atelier.includes("closedSnapshot"))failures.push("Ecran ATELIER doit afficher la dernière journée clôturée dans la rotation.");
+if(!files.kioskAtelier.includes('resource === "verified-metrics"')||!files.atelier.includes("verified-metrics"))failures.push("Ecran ATELIER doit appliquer les métriques de clôture vérifiées.");
+if(!files.verifiedMetricsMigration.includes("kpi_daily_verified_metrics")||!files.verifiedMetricsMigration.includes("date '2026-08-14'")||!files.verifiedMetricsMigration.includes("'exits_vop',83")||!files.verifiedMetricsMigration.includes("'production_factory_exit',83"))failures.push("La clôture vérifiée du vendredi 14/08 doit conserver 83 sorties usine.");
 
 if(!files.home.includes("function dailyExitTarget("))failures.push("Performance du jour doit disposer d'une résolution de l'objectif Sortie usine par date exacte.");
 if(!files.home.includes('detail={sortieTarget!=null?`objectif journalier'))failures.push("La carte Sorties VOP doit afficher l'objectif journalier de la date.");
@@ -61,4 +72,4 @@ for(const key of ["expertise","mecanique","dsp","jantes","carrosserie","preparat
 if(!files.capacityMigration.includes("kpi_is_productive_sector")||!files.capacityMigration.includes("kpi_capacity_simple"))failures.push("La migration doit verrouiller le filtre productif et le calcul capacitaire léger.");
 
 if(failures.length){console.error("Contrat de navigation CRVO invalide :\n- "+failures.join("\n- "));process.exit(1);}
-console.log(`Navigation CRVO validée : ${labels.length} libellés, droits, productivité limitée aux métiers productifs, simulateur MINI simplifié, objectifs journaliers Sortie usine, kiosks sans session et palette activités contrôlés.`);
+console.log(`Navigation CRVO validée : ${labels.length} libellés, droits, simulateur présent dans les 3 menus, rotation ATELIER live/clôture, alerte fraîcheur FTP, sorties clôturées vérifiées, productivité limitée aux métiers productifs et simulateur MINI simplifié.`);
