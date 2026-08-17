@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseRestHeaders } from "../../../supabase-rest";
-import { loadKioskDashboard, loadKioskObjectives, loadKioskSystemStatus } from "../kiosk-data";
+import { loadKioskDashboard, loadKioskSystemStatus } from "../kiosk-data";
+import { CRVO_SUPABASE_PUBLISHABLE_KEY, CRVO_SUPABASE_URL } from "../../../lib/crvo-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +17,31 @@ async function loadVerifiedMetrics() {
   return response.json();
 }
 
+async function loadKioskObjectivesRpc(month: string | null) {
+  const value = month && /^20\d{2}-\d{2}$/.test(month) ? `${month}-01` : null;
+  const response = await fetch(`${CRVO_SUPABASE_URL}/rest/v1/rpc/kpi_kiosk_objectives`, {
+    method: "POST",
+    headers: {
+      apikey: CRVO_SUPABASE_PUBLISHABLE_KEY,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ p_month: value }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Objectifs kiosk ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ""}`);
+  }
+  return response.json();
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const resource = url.searchParams.get("resource") ?? "dashboard";
   try {
     if (resource === "objectives") {
-      return NextResponse.json(await loadKioskObjectives(url.searchParams.get("month")), { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
+      return NextResponse.json(await loadKioskObjectivesRpc(url.searchParams.get("month")), { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
     }
     if (resource === "system-status") {
       return NextResponse.json(await loadKioskSystemStatus(), { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
