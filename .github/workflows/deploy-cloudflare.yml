@@ -63,15 +63,12 @@ jobs:
           const health=await healthResponse.json().catch(()=>({}));
           const manifest=await manifestResponse.json().catch(()=>({}));
           const workerText=await workerResponse.text().catch(()=>"");
-          const finance=health?.financeHealth??{};
-          const revenue=Number(finance.revenue??0),budget=Number(finance.budget??0),pendingCount=Number(finance.pendingCount??-1),pendingRevenue=Number(finance.pendingRevenue??-1),overdueCount=Number(finance.overdueCount??-1),dailyExitTarget=Number(health?.production?.dailyExitTarget??-1);
-          console.log(`health=${healthResponse.status} ok=${health.ok} trust=${health.trustLevel} dataTrustOk=${health.dataTrustOk} data=${health.dataReady} bottlenecks=${health.bottlenecksReady} clients=${health.clientDashboardReady} ftpAge=${health?.ftp?.syncAgeMinutes} sourceAge=${health?.production?.sourceAgeMinutes} protected=${protectedResponse.status} kioskFinanceAnon=${directionFinanceResponse.status} kioskObjectivesAnon=${directionObjectivesResponse.status} kioskAtelierAnon=${atelierResponse.status} revenue=${revenue} budget=${budget} pendingOR=${pendingCount} pendingCA=${pendingRevenue} overdue=${overdueCount} dailyExitTarget=${dailyExitTarget} pwaManifest=${manifestResponse.status} sw=${workerResponse.status} icon=${iconResponse.status} display=${manifest.display}`);
-          if(!healthResponse.ok||health.ok!==true||health.dataReady!==true||health.bottlenecksReady!==true||health.clientDashboardReady!==true)process.exit(1);
+          console.log(`health=${healthResponse.status} ok=${health.ok} trust=${health.trustLevel} dataTrustOk=${health.dataTrustOk} data=${health.dataReady} bottlenecks=${health.bottlenecksReady} clients=${health.clientDashboardReady} financeReady=${health.financeReady} objectiveReady=${health.objectiveReady} ftpAge=${health?.ftp?.syncAgeMinutes} sourceAge=${health?.production?.sourceAgeMinutes} protected=${protectedResponse.status} kioskFinanceAnon=${directionFinanceResponse.status} kioskObjectivesAnon=${directionObjectivesResponse.status} kioskAtelierAnon=${atelierResponse.status} pwaManifest=${manifestResponse.status} sw=${workerResponse.status} icon=${iconResponse.status} display=${manifest.display}`);
+          if(!healthResponse.ok||health.ok!==true||health.dataReady!==true||health.bottlenecksReady!==true||health.clientDashboardReady!==true||health.financeReady!==true||health.objectiveReady!==true)process.exit(1);
           if(health.dataTrustOk===false||health.trustLevel==="red")process.exit(9);
           if(protectedResponse.status!==401)process.exit(2);
           if(directionFinanceResponse.status!==401||directionObjectivesResponse.status!==401||atelierResponse.status!==401)process.exit(10);
-          if(finance.ready!==true||revenue<=0||budget<=0||pendingCount<0||pendingRevenue<0||overdueCount<0||!finance.parkDate||!finance.parkModifiedAt)process.exit(3);
-          if(dailyExitTarget<=0)process.exit(5);
+          if("financeHealth" in health||"revenue" in health||"budget" in health)process.exit(11);
           if(!manifestResponse.ok||manifest.name!=="KPI CRVO Lens"||manifest.display!=="standalone"||manifest.start_url!=="/"||!Array.isArray(manifest.icons)||manifest.icons.length<1)process.exit(6);
           if(!workerResponse.ok||!workerText.includes("serviceWorker")&&!workerText.includes("addEventListener"))process.exit(7);
           if(!iconResponse.ok)process.exit(8);
