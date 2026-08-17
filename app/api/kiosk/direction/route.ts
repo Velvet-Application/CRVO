@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { loadKioskDashboard } from "../kiosk-data";
+import { loadKioskDashboard, loadKioskObjectives } from "../kiosk-data";
 import { CRVO_SUPABASE_PUBLISHABLE_KEY, CRVO_SUPABASE_URL } from "../../../lib/crvo-auth";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +28,11 @@ export async function GET(request: Request) {
   try {
     if (resource === "finance") {
       return NextResponse.json(await loadDirectionFinance(url.searchParams.get("history") === "1"), {
+        headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" },
+      });
+    }
+    if (resource === "objectives") {
+      return NextResponse.json(await loadKioskObjectives(url.searchParams.get("month")), {
         headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" },
       });
     }
