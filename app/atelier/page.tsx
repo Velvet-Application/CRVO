@@ -109,6 +109,11 @@ function parisToday() {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
 
+function isBusinessDay(value: string) {
+  const day = new Date(`${value}T12:00:00Z`).getUTCDay();
+  return day >= 1 && day <= 5;
+}
+
 function displayDate(value: string) {
   return new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "2-digit", month: "long", year: "numeric", timeZone: "Europe/Paris" }).format(new Date(`${value}T12:00:00+02:00`));
 }
@@ -184,7 +189,7 @@ export default function AtelierScreen() {
       const today = parisToday();
       const latest = rows.at(-1) ?? null;
       const live = rows.find((row) => row.date === today) ?? latest;
-      const closed = [...rows].reverse().find((row) => row.date < today) ?? null;
+      const closed = [...rows].reverse().find((row) => row.date < today && isBusinessDay(row.date)) ?? null;
       if (!live) throw new Error("Aucune donnée de production disponible.");
 
       const months = [...new Set([live.date.slice(0, 7), closed?.date.slice(0, 7)].filter(Boolean) as string[])];
@@ -274,7 +279,7 @@ export default function AtelierScreen() {
 
     <section className={styles.hero}>
       <div className={styles.heroCopy}>
-        <span>{isClosed ? `SORTIES USINE · JOURNÉE CLÔTURÉE${exitsVerified ? " · VÉRIFIÉE" : ""}` : `SORTIES USINE · RÉALISÉ À ${ftpClock(ftpLastRefreshAt)}`}</span>
+        <span>{isClosed ? `SORTIES USINE · JOURNÉE CLÔTURÉE${exitsVerified ? " · SORTIES VÉRIFIÉES" : ""}` : `SORTIES USINE · RÉALISÉ À ${ftpClock(ftpLastRefreshAt)}`}</span>
         <div className={styles.heroNumbers}><strong>{snapshot.exits}</strong><b>/ {exitTarget}</b></div>
         <p>{remaining === 0 ? "Objectif du jour atteint" : `${remaining} véhicule${remaining > 1 ? "s" : ""} à sortir pour atteindre l’objectif`}</p>
         <div className={styles.heroTrack}><i style={{ width: `${Math.min(exitPercent, 100)}%` }}/><span style={{ left: `${Math.min(exitPercent, 100)}%` }}>{exitPercent}%</span></div>
@@ -301,7 +306,7 @@ export default function AtelierScreen() {
       <div><span>ENTRÉES</span><strong>{snapshot.entries}</strong></div>
       <div><span>STOCK USINE</span><strong>{snapshot.stock}</strong></div>
       <div><span>STOCK +20 J</span><strong>{snapshot.over20}</strong></div>
-      <div className={styles.sync}><i className={!ftpStale && connected ? styles.syncOk : styles.syncFallback}/><span>{isClosed ? "ROTATION · DERNIÈRE JOURNÉE CLÔTURÉE" : ftpStale ? "FTP EN RETARD · DONNÉE HORODATÉE" : connected ? "FTP LIVE CONNECTÉ" : "DERNIÈRE DONNÉE DISPONIBLE"}</span><small>écran {lastRefresh || now} · production FTP {ftpClock(ftpLastRefreshAt)} · parc FTP {ftpClock(ftpLastDepositAt)} · alternance 15 s</small></div>
+      <div className={styles.sync}><i className={!ftpStale && connected ? styles.syncOk : styles.syncFallback}/><span>{isClosed ? "ROTATION · DERNIÈRE JOURNÉE OUVRÉE CLÔTURÉE" : ftpStale ? "FTP EN RETARD · DONNÉE HORODATÉE" : connected ? "FTP LIVE CONNECTÉ" : "DERNIÈRE DONNÉE DISPONIBLE"}</span><small>écran {lastRefresh || now} · production FTP {ftpClock(ftpLastRefreshAt)} · parc FTP {ftpClock(ftpLastDepositAt)} · alternance 15 s</small></div>
     </footer>
 
     {error && <div className={styles.error}>{error}</div>}
