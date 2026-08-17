@@ -18,6 +18,20 @@ type StaffMember = {
   comparable?: boolean;
 };
 
+type BillingRatio = {
+  sectorKey: string;
+  billedVehicles: number;
+  soldHours: number;
+  avgHoursPerVehicle: number;
+};
+
+type BillingRatioPayload = {
+  connected?: boolean;
+  error?: string;
+  period?: Record<string, unknown>;
+  ratios?: BillingRatio[];
+};
+
 type CapacityPayload = {
   connected?: boolean;
   error?: string;
@@ -26,6 +40,7 @@ type CapacityPayload = {
   sectors?: unknown[];
   miniStandard?: Record<string, unknown>;
   roster?: StaffMember[];
+  billingRatios?: BillingRatio[];
 };
 
 function isTimeout(error: unknown) {
@@ -39,6 +54,10 @@ async function readCapacity(tokenHash: string) {
 
 async function readRoster(tokenHash: string) {
   return authRpc<StaffMember[]>("kpi_capacity_roster", { p_session_hash: tokenHash });
+}
+
+async function readBillingRatios(tokenHash: string) {
+  return authRpc<BillingRatioPayload>("kpi_capacity_billing_ratios", { p_session_hash: tokenHash });
 }
 
 export async function GET() {
@@ -61,7 +80,13 @@ export async function GET() {
       return NextResponse.json(payload, { status: 503, headers: { "Cache-Control": "no-store" } });
     }
 
-    payload.roster = await readRoster(current.tokenHash);
+    const [roster, billing] = await Promise.all([
+      readRoster(current.tokenHash),
+      readBillingRatios(current.tokenHash),
+    ]);
+    payload.roster = roster;
+    payload.billingRatios = billing.ratios ?? [];
+
     return NextResponse.json(payload, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
   } catch (error) {
     console.error("crvo_capacity_simple_failed", error);
