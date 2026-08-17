@@ -36,6 +36,7 @@ const SATURDAY_ADDITIVE_METRICS = [
   "production_factory_exit",
 ];
 const STOCK_METRICS = ["factory_stock", "stock_over_15d", "stock_over_20d"];
+const BUSINESS_DAYS = new Set([1, 2, 3, 4, 5]);
 
 function config() {
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -68,26 +69,61 @@ function previousIsoDate(dateIso: string) {
   return date.toISOString().slice(0, 10);
 }
 
-function foldSaturdayIntoFriday(rows: SnapshotRow[]) {
+function utcDay(dateIso: string) {
+  return new Date(`${dateIso}T12:00:00Z`).getUTCDay();
+}
+
+function hasMeaningfulMetrics(row: SnapshotRow) {
+  return [...SATURDAY_ADDITIVE_METRICS, ...STOCK_METRICS].some((key) => metricValue(row.metrics, key) > 0);
+}
+
+/**
+ * Règle métier CRVO :
+ * - les récapitulatifs quotidiens sont exclusivement du lundi au vendredi ;
+ * - la production du samedi est rattachée au vendredi précédent ;
+ * - le dimanche n'est jamais exposé comme journée de performance/veille.
+ */
+function normalizeBusinessDays(rows: SnapshotRow[]) {
   const byDate = new Map(rows.map((row) => [row.snapshot_at, { ...row, metrics: { ...row.metrics } }]));
+
   for (const saturday of [...byDate.values()]) {
-    const date = new Date(`${saturday.snapshot_at}T12:00:00Z`);
-    if (date.getUTCDay() !== 6) continue;
-    const hasSaturdayProduction = SATURDAY_ADDITIVE_METRICS.some((key) => metricValue(saturday.metrics, key) > 0);
-    if (!hasSaturdayProduction) continue;
+    if (utcDay(saturday.snapshot_at) !== 6) continue;
     const fridayDate = previousIsoDate(saturday.snapshot_at);
     const friday = byDate.get(fridayDate);
-    if (!friday) continue;
-    const metrics = { ...friday.metrics };
-    for (const key of SATURDAY_ADDITIVE_METRICS) metrics[key] = metricValue(friday.metrics, key) + metricValue(saturday.metrics, key);
-    for (const key of STOCK_METRICS) {
-      const saturdayValue = metricValue(saturday.metrics, key);
-      if (saturdayValue > 0) metrics[key] = saturdayValue;
+
+    if (friday) {
+      const metrics = { ...friday.metrics };
+      for (const key of SATURDAY_ADDITIVE_METRICS) {
+        metrics[key] = metricValue(friday.metrics, key) + metricValue(saturday.metrics, key);
+      }
+      for (const key of STOCK_METRICS) {
+        const saturdayValue = metricValue(saturday.metrics, key);
+        if (saturdayValue > 0) metrics[key] = saturdayValue;
+      }
+      byDate.set(fridayDate, {
+        ...friday,
+        source_name: hasMeaningfulMetrics(saturday) ? `${friday.source_name} · samedi consolidé` : friday.source_name,
+        metrics,
+      });
+    } else if (hasMeaningfulMetrics(saturday)) {
+      byDate.set(fridayDate, {
+        ...saturday,
+        snapshot_at: fridayDate,
+        source_name: `${saturday.source_name} · samedi rattaché au vendredi`,
+        metrics: { ...saturday.metrics },
+      });
     }
-    byDate.set(fridayDate, { ...friday, source_name: `${friday.source_name} · samedi consolidé`, metrics });
+
     byDate.delete(saturday.snapshot_at);
   }
-  return [...byDate.values()].sort((a, b) => a.snapshot_at.localeCompare(b.snapshot_at));
+
+  for (const row of [...byDate.values()]) {
+    if (utcDay(row.snapshot_at) === 0) byDate.delete(row.snapshot_at);
+  }
+
+  return [...byDate.values()]
+    .filter((row) => BUSINESS_DAYS.has(utcDay(row.snapshot_at)))
+    .sort((a, b) => a.snapshot_at.localeCompare(b.snapshot_at));
 }
 
 function mergeRealRows(rows: SnapshotRow[]) {
@@ -148,7 +184,7 @@ export async function GET(request: Request) {
       rest<LiveRow[]>(db.supabaseUrl, db.readKey, "kpi_ftp_live_dashboard?select=snapshot_at,source_name,metrics,source_modified_at,factory_modified_at,park_modified_at&limit=1"),
       rest<DirectionLiveFlowRow[]>(db.supabaseUrl, db.readKey, "kpi_ftp_direction_live_flow?select=snapshot_at,park_modified_at,preparation_remaining,quality_remaining,photo_remaining&limit=1").catch(() => []),
     ]);
-    const all = foldSaturdayIntoFriday(mergeRealRows([...historyRows, ...liveRows]));
+    const all = normalizeBusinessDays(mergeRealRows([...historyRows, ...liveRows]));
     if (!all.length) return NextResponse.json({ connected: false, error: "Aucune donnée opérationnelle réelle n'est disponible." }, { status: 503, headers: { "Cache-Control": "no-store" } });
     const source = requestedDate ? all.find((row) => row.snapshot_at === requestedDate) : all.at(-1);
     if (!source) return NextResponse.json({ connected: true, error: "Aucune donnée réelle pour la date demandée." }, { status: 404, headers: { "Cache-Control": "no-store" } });
