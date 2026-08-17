@@ -30,6 +30,7 @@ export default function KioskFetchBridge() {
     const pathname = window.location.pathname;
     if (pathname !== "/atelier" && pathname !== "/direction") return;
 
+    document.body.classList.add("crvo-kiosk-mode");
     const nativeFetch = window.fetch.bind(window);
     window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
       const raw = input instanceof Request ? input.url : input instanceof URL ? input.toString() : String(input);
@@ -41,7 +42,16 @@ export default function KioskFetchBridge() {
       return nativeFetch(target.toString(), init);
     }) as typeof window.fetch;
 
-    return () => { window.fetch = nativeFetch; };
+    return () => {
+      document.body.classList.remove("crvo-kiosk-mode");
+      window.fetch = nativeFetch;
+    };
   }, []);
-  return null;
+  return <style>{`
+    body.crvo-kiosk-mode .gn-trigger,
+    body.crvo-kiosk-mode .gn-backdrop,
+    body.crvo-kiosk-mode .gn-drawer,
+    body.crvo-kiosk-mode .crvo-auth-nav,
+    body.crvo-kiosk-mode .hsm{display:none!important}
+  `}</style>;
 }
