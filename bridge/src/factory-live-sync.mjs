@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { Writable } from "node:stream";
 import { Client as FtpClient } from "basic-ftp";
-import { parseFactoryToday } from "./ftp-factory-production.mjs";
+import { parseFactoryPrevious, parseFactoryToday } from "./ftp-factory-production.mjs";
 
 const password = process.env.FTP_PASSWORD ?? process.env.SFTP_PASSWORD;
 const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "");
@@ -29,25 +29,42 @@ async function download(client, remotePath) {
   return Buffer.concat(chunks);
 }
 
+async function syncFactoryFile(ftp, files, filename, parser, role) {
+  const file = files.find((item) => item.name === filename);
+  if (!file) {
+    if (role === "closed") throw new Error(`${filename} not found on FTP - closed-day certification unavailable`);
+    throw new Error(`${filename} not found on FTP`);
+  }
+  const remotePath = `/${filename}`;
+  const buffer = await download(ftp, remotePath);
+  const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+  const modifiedAt = file.modifiedAt instanceof Date && Number.isFinite(file.modifiedAt.getTime()) ? file.modifiedAt.getTime() : Date.now();
+  const rows = parser(buffer, modifiedAt);
+  if (!rows.length) throw new Error(`${filename} contains no usable Factory row`);
+  const dates = [...new Set(rows.map((row) => row.production_date).filter(Boolean))].sort();
+  const snapshotAt = dates.at(-1) ?? new Date(modifiedAt).toISOString().slice(0, 10);
+  const initResult = await call(`${mainGateway}?action=init`, { method: "POST", body: JSON.stringify({ sourceId, filename, byteSize: file.size || buffer.length, sha256, snapshotAt, remotePath, modifiedAt }) });
+  if (![200, 409].includes(initResult.response.status) || !initResult.payload.batchId) throw new Error(`${filename} import batch unavailable: ${initResult.response.status}`);
+  const syncResult = await call(factoryGateway, { method: "POST", body: JSON.stringify({ batchId: initResult.payload.batchId, rows }) });
+  if (!syncResult.response.ok) throw new Error(`${filename} gateway ${syncResult.response.status}: ${syncResult.payload.error ?? "unknown"}`);
+  const relevant = rows.filter((row) => ["VOP EFF", "VOP EXT"].includes(row.flow));
+  const total = (field) => relevant.reduce((sum, row) => sum + Number(row[field] || 0), 0);
+  process.stdout.write(`${JSON.stringify({ event: role === "closed" ? "factory_closed_day_synced" : "factory_live_synced", filename, productionDates: dates, sourceModifiedAt: new Date(modifiedAt).toISOString(), flows: relevant.length, received: total("received"), expertise: total("expertise"), mechanics: total("mechanics"), bodywork: total("bodywork") + total("fixline_1") + total("fixline_2") + total("fixline_3"), dsp: total("dsp"), preparation: total("preparation"), quality: total("quality"), available: total("available") })}\n`);
+  return { rows, dates };
+}
+
 const ftp = new FtpClient(30_000);
 try {
   await ftp.access({ host: String(connection.host), port: Number(connection.port || 21), user: String(connection.username), password, secure: Boolean(connection.secure) });
   const files = await ftp.list(String(connection.remoteDir || "/"));
-  const file = files.find((item) => item.name === "Factory-j+1.csv");
-  if (!file) throw new Error("Factory-j+1.csv not found on FTP");
-  const buffer = await download(ftp, "/Factory-j+1.csv");
-  const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
-  const modifiedAt = file.modifiedAt instanceof Date && Number.isFinite(file.modifiedAt.getTime()) ? file.modifiedAt.getTime() : Date.now();
-  const snapshotAt = new Date(modifiedAt).toISOString().slice(0, 10);
-  const initResult = await call(`${mainGateway}?action=init`, { method: "POST", body: JSON.stringify({ sourceId, filename: file.name, byteSize: file.size || buffer.length, sha256, snapshotAt, remotePath: "/Factory-j+1.csv", modifiedAt }) });
-  if (![200, 409].includes(initResult.response.status) || !initResult.payload.batchId) throw new Error(`Factory import batch unavailable: ${initResult.response.status}`);
-  const rows = parseFactoryToday(buffer, modifiedAt);
-  const syncResult = await call(factoryGateway, { method: "POST", body: JSON.stringify({ batchId: initResult.payload.batchId, rows }) });
-  if (!syncResult.response.ok) throw new Error(`Factory gateway ${syncResult.response.status}: ${syncResult.payload.error ?? "unknown"}`);
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-  const live = rows.filter((row) => row.production_date === today && ["VOP EFF", "VOP EXT"].includes(row.flow));
-  const total = (field) => live.reduce((sum, row) => sum + Number(row[field] || 0), 0);
-  process.stdout.write(`${JSON.stringify({ event: "factory_live_synced", productionDate: today, sourceModifiedAt: new Date(modifiedAt).toISOString(), flows: live.length, received: total("received"), expertise: total("expertise"), mechanics: total("mechanics"), bodywork: total("bodywork") + total("fixline_1") + total("fixline_2") + total("fixline_3"), dsp: total("dsp"), preparation: total("preparation"), quality: total("quality"), available: total("available") })}\n`);
+
+  // Live : photographie de la journée en cours.
+  await syncFactoryFile(ftp, files, "Factory-j+1.csv", parseFactoryToday, "live");
+
+  // Clôture : le fichier j-1 du lendemain remplace automatiquement la dernière
+  // photographie live pour la date qu'il contient. Le classement SQL par
+  // source_modified_at lui donne la priorité sans écraser l'audit brut.
+  await syncFactoryFile(ftp, files, "Factory-j-1.csv", parseFactoryPrevious, "closed");
 } finally {
   ftp.close();
 }
