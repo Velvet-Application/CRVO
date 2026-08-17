@@ -9,10 +9,13 @@ const files={
   layout:fs.readFileSync("app/layout.tsx","utf8"),
   kioskBridge:fs.readFileSync("app/kiosk-fetch-bridge.tsx","utf8"),
   kioskAtelier:fs.readFileSync("app/api/kiosk/atelier/route.ts","utf8"),
+  kioskDirection:fs.readFileSync("app/api/kiosk/direction/route.ts","utf8"),
   atelier:fs.readFileSync("app/atelier/page.tsx","utf8"),
   colors:fs.readFileSync("app/activity-colors.ts","utf8"),
   home:fs.readFileSync("app/home-dashboard.tsx","utf8"),
   objectivesApi:fs.readFileSync("app/api/objectives/route.ts","utf8"),
+  healthApi:fs.readFileSync("app/api/health/route.ts","utf8"),
+  dataTrust:fs.readFileSync("app/data-trust-guard.tsx","utf8"),
   dailyObjectivesMigration:fs.readFileSync("supabase/migrations/20260817092000_daily_exit_objectives_full_month_save.sql","utf8"),
   verifiedMetricsMigration:fs.readFileSync("supabase/migrations/20260817095500_verified_daily_metrics_and_friday_exit_correction.sql","utf8"),
   capacity:fs.readFileSync("app/capacitaire/capacity-simulator.tsx","utf8"),
@@ -33,7 +36,7 @@ const labels=[
 
 const failures=[];
 for(const label of labels){if(!files.sidebar.includes(label)&&!files.drawer.includes(label)&&!files.homeMenu.includes(label))failures.push(`Libellé absent : ${label}`);}
-for(const path of ["/animation-mensuelle/payplan","/animation-mensuelle/acces","/animation-centre/rh","/api/staff/operational","/capacitaire","/api/capacity-simulator","/api/capacity-simple","/atelier","/direction"]){if(!files.proxy.includes(path))failures.push(`Règle serveur absente : ${path}`);}
+for(const path of ["/animation-mensuelle/payplan","/animation-mensuelle/acces","/animation-centre/rh","/api/staff/operational","/capacitaire","/api/capacity-simulator","/api/capacity-simple","/atelier","/direction","/api/kiosk/atelier","/api/kiosk/direction"]){if(!files.proxy.includes(path))failures.push(`Règle serveur absente : ${path}`);}
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/acces"'))failures.push("Accès Workflow doit rester ADMIN dans le menu latéral.");
 if(!files.sidebar.includes('admin?link("/animation-mensuelle/payplan"'))failures.push("Payplan doit rester ADMIN dans le menu latéral.");
 if(!files.sidebar.includes('admin?createPortal(<div className="architecture-admin-screens"')||!files.sidebar.includes('topLink("/capacitaire","Simulateur capacitaire")'))failures.push("Simulateur capacitaire doit rester ADMIN sous les raccourcis Ecran dans le menu latéral.");
@@ -55,9 +58,15 @@ if(!files.rhClient.includes("Neutraliser dans les calculs KPI")||!files.rhClient
 if(!files.rhApi.includes("kpi_rh_update_staff_operational")||!files.rhApi.includes("Droit Data RH requis"))failures.push("L'API RH opérationnelle doit utiliser le RPC sécurisé Data RH.");
 if(!files.rhMigration.includes("kpi_staff_operational_overrides")||!files.rhMigration.includes("kpi_staff_operational_events")||!files.rhMigration.includes("kpi_staff_effective")||!files.rhMigration.includes("kpi_staff_alias_neutralized")||!files.rhMigration.includes("productivity90d"))failures.push("La migration RH doit conserver les overrides, l'audit, la neutralisation et la performance des polycompétences.");
 
-if(!files.proxy.includes('isPublicKioskPath(path)'))failures.push("Les écrans kiosk doivent contourner l'identification uniquement via la règle kiosk dédiée.");
-for(const path of ["/api/kiosk/atelier","/api/kiosk/direction"]){if(!files.proxy.includes(path))failures.push(`Passerelle kiosk absente : ${path}`);}
-if(!files.layout.includes("KioskFetchBridge")||!files.kioskBridge.includes('/api/kiosk/atelier')||!files.kioskBridge.includes('/api/kiosk/direction'))failures.push("Les écrans atelier/direction doivent lire uniquement les passerelles kiosk lorsqu'ils sont ouverts sans session.");
+// Contrat de confidentialité industrielle : les écrans TV sont installables, mais ne sont jamais des endpoints publics.
+if(files.proxy.includes("isPublicKioskPath"))failures.push("Les écrans kiosk ne doivent plus contourner l'authentification.");
+for(const path of ["/atelier","/direction","/api/kiosk/atelier","/api/kiosk/direction"]){if(!files.proxy.includes(`path${path.startsWith("/api")?".startsWith":"=="}(`)&&!files.proxy.includes(path))failures.push(`Protection ADMIN absente : ${path}`);}
+if(!files.proxy.includes('path==="/atelier"')||!files.proxy.includes('path==="/direction"')||!files.proxy.includes('path.startsWith("/api/kiosk/atelier")')||!files.proxy.includes('path.startsWith("/api/kiosk/direction")'))failures.push("Les écrans ATELIER/DIRECTION et leurs passerelles doivent être ADMIN uniquement.");
+for(const [name,content] of [["ATELIER",files.kioskAtelier],["DIRECTION",files.kioskDirection]]){if(!content.includes("currentSession")||!content.includes('session.role!=="admin"')||!content.includes("Accès administrateur requis"))failures.push(`La passerelle kiosk ${name} doit vérifier explicitement la session ADMIN.`);}
+if(!files.layout.includes("KioskFetchBridge")||!files.kioskBridge.includes('/api/kiosk/atelier')||!files.kioskBridge.includes('/api/kiosk/direction'))failures.push("Les écrans atelier/direction doivent lire uniquement les passerelles kiosk sécurisées.");
+if(!files.healthApi.includes("financeReady")||!files.healthApi.includes("objectiveReady")||!files.healthApi.includes("trustLevel"))failures.push("Le healthcheck industriel doit certifier finance, objectif et niveau de confiance.");
+if(files.healthApi.includes("financeHealth,"))failures.push("Le healthcheck public ne doit pas exposer les montants financiers détaillés.");
+if(!files.dataTrust.includes("DONNÉES NON CERTIFIÉES")||!files.dataTrust.includes("CONFIANCE DONNÉES · À SURVEILLER"))failures.push("Le fail-closed global doit rendre visibles les états AMBER et RED.");
 if(!files.layout.includes("ActivityColorBinder"))failures.push("La règle couleur par activité doit être montée globalement.");
 for(const [label,hex] of [["Expertise","#eb5b56"],["Mécanique","#55b779"],["Jantes","#f5a623"],["Carrosserie","#009edb"],["DSP","#004f9f"],["Préparation","#8d5ec7"],["Qualité / Photo","#c66a1b"],["Sortie usine","#7b8794"]]){if(!files.colors.includes(hex))failures.push(`Couleur activité absente : ${label} ${hex}`);}
 
@@ -65,7 +74,7 @@ if(!files.atelier.includes("AUJOURD’HUI · EN COURS")||!files.atelier.includes
 if(files.atelier.includes('setInterval(() => setMode')||files.atelier.includes('15000'))failures.push("Ecran ATELIER ne doit plus alterner les deux journées : elles doivent rester visibles ensemble.");
 if(!files.atelier.includes("isBusinessDay"))failures.push("Ecran ATELIER doit sélectionner la dernière journée ouvrée clôturée.");
 if(!files.atelier.includes("FTP EN RETARD")||!files.atelier.includes("staleMinutes"))failures.push("Ecran ATELIER doit signaler visiblement une donnée FTP trop ancienne.");
-if(!files.kioskAtelier.includes('resource === "verified-metrics"')||!files.atelier.includes("verified-metrics"))failures.push("Ecran ATELIER doit appliquer les métriques de clôture vérifiées.");
+if(!files.kioskAtelier.includes("verified-metrics")||!files.atelier.includes("verified-metrics"))failures.push("Ecran ATELIER doit appliquer les métriques de clôture vérifiées.");
 if(!files.verifiedMetricsMigration.includes("kpi_daily_verified_metrics")||!files.verifiedMetricsMigration.includes("date '2026-08-14'")||!files.verifiedMetricsMigration.includes("'exits_vop',83")||!files.verifiedMetricsMigration.includes("'production_factory_exit',83"))failures.push("La clôture vérifiée du vendredi 14/08 doit conserver 83 sorties usine.");
 
 if(!files.home.includes("function dailyExitTarget("))failures.push("Performance du jour doit disposer d'une résolution de l'objectif Sortie usine par date exacte.");
@@ -88,9 +97,9 @@ if(!files.capacity.includes("mostLoaded")||!files.capacity.includes("miniHours-a
 if(!files.capacityApi.includes("kpi_capacity_simple")||!files.capacityApi.includes("57014"))failures.push("L'API capacitaire légère doit utiliser le RPC dédié et gérer explicitement les timeouts.");
 if(!files.capacityApi.includes("kpi_capacity_billing_ratios"))failures.push("L'API capacitaire doit charger les moyennes de facturation par véhicule.");
 if(!files.capacityBillingMigration.includes("avg_hours_per_vehicle")||!files.capacityBillingMigration.includes("work_order")||!files.capacityBillingMigration.includes("source_file_sha256=v_batch.file_sha256"))failures.push("La moyenne de facturation du simulateur doit être calculée sur les OR du même fichier Temps pointé facturé.");
-if(!files.productivity.includes("MÉTIERS PRODUCTIFS UNIQUEMENT"))failures.push("La page Productivité doit expliquer le périmètre productif.");
+if(!files.productivity.includes("MÉTIERS PRODUCTIFS UNIQUEMENT")||!files.productivity.includes("MÊME POPULATION")||!files.productivity.includes("vendues exclues"))failures.push("La page Productivité doit expliquer le périmètre productif, la même population et les heures exclues non comparables.");
 for(const key of ["expertise","mecanique","dsp","jantes","carrosserie","preparation","qualite","photo"]){if(!files.capacityMigration.includes(`'${key}'`))failures.push(`Métier productif absent de la migration : ${key}`);}
 if(!files.capacityMigration.includes("kpi_is_productive_sector")||!files.capacityMigration.includes("kpi_capacity_simple"))failures.push("La migration doit verrouiller le filtre productif et le calcul capacitaire léger.");
 
 if(failures.length){console.error("Contrat de navigation CRVO invalide :\n- "+failures.join("\n- "));process.exit(1);}
-console.log(`Navigation CRVO validée : ${labels.length} libellés, module RH opérationnel dans Animation du centre, droits Data RH, neutralisation et affectations historisées, simulateur présent dans les 3 menus, comparaison ATELIER live/clôture sur une page, alerte fraîcheur FTP, sorties clôturées vérifiées, productivité limitée aux métiers productifs, volume MINI basé sur les heures vendues / moyenne facturée, matrice Box × Fixline et export PPT CRVO.`);
+console.log(`Contrat industriel CRVO validé : ${labels.length} libellés, RH opérationnel, droits Data RH, neutralisation et affectations historisées, écrans TV ADMIN, passerelles kiosk sécurisées, fail-closed des données, objectif journalier daté, clôture vendredi à 83 sorties, productivité strictement comparable, simulateur MINI et export PPT CRVO.`);
