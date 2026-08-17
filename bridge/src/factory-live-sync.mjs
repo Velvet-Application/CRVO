@@ -32,7 +32,7 @@ async function download(client, remotePath) {
 async function syncFactoryFile(ftp, files, filename, parser, role) {
   const file = files.find((item) => item.name === filename);
   if (!file) {
-    if (role === "closed") throw new Error(`${filename} not found on FTP - closed-day certification unavailable`);
+    if (role === "closed" || role === "month") throw new Error(`${filename} not found on FTP - closed-day certification unavailable`);
     throw new Error(`${filename} not found on FTP`);
   }
   const remotePath = `/${filename}`;
@@ -49,7 +49,8 @@ async function syncFactoryFile(ftp, files, filename, parser, role) {
   if (!syncResult.response.ok) throw new Error(`${filename} gateway ${syncResult.response.status}: ${syncResult.payload.error ?? "unknown"}`);
   const relevant = rows.filter((row) => ["VOP EFF", "VOP EXT"].includes(row.flow));
   const total = (field) => relevant.reduce((sum, row) => sum + Number(row[field] || 0), 0);
-  process.stdout.write(`${JSON.stringify({ event: role === "closed" ? "factory_closed_day_synced" : "factory_live_synced", filename, productionDates: dates, sourceModifiedAt: new Date(modifiedAt).toISOString(), flows: relevant.length, received: total("received"), expertise: total("expertise"), mechanics: total("mechanics"), bodywork: total("bodywork") + total("fixline_1") + total("fixline_2") + total("fixline_3"), dsp: total("dsp"), preparation: total("preparation"), quality: total("quality"), available: total("available") })}\n`);
+  const event = role === "closed" ? "factory_closed_day_synced" : role === "month" ? "factory_closed_month_synced" : "factory_live_synced";
+  process.stdout.write(`${JSON.stringify({ event, filename, productionDates: dates, sourceModifiedAt: new Date(modifiedAt).toISOString(), flows: relevant.length, received: total("received"), expertise: total("expertise"), mechanics: total("mechanics"), bodywork: total("bodywork") + total("fixline_1") + total("fixline_2") + total("fixline_3"), dsp: total("dsp"), preparation: total("preparation"), quality: total("quality"), available: total("available") })}\n`);
   return { rows, dates };
 }
 
@@ -58,12 +59,15 @@ try {
   await ftp.access({ host: String(connection.host), port: Number(connection.port || 21), user: String(connection.username), password, secure: Boolean(connection.secure) });
   const files = await ftp.list(String(connection.remoteDir || "/"));
 
+  // Historique de clôture du mois : source autoritaire pour les journées passées.
+  // Il est chargé avant le live ; les dates historiques qu'il contient sont
+  // préférées grâce à leur source_modified_at plus récente que les photos intrajournalières.
+  await syncFactoryFile(ftp, files, "Factory-Mois.csv", parseFactoryToday, "month");
+
   // Live : photographie de la journée en cours.
   await syncFactoryFile(ftp, files, "Factory-j+1.csv", parseFactoryToday, "live");
 
-  // Clôture : le fichier j-1 du lendemain remplace automatiquement la dernière
-  // photographie live pour la date qu'il contient. Le classement SQL par
-  // source_modified_at lui donne la priorité sans écraser l'audit brut.
+  // Clôture j-1 : confirme la veille dès que le fichier du lendemain est disponible.
   await syncFactoryFile(ftp, files, "Factory-j-1.csv", parseFactoryPrevious, "closed");
 } finally {
   ftp.close();
