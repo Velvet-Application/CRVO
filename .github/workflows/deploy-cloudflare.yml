@@ -63,9 +63,10 @@ jobs:
           const pendingCount = Number(pending?.count ?? -1);
           const pendingRevenue = Number(pending?.revenue ?? -1);
           const overdueCount = Number(pending?.overdueCount ?? -1);
-          console.log(`health=${healthResponse.status} ok=${health.ok} data=${health.dataReady} bottlenecks=${health.bottlenecksReady} clients=${health.clientDashboardReady} protected=${protectedResponse.status} finance=${financeResponse.status} connected=${finance.connected} asOf=${finance.asOfDate} revenue=${revenue} budget=${budget} pending=${pendingCount} pendingCA=${pendingRevenue} overdue=${overdueCount} workload=${pending?.workloadDate} park=${pending?.parkDate}`);
+          const pendingWeight = Number(pending?.budgetWeightPct ?? -1);
+          console.log(`health=${healthResponse.status} ok=${health.ok} data=${health.dataReady} bottlenecks=${health.bottlenecksReady} clients=${health.clientDashboardReady} protected=${protectedResponse.status} finance=${financeResponse.status} connected=${finance.connected} asOf=${finance.asOfDate} revenue=${revenue} budget=${budget} pendingOR=${pendingCount} pendingCA=${pendingRevenue} overdue=${overdueCount} weight=${pendingWeight}% workload=${pending?.workloadDate} park=${pending?.parkDate} parkModified=${pending?.parkModifiedAt}`);
           if (!healthResponse.ok || health.ok !== true || health.dataReady !== true || health.bottlenecksReady !== true || health.clientDashboardReady !== true) process.exit(1);
           if (protectedResponse.status !== 401) process.exit(2);
           if (!financeResponse.ok || finance.connected !== true || !finance.snapshot || revenue <= 0 || budget <= 0) process.exit(3);
-          if (!pending || pendingCount < 0 || pendingRevenue < 0 || overdueCount < 0 || !pending.workloadDate || !pending.parkDate) process.exit(4);
+          if (!pending || pendingCount < 0 || pendingRevenue < 0 || overdueCount < 0 || pendingWeight < 0 || !pending.workloadDate || !pending.parkDate || !pending.parkModifiedAt) process.exit(4);
           NODE
