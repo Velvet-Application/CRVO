@@ -10,7 +10,7 @@ type Production={name:string;value:number;tone:string};
 type Snapshot={date:string;label:string;source:string;sourceMode?:string;entries:number;exits:number;stock:number;over15:number;over20:number;production:Production[]};
 type DashboardPayload={connected:boolean;backend?:string;latestSource?:string;snapshot?:Snapshot;snapshots?:Snapshot[];liveFreshness?:{sourceModifiedAt?:string|null;factoryModifiedAt?:string|null;parkModifiedAt?:string|null}|null;error?:string};
 type Objective={month?:string;sectorKey:string;sectorLabel:string;dailyTarget:number;minThreshold:number|null;maxThreshold:number|null;updatedAt?:string|null};
-type ObjectivesPayload={connected:boolean;configured?:boolean;month:string;objectives:Objective[];sortieDailyTargets:Record<string,number>;error?:string};
+type ObjectivesPayload={connected:boolean;configured?:boolean;month:string;objectives:Objective[];sortieDailyTargets:Record<string,number>;legacyDailyTargetsRecovered?:boolean;error?:string};
 type BottleneckPoint={date:string;value:number;source:string};
 type BottleneckSector={key:string;label:string;color:string;points:BottleneckPoint[];actual:number;max:number|null;cadence:number|null;workDays:number|null;evolution:number;aboveMax:number|null;configured:boolean};
 type BottleneckPayload={connected:boolean;latestDate?:string;source?:string;sourceModifiedAt?:string|null;critical?:number;sectors?:BottleneckSector[];error?:string};
@@ -27,6 +27,7 @@ const EMPTY:LoadState={dashboard:null,objectives:null,bottlenecks:null,intellige
 const sectorKeys:Record<string,string>={Expertise:"expertise",Mécanique:"mecanique",DSP:"dsp",Carrosserie:"carrosserie",Préparation:"preparation",Qualité:"qualite","Sortie usine":"sortie_usine"};
 
 function isoMonth(date=new Date()){return new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit"}).format(date);}
+function isoToday(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());}
 function fmt(value:number|null|undefined,digits=0){return value==null||!Number.isFinite(Number(value))?"—":Number(value).toLocaleString("fr-FR",{maximumFractionDigits:digits});}
 function euro(value:unknown){const n=Number(value);return Number.isFinite(n)?new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR",maximumFractionDigits:0}).format(n):"—";}
 function pct(value:number|null|undefined){return value==null?"—":`${value>0?"+":""}${fmt(value,1)} %`;}
@@ -35,6 +36,20 @@ function dateTime(value?:string|null){if(!value)return"—";const d=new Date(val
 function shortDate(value:string){const d=new Date(`${value.slice(0,10)}T12:00:00Z`);return Number.isNaN(d.getTime())?value:new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit",timeZone:"UTC"}).format(d);}
 function metric(snapshot:FinancialSnapshot|null|undefined,key:string){const n=Number(snapshot?.metrics?.[key]);return Number.isFinite(n)?n:null;}
 function targetFor(name:string,objectives:Objective[]){const key=sectorKeys[name];return objectives.find(item=>item.sectorKey===key)?.dailyTarget??null;}
+function dailyExitTarget(date:string,payload:ObjectivesPayload|null|undefined){
+  if(!payload?.sortieDailyTargets||!Object.prototype.hasOwnProperty.call(payload.sortieDailyTargets,date))return null;
+  const value=Number(payload.sortieDailyTargets[date]);
+  return Number.isFinite(value)?Math.max(0,value):null;
+}
+function monthDates(month:string){
+  const [year,mon]=month.split("-").map(Number);if(!year||!mon)return[] as string[];
+  const count=new Date(Date.UTC(year,mon,0)).getUTCDate();
+  return Array.from({length:count},(_,index)=>`${year}-${String(mon).padStart(2,"0")}-${String(index+1).padStart(2,"0")}`);
+}
+function dayMeta(date:string){
+  const parsed=new Date(`${date}T12:00:00Z`);const weekday=parsed.getUTCDay();
+  return{day:String(parsed.getUTCDate()).padStart(2,"0"),label:new Intl.DateTimeFormat("fr-FR",{weekday:"short",timeZone:"UTC"}).format(parsed).replace(".",""),weekend:weekday===0||weekday===6};
+}
 function allowed(me:Me|null,key:string){return Boolean(me&&(me.role==="admin"||me.pagePermissions?.includes("*")||me.pagePermissions?.includes(key)));}
 function average(values:number[]){return values.length?values.reduce((sum,value)=>sum+value,0)/values.length:0;}
 
@@ -96,6 +111,7 @@ export default function HomeDashboard(){
   const [loading,setLoading]=useState(true);
   const [selectedSector,setSelectedSector]=useState("");
   const [objectiveDraft,setObjectiveDraft]=useState<Objective[]>([]);
+  const [dailyTargetsDraft,setDailyTargetsDraft]=useState<Record<string,number>>({});
   const [savingObjectives,setSavingObjectives]=useState(false);
   const month=isoMonth();
 
@@ -121,6 +137,7 @@ export default function HomeDashboard(){
     };
     setData(next);
     setObjectiveDraft(next.objectives?.objectives??[]);
+    setDailyTargetsDraft(next.objectives?.sortieDailyTargets??{});
     const firstError=results.find(result=>result.status==="rejected") as PromiseRejectedResult|undefined;
     if(firstError)setError(firstError.reason instanceof Error?firstError.reason.message:"Une source réelle est indisponible.");
     setLoading(false);
@@ -142,11 +159,12 @@ export default function HomeDashboard(){
   async function saveObjectives(){
     setSavingObjectives(true);setError("");
     try{
-      const response=await fetch("/api/objectives",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({month,objectives:objectiveDraft,sortieDailyTargets:data.objectives?.sortieDailyTargets??{}})});
+      const response=await fetch("/api/objectives",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({month,objectives:objectiveDraft,sortieDailyTargets:dailyTargetsDraft})});
       const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||"Enregistrement refusé.");await refresh();
     }catch(reason){setError(reason instanceof Error?reason.message:"Enregistrement impossible.");}finally{setSavingObjectives(false);}
   }
   function updateObjective(index:number,key:keyof Objective,value:string){setObjectiveDraft(current=>current.map((item,i)=>i===index?{...item,[key]:value===""?null:Number(value)}:item));}
+  function updateDailyTarget(date:string,value:string){setDailyTargetsDraft(current=>{const next={...current};if(value==="")delete next[date];else next[date]=Math.max(0,Number(value)||0);return next;});}
 
   const navButton=(id:View,label:string)=><button id={`nav-${id}`} type="button" className={view===id?"active":""} onClick={()=>setView(id)}><i/><span>{label}</span><b>›</b></button>;
   const sourceDate=data.dashboard?.liveFreshness?.sourceModifiedAt??data.dashboard?.liveFreshness?.factoryModifiedAt??null;
@@ -178,12 +196,12 @@ export default function HomeDashboard(){
         {error&&<div className={styles.error}><strong>Une source n'a pas répondu.</strong> {error} Aucun chiffre de secours n'est injecté.</div>}
         {loading&&!latest&&<Empty title="Connexion aux sources réelles" text="Le tableau de bord attend les données CRVO. Aucune valeur de démonstration n'est utilisée."/>}
 
-        {view==="today"&&latest&&<Today latest={latest} previous={previous} objectives={objectives} system={data.system}/>} 
-        {view==="yesterday"&&latest&&<Summary snapshot={previous??latest} objectives={objectives} isPrevious={Boolean(previous)}/>} 
+        {view==="today"&&latest&&<Today latest={latest} previous={previous} objectives={objectives} objectivesPayload={data.objectives} system={data.system}/>} 
+        {view==="yesterday"&&latest&&<Summary snapshot={previous??latest} objectives={objectives} objectivesPayload={data.objectives} isPrevious={Boolean(previous)}/>} 
         {view==="bottlenecks"&&<Bottlenecks data={data.bottlenecks} current={currentBottleneck} selected={selectedSector} onSelect={setSelectedSector}/>} 
         {view==="walking"&&<Walking vehicles={walking} sourceModifiedAt={data.intelligence?.sourceModifiedAt}/>} 
         {view==="finance"&&<Finance snapshot={finance} payload={data.finance}/>} 
-        {view==="objectives"&&<Objectives rows={objectiveDraft} canEdit={canSettings} onChange={updateObjective} onSave={saveObjectives} saving={savingObjectives}/>} 
+        {view==="objectives"&&<Objectives month={month} rows={objectiveDraft} dailyTargets={dailyTargetsDraft} recovered={Boolean(data.objectives?.legacyDailyTargetsRecovered)} canEdit={canSettings} onChange={updateObjective} onDailyChange={updateDailyTarget} onDailyReplace={setDailyTargetsDraft} onSave={saveObjectives} saving={savingObjectives}/>} 
         {view==="sources"&&<Sources dashboard={data.dashboard} system={data.system} finance={data.finance} intelligence={data.intelligence}/>} 
       </div>
     </main>
@@ -192,17 +210,19 @@ export default function HomeDashboard(){
 
 function Empty({title,text}:{title:string;text:string}){return <section className={styles.empty}><strong>{title}</strong><p>{text}</p></section>;}
 
-function Today({latest,previous,objectives,system}:{latest:Snapshot;previous:Snapshot|null;objectives:Objective[];system:SystemStatus|null}){
+function Today({latest,previous,objectives,objectivesPayload,system}:{latest:Snapshot;previous:Snapshot|null;objectives:Objective[];objectivesPayload:ObjectivesPayload|null;system:SystemStatus|null}){
   const stockDelta=previous?latest.stock-previous.stock:null;
+  const sortieTarget=dailyExitTarget(latest.date,objectivesPayload);
   return <>
-    <section className={styles.hero}><div><span>PILOTAGE QUOTIDIEN</span><h2>Performance du jour</h2><p>Dernière photographie issue des sources réellement connectées. Les objectifs sont lus exclusivement depuis la base de paramétrage.</p></div><div className={styles.heroMeta}><small>DATE DE DONNÉE</small><strong>{latest.label}</strong><small style={{marginTop:8}}>SOURCE</small><strong>{latest.source}</strong><small style={{marginTop:8}}>DERNIÈRE SYNCHRO FTP</small><strong>{dateTime(system?.ftpRefresh?.lastRefreshAt)}</strong></div></section>
-    <section className={styles.kpis}><Kpi label="ENTRÉES VOP" value={fmt(latest.entries)} detail="Flux du jour"/><Kpi label="SORTIES VOP" value={fmt(latest.exits)} detail={targetFor("Sortie usine",objectives)!=null?`objectif ${targetFor("Sortie usine",objectives)}`:"objectif non configuré"}/><Kpi label="STOCK USINE" value={fmt(latest.stock)} detail={stockDelta==null?"première photo disponible":`${stockDelta>0?"+":""}${stockDelta} vs photo précédente`}/><Kpi label="STOCK >20 J" value={fmt(latest.over20)} detail={`${fmt(latest.stock?latest.over20/latest.stock*100:0,1)} % du parc`}/></section>
-    <section className={styles.section}><div className={styles.sectionHead}><div><span className={styles.eyebrow}>PRODUCTION</span><h3>Réalisé vs objectif</h3></div><p>Aucun objectif n'est reconstitué côté interface : une valeur absente en base reste explicitement non configurée.</p></div><div className={styles.grid}>{latest.production.map(item=>{const target=targetFor(item.name,objectives);const ratio=target&&target>0?Math.min(item.value/target*100,100):0;const gap=target!=null?item.value-target:null;return <article key={item.name} className={styles.card}><span>{item.name.toUpperCase()}</span><strong>{fmt(item.value)}</strong><small>{target!=null?`Objectif ${fmt(target)} · écart ${gap!>0?"+":""}${fmt(gap)}`:"Objectif non configuré"}</small>{target!=null&&<div className={styles.bar}><i style={{width:`${ratio}%`}}/></div>}</article>;})}</div></section>
+    <section className={styles.hero}><div><span>PILOTAGE QUOTIDIEN</span><h2>Performance du jour</h2><p>Dernière photographie issue des sources réellement connectées. L'objectif Sortie usine est lu sur la date exacte du planning quotidien, jamais remplacé par l'objectif standard.</p></div><div className={styles.heroMeta}><small>DATE DE DONNÉE</small><strong>{latest.label}</strong><small style={{marginTop:8}}>SOURCE</small><strong>{latest.source}</strong><small style={{marginTop:8}}>DERNIÈRE SYNCHRO FTP</small><strong>{dateTime(system?.ftpRefresh?.lastRefreshAt)}</strong></div></section>
+    <section className={styles.kpis}><Kpi label="ENTRÉES VOP" value={fmt(latest.entries)} detail="Flux du jour"/><Kpi label="SORTIES VOP" value={fmt(latest.exits)} detail={sortieTarget!=null?`objectif journalier ${fmt(sortieTarget)}`:"objectif journalier non configuré"}/><Kpi label="STOCK USINE" value={fmt(latest.stock)} detail={stockDelta==null?"première photo disponible":`${stockDelta>0?"+":""}${stockDelta} vs photo précédente`}/><Kpi label="STOCK >20 J" value={fmt(latest.over20)} detail={`${fmt(latest.stock?latest.over20/latest.stock*100:0,1)} % du parc`}/></section>
+    <section className={styles.section}><div className={styles.sectionHead}><div><span className={styles.eyebrow}>PRODUCTION</span><h3>Réalisé vs objectif</h3></div><p>Sortie usine utilise le planning journalier de la date. Les autres métiers utilisent leur objectif métier du mois.</p></div><div className={styles.grid}>{latest.production.map(item=>{const target=item.name==="Sortie usine"?sortieTarget:targetFor(item.name,objectives);const ratio=target&&target>0?Math.min(item.value/target*100,100):0;const gap=target!=null?item.value-target:null;return <article key={item.name} className={styles.card}><span>{item.name.toUpperCase()}</span><strong>{fmt(item.value)}</strong><small>{target!=null?`Objectif ${fmt(target)} · écart ${gap!>0?"+":""}${fmt(gap)}`:item.name==="Sortie usine"?"Objectif journalier non configuré":"Objectif non configuré"}</small>{target!=null&&<div className={styles.bar}><i style={{width:`${ratio}%`}}/></div>}</article>;})}</div></section>
   </>;
 }
 
-function Summary({snapshot,objectives,isPrevious}:{snapshot:Snapshot;objectives:Objective[];isPrevious:boolean}){
-  return <><section className={styles.hero}><div><span>SYNTHÈSE OPÉRATIONNELLE</span><h2>{isPrevious?"Dernière journée clôturée":"Dernière synthèse disponible"}</h2><p>Lecture factuelle de la photographie enregistrée, sans reconstruction de données manquantes.</p></div><div className={styles.heroMeta}><small>DATE</small><strong>{snapshot.label}</strong><small style={{marginTop:8}}>SOURCE</small><strong>{snapshot.source}</strong></div></section><section className={styles.kpis}><Kpi label="ENTRÉES" value={fmt(snapshot.entries)} detail="VOP"/><Kpi label="SORTIES" value={fmt(snapshot.exits)} detail={targetFor("Sortie usine",objectives)!=null?`objectif ${targetFor("Sortie usine",objectives)}`:"objectif non configuré"}/><Kpi label="STOCK" value={fmt(snapshot.stock)} detail={`${fmt(snapshot.over15)} véhicules >15 j`}/><Kpi label=">20 J" value={fmt(snapshot.over20)} detail={`${fmt(snapshot.stock?snapshot.over20/snapshot.stock*100:0,1)} % du parc`}/></section><section className={styles.section}><div className={styles.sectionHead}><div><span className={styles.eyebrow}>PRODUCTION</span><h3>Résultats enregistrés</h3></div></div><div className={styles.grid}>{snapshot.production.map(item=><article className={styles.card} key={item.name}><span>{item.name.toUpperCase()}</span><strong>{fmt(item.value)}</strong><small>{targetFor(item.name,objectives)!=null?`Objectif ${fmt(targetFor(item.name,objectives))}`:"Objectif non configuré"}</small></article>)}</div></section></>;
+function Summary({snapshot,objectives,objectivesPayload,isPrevious}:{snapshot:Snapshot;objectives:Objective[];objectivesPayload:ObjectivesPayload|null;isPrevious:boolean}){
+  const sortieTarget=dailyExitTarget(snapshot.date,objectivesPayload);
+  return <><section className={styles.hero}><div><span>SYNTHÈSE OPÉRATIONNELLE</span><h2>{isPrevious?"Dernière journée clôturée":"Dernière synthèse disponible"}</h2><p>Lecture factuelle de la photographie enregistrée, avec l'objectif Sortie usine de la date concernée.</p></div><div className={styles.heroMeta}><small>DATE</small><strong>{snapshot.label}</strong><small style={{marginTop:8}}>SOURCE</small><strong>{snapshot.source}</strong></div></section><section className={styles.kpis}><Kpi label="ENTRÉES" value={fmt(snapshot.entries)} detail="VOP"/><Kpi label="SORTIES" value={fmt(snapshot.exits)} detail={sortieTarget!=null?`objectif journalier ${fmt(sortieTarget)}`:"objectif journalier non configuré"}/><Kpi label="STOCK" value={fmt(snapshot.stock)} detail={`${fmt(snapshot.over15)} véhicules >15 j`}/><Kpi label=">20 J" value={fmt(snapshot.over20)} detail={`${fmt(snapshot.stock?snapshot.over20/snapshot.stock*100:0,1)} % du parc`}/></section><section className={styles.section}><div className={styles.sectionHead}><div><span className={styles.eyebrow}>PRODUCTION</span><h3>Résultats enregistrés</h3></div></div><div className={styles.grid}>{snapshot.production.map(item=>{const target=item.name==="Sortie usine"?sortieTarget:targetFor(item.name,objectives);return <article className={styles.card} key={item.name}><span>{item.name.toUpperCase()}</span><strong>{fmt(item.value)}</strong><small>{target!=null?`Objectif ${fmt(target)}`:item.name==="Sortie usine"?"Objectif journalier non configuré":"Objectif non configuré"}</small></article>;})}</div></section></>;
 }
 
 function Kpi({label,value,detail}:{label:string;value:string;detail:string}){return <article className={styles.kpi}><span>{label}</span><strong>{value}</strong><small>{detail}</small></article>;}
@@ -253,9 +273,23 @@ function Finance({snapshot,payload}:{snapshot:FinancialSnapshot|null;payload:Fin
   return <><section className={styles.hero}><div><span>CHIFFRE D'AFFAIRE</span><h2>Performance financière</h2><p>Calculée depuis les factures CRVO importées. Aucun chiffre historique n'est embarqué dans l'application.</p></div><div className={styles.heroMeta}><small>ARRÊTÉ AU</small><strong>{dateLabel(snapshot.date)}</strong><small style={{marginTop:8}}>SOURCE</small><strong>{snapshot.source}</strong></div></section><section className={styles.kpis}><Kpi label="CA JOUR" value={euro(revenueDay)} detail={dayTarget!=null?`objectif ${euro(dayTarget)}`:"objectif non configuré"}/><Kpi label="CA CUMULÉ" value={euro(revenueCumulative)} detail={monthTarget!=null?`objectif mensuel ${euro(monthTarget)}`:"objectif mensuel non configuré"}/><Kpi label="CA MAIN-D'ŒUVRE" value={euro(laborRevenue)} detail="cumul importé"/><Kpi label="FACTURES" value={fmt(invoices)} detail="cumul mois"/></section><section className={styles.section}><div className={styles.sectionHead}><div><span className={styles.eyebrow}>CA CUMULÉ + PROJECTION</span><h3>Trajectoire vs objectif mensuel</h3></div><p>Réel jusqu'au dernier arrêté, puis projection au rythme moyen des 5 derniers jours facturés.</p></div><article className={styles.card}>{ordered.length&&days.length?<><CurveChart series={financeSeries} labels={days.map(shortDate)} currentIndex={currentIndex} ariaLabel="Chiffre d'affaires cumulé, projection fin de mois et trajectoire de l'objectif"/><div className={styles.chartSummary}><div><span>Rythme récent</span><strong>{euro(runRate)}</strong><small>moyenne des 5 derniers jours</small></div><div><span>Projection fin de mois</span><strong>{euro(projectedMonth)}</strong><small>{days.length-currentIndex-1} jours ouvrés restants</small></div><div><span>Écart projeté vs objectif</span><strong className={projectedGap!=null&&projectedGap<0?styles.negative:styles.positive}>{projectedGap==null?"—":`${projectedGap>0?"+":""}${euro(projectedGap)}`}</strong><small>{monthTarget!=null?`objectif ${euro(monthTarget)}`:"objectif non configuré"}</small></div></div></>:<small>Aucun historique quotidien disponible.</small>}</article></section></>;
 }
 
-function Objectives({rows,canEdit,onChange,onSave,saving}:{rows:Objective[];canEdit:boolean;onChange:(index:number,key:keyof Objective,value:string)=>void;onSave:()=>void;saving:boolean}){
+function Objectives({month,rows,dailyTargets,recovered,canEdit,onChange,onDailyChange,onDailyReplace,onSave,saving}:{month:string;rows:Objective[];dailyTargets:Record<string,number>;recovered:boolean;canEdit:boolean;onChange:(index:number,key:keyof Objective,value:string)=>void;onDailyChange:(date:string,value:string)=>void;onDailyReplace:(targets:Record<string,number>)=>void;onSave:()=>void;saving:boolean}){
   if(!rows.length)return <Empty title="Aucun objectif configuré" text="La base ne contient aucun objectif pour le mois courant. Aucune valeur par défaut n'est substituée."/>;
-  return <><section className={styles.hero}><div><span>PARAMÉTRAGE MÉTIER</span><h2>Objectifs & seuils</h2><p>Référentiel officiel du mois. Ces valeurs sont conservées en base et utilisées par les écrans de pilotage.</p></div><div className={styles.heroMeta}><small>PÉRIODE</small><strong>{isoMonth()}</strong><small style={{marginTop:8}}>MODIFICATION</small><strong>{canEdit?"AUTORISÉE":"LECTURE SEULE"}</strong></div></section><section className={styles.section}><div className={styles.tableWrap}><table className={`${styles.table} ${styles.formTable}`}><thead><tr><th>Secteur</th><th>Objectif / jour</th><th>Seuil min</th><th>Seuil max</th><th>Dernière mise à jour</th></tr></thead><tbody>{rows.map((row,index)=><tr key={row.sectorKey}><td><strong>{row.sectorLabel}</strong></td><td><input disabled={!canEdit} type="number" min="0" value={row.dailyTarget??""} onChange={e=>onChange(index,"dailyTarget",e.target.value)}/></td><td><input disabled={!canEdit} type="number" min="0" value={row.minThreshold??""} onChange={e=>onChange(index,"minThreshold",e.target.value)}/></td><td><input disabled={!canEdit} type="number" min="0" value={row.maxThreshold??""} onChange={e=>onChange(index,"maxThreshold",e.target.value)}/></td><td>{dateTime(row.updatedAt)}</td></tr>)}</tbody></table></div>{canEdit&&<div className={styles.actions}><button className={styles.button} disabled={saving} onClick={onSave}>{saving?"ENREGISTREMENT…":"ENREGISTRER EN BASE"}</button></div>}</section></>;
+  const dates=monthDates(month);const today=isoToday();const standard=rows.find(row=>row.sectorKey==="sortie_usine")?.dailyTarget??null;
+  const configured=dates.filter(date=>Object.prototype.hasOwnProperty.call(dailyTargets,date)).length;
+  const total=dates.reduce((sum,date)=>sum+(Object.prototype.hasOwnProperty.call(dailyTargets,date)?Number(dailyTargets[date])||0:0),0);
+  const fillWeekdays=()=>{if(standard==null)return;const next={...dailyTargets};for(const date of dates){const meta=dayMeta(date);if(!meta.weekend)next[date]=Math.max(0,standard);}onDailyReplace(next);};
+  const zeroWeekends=()=>{const next={...dailyTargets};for(const date of dates){if(dayMeta(date).weekend)next[date]=0;}onDailyReplace(next);};
+  return <><section className={styles.hero}><div><span>PARAMÉTRAGE MÉTIER</span><h2>Objectifs & seuils</h2><p>Référentiel officiel du mois. La Sortie usine possède en plus un planning jour par jour utilisé directement dans Performance du jour.</p></div><div className={styles.heroMeta}><small>PÉRIODE</small><strong>{month}</strong><small style={{marginTop:8}}>MODIFICATION</small><strong>{canEdit?"AUTORISÉE":"LECTURE SEULE"}</strong></div></section>
+    {recovered&&<div className={styles.recoveryNotice}><strong>Planning quotidien récupéré.</strong> Les objectifs jour par jour présents dans l'ancien stockage navigateur ont été repris et sont désormais persistés en base.</div>}
+    <section className={styles.section}><div className={styles.tableWrap}><table className={`${styles.table} ${styles.formTable}`}><thead><tr><th>Secteur</th><th>Objectif / jour</th><th>Seuil min</th><th>Seuil max</th><th>Dernière mise à jour</th></tr></thead><tbody>{rows.map((row,index)=><tr key={row.sectorKey}><td><strong>{row.sectorLabel}</strong></td><td><input disabled={!canEdit} type="number" min="0" value={row.dailyTarget??""} onChange={e=>onChange(index,"dailyTarget",e.target.value)}/></td><td><input disabled={!canEdit} type="number" min="0" value={row.minThreshold??""} onChange={e=>onChange(index,"minThreshold",e.target.value)}/></td><td><input disabled={!canEdit} type="number" min="0" value={row.maxThreshold??""} onChange={e=>onChange(index,"maxThreshold",e.target.value)}/></td><td>{dateTime(row.updatedAt)}</td></tr>)}</tbody></table></div>
+      <div className={styles.dailyTargetsPanel}><div className={styles.dailyTargetsHead}><div><span>OBJECTIF SORTIE USINE · JOUR PAR JOUR</span><h3>Attendu quotidien du mois</h3><p>Performance du jour utilise exclusivement la valeur de la date exacte. Si une date est vide, aucun objectif de secours n'est affiché.</p></div><div className={styles.dailyTargetsStats}><div><span>JOURS CONFIGURÉS</span><strong>{configured}/{dates.length}</strong></div><div><span>OBJECTIF MOIS</span><strong>{fmt(total)}</strong></div></div></div>
+        {canEdit&&<div className={styles.dailyTargetsTools}><button type="button" onClick={fillWeekdays} disabled={standard==null}>Appliquer l'objectif standard aux jours ouvrés</button><button type="button" onClick={zeroWeekends}>Mettre les week-ends à 0</button><button type="button" onClick={()=>onDailyReplace({})}>Effacer le planning</button></div>}
+        <div className={styles.dailyTargetsGrid}>{dates.map(date=>{const meta=dayMeta(date);const value=Object.prototype.hasOwnProperty.call(dailyTargets,date)?dailyTargets[date]:"";return <label key={date} className={`${styles.dailyTargetDay} ${meta.weekend?styles.weekend:""} ${date===today?styles.today:""}`}><span>{meta.label}</span><strong>{meta.day}</strong><input disabled={!canEdit} type="number" min="0" step="1" value={value} aria-label={`Objectif sorties usine ${date}`} onChange={event=>onDailyChange(date,event.target.value)}/></label>;})}</div>
+        <div className={styles.dailyTargetsNote}><strong>Règle de confiance :</strong> l'objectif standard Sortie usine ({standard==null?"non configuré":fmt(standard)}) n'est jamais substitué automatiquement à une date vide. Il sert uniquement si tu choisis explicitement le bouton d'application aux jours ouvrés.</div>
+      </div>
+      {canEdit&&<div className={styles.actions}><button className={styles.button} disabled={saving} onClick={onSave}>{saving?"ENREGISTREMENT…":"ENREGISTRER EN BASE"}</button></div>}
+    </section></>;
 }
 
 function Sources({dashboard,system,finance,intelligence}:{dashboard:DashboardPayload|null;system:SystemStatus|null;finance:FinancePayload|null;intelligence:IntelligencePayload|null}){
