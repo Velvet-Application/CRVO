@@ -16,6 +16,7 @@ const files={
   dailyObjectivesMigration:fs.readFileSync("supabase/migrations/20260817092000_daily_exit_objectives_full_month_save.sql","utf8"),
   verifiedMetricsMigration:fs.readFileSync("supabase/migrations/20260817095500_verified_daily_metrics_and_friday_exit_correction.sql","utf8"),
   capacity:fs.readFileSync("app/capacitaire/capacity-simulator.tsx","utf8"),
+  capacityPpt:fs.readFileSync("app/capacitaire/pptx-export.ts","utf8"),
   capacityApi:fs.readFileSync("app/api/capacity-simple/route.ts","utf8"),
   productivity:fs.readFileSync("app/performance/productivite/page.tsx","utf8"),
   capacityMigration:fs.readFileSync("supabase/migrations/20260817073500_productive_only_and_simple_capacity.sql","utf8"),
@@ -65,11 +66,14 @@ if(!files.objectivesApi.includes("legacyDailyTargetsRecovered"))failures.push("L
 if(!files.objectivesApi.includes("legacyCookie(request, key)"))failures.push("L'API objectifs doit lire l'ancien cookie de planning uniquement pour récupération.");
 if(!files.dailyObjectivesMigration.includes("delete from public.kpi_daily_exit_objectives"))failures.push("La sauvegarde du planning quotidien doit remplacer proprement le mois complet pour permettre d'effacer une date.");
 
-if(!files.capacity.includes("MINI ADDITIONNELLES")||!files.capacity.includes("PRODUCTIVITÉ À GAGNER")||!files.capacity.includes("ETP À AJOUTER"))failures.push("Le simulateur doit répondre directement en volume MINI, points de productivité et ETP.");
+if(!files.capacity.includes("MINI ADDITIONNELLES")||!(files.capacity.includes("PRODUCTIVITÉ À GAGNER")||files.capacity.includes("EFFORT PROD. MAX"))||!(files.capacity.includes("ETP À AJOUTER")||files.capacity.includes("RENFORT ETP MAX")))failures.push("Le simulateur doit répondre directement en volume MINI, points de productivité et ETP.");
 for(const jargon of ["P90","Run-rate","S0 · Sans action","S1 · Performance","S2 · Ressources","S3 · Cible"]){if(files.capacity.includes(jargon))failures.push(`Jargon capacitaire interdit dans l'interface simplifiée : ${jargon}`);}
 if(!files.capacity.includes('fetch("/api/capacity-simple"'))failures.push("Le simulateur doit utiliser l'API capacitaire légère dédiée.");
 if(!files.capacity.includes("HIDDEN_MINI_SECTORS")||!files.capacity.includes('"jantes"')||!files.capacity.includes('"photo"')||!files.capacity.includes(".filter(visibleMiniSector)"))failures.push("Le simulateur MINI doit occulter Jantes et Photo du calcul visible et du verdict.");
 if(!files.capacity.includes("selectedSoldPeriod/billingAvgHours")||!files.capacity.includes("heures vendues des personnes cochées ÷ temps moyen facturé par véhicule"))failures.push("Le volume capacitaire doit être dérivé des heures vendues divisées par le temps moyen facturé par véhicule sur la même période.");
+if(!files.capacity.includes("Matrice capacitaire Box × Fixline")||!files.capacity.includes("BODYSHOP_REFERENCE")||!files.capacity.includes("targetRow"))failures.push("Le simulateur doit conserver la matrice Carrosserie Box × Fixline avec repère actuel et cible MINI.");
+if(!files.capacity.includes("Exporter PPT")||!files.capacity.includes("exportCapacityPptx")||!files.capacityPpt.includes("MATRICE CARROSSERIE · BOX × FIXLINE")||!files.capacityPpt.includes("PLAN D'ACTION"))failures.push("Le simulateur doit exporter un PowerPoint CRVO avec matrice et plan d'action.");
+if(!files.capacity.includes("mostLoaded")||!files.capacity.includes("miniHours-a.miniHours"))failures.push("Le métier le plus chargé doit être basé sur la charge MINI absolue en heures et non sur les seuls points de productivité.");
 if(!files.capacityApi.includes("kpi_capacity_simple")||!files.capacityApi.includes("57014"))failures.push("L'API capacitaire légère doit utiliser le RPC dédié et gérer explicitement les timeouts.");
 if(!files.capacityApi.includes("kpi_capacity_billing_ratios"))failures.push("L'API capacitaire doit charger les moyennes de facturation par véhicule.");
 if(!files.capacityBillingMigration.includes("avg_hours_per_vehicle")||!files.capacityBillingMigration.includes("work_order")||!files.capacityBillingMigration.includes("source_file_sha256=v_batch.file_sha256"))failures.push("La moyenne de facturation du simulateur doit être calculée sur les OR du même fichier Temps pointé facturé.");
@@ -78,4 +82,4 @@ for(const key of ["expertise","mecanique","dsp","jantes","carrosserie","preparat
 if(!files.capacityMigration.includes("kpi_is_productive_sector")||!files.capacityMigration.includes("kpi_capacity_simple"))failures.push("La migration doit verrouiller le filtre productif et le calcul capacitaire léger.");
 
 if(failures.length){console.error("Contrat de navigation CRVO invalide :\n- "+failures.join("\n- "));process.exit(1);}
-console.log(`Navigation CRVO validée : ${labels.length} libellés, droits, simulateur présent dans les 3 menus, comparaison ATELIER live/clôture sur une page, alerte fraîcheur FTP, sorties clôturées vérifiées, productivité limitée aux métiers productifs et volume MINI basé sur les heures vendues / moyenne facturée par véhicule.`);
+console.log(`Navigation CRVO validée : ${labels.length} libellés, droits, simulateur présent dans les 3 menus, comparaison ATELIER live/clôture sur une page, alerte fraîcheur FTP, sorties clôturées vérifiées, productivité limitée aux métiers productifs, volume MINI basé sur les heures vendues / moyenne facturée, matrice Box × Fixline et export PPT CRVO.`);
