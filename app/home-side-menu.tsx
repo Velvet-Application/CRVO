@@ -32,7 +32,7 @@ export default function HomeSideMenu() {
 
   const admin = me?.role === "admin";
   const allowed = (key: string) => Boolean(me && (admin || me.pagePermissions?.includes("*") || me.pagePermissions?.includes(key)));
-  const animationVisible = allowed("productivity") || allowed("monthly_animation") || admin;
+  const animationVisible = allowed("data_rh") || allowed("productivity") || allowed("monthly_animation") || admin;
   const cockpitVisible = allowed("cockpit") || allowed("bodyshop") || allowed("intelligence");
   const clientVisible = allowed("client_dashboard");
   const profile = useMemo(() => admin ? "ADMIN" : "ACCÈS MÉTIER", [admin]);
@@ -68,6 +68,7 @@ export default function HomeSideMenu() {
       </>)}
 
       {animationVisible && group("animation", "Animation du centre", <>
+        {allowed("data_rh") && direct("/animation-centre/rh", "RH & Polycompétences")}
         {allowed("productivity") && direct("/performance/productivite", "Productivité")}
         {allowed("monthly_animation") && direct("/animation-mensuelle", "Variable")}
         {admin && direct("/animation-mensuelle/acces", "Accès Workflow", false, true)}
