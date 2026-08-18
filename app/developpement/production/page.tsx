@@ -26,6 +26,7 @@ type VehicleOverlay = { simulatedStatus?:string; partStatus?:string; tasks?:Reco
 type SandboxStore = { overlays:Record<string,VehicleOverlay>; rules:{EFF:Rule;BMW:Rule} };
 type Tab = "control"|"pilotage"|"dossiers"|"recherche"|"mpr"|"rules";
 type StageKey = "expertise"|"chiffrage"|"ct"|"mpr"|"travaux"|"preparation"|"qualite"|"sortie"|"anomalie";
+type RunOperation = "mecanique"|"carrosserie"|"dsp"|"jantes"|"fixline"|"restor_fx";
 
 const STORE_KEY="crvo-production-sandbox-v1";
 const DEFAULT_RULES:SandboxStore["rules"]={
@@ -39,12 +40,21 @@ const STATUS_OPTIONS=[
   "En attente de Fixline 2","Fixline 2 en cours","En attente de Fixline 3","Fixline 3 en cours","En attente de mécanique","Mécanique en cours",
   "En attente de préparation","Préparation en cours","Contrôle qualité en cours","En attente de photo","Photo en cours","Demande de convoyage vers Sortie Usine",
 ];
-const MPR_OPTIONS=["NON RENSEIGNÉ FTP","A COMMANDER","PIECE COMMANDEE","RECEPTION PARTIELLE","PIECE DISPONIBLE","NON CONCERNE"];
+const MPR_OPTIONS=["NON RENSEIGNÉ FTP","A COMMANDER","LE MAGASIN DOIT S'ENGAGER","PIECE COMMANDEE","BACK ORDER","RECEPTION PARTIELLE","PIECE DISPONIBLE","PAS D'ENGAGEMENT","NON CONCERNE"];
 const TASK_STATES=["À faire","En cours","Terminé","Non concerné"];
 const STAGES:Array<[StageKey,string]>=[
   ["expertise","Expertise"],["chiffrage","Chiffrage / validation"],["ct","Contrôle technique"],["mpr","MPR / pièces"],
   ["travaux","Travaux"],["preparation","Préparation"],["qualite","Qualité"],["sortie","Photos / sortie"],["anomalie","Anomalies"],
 ];
+const RUN_OPERATIONS:Array<[RunOperation,string,string]>=[
+  ["mecanique","Mécanique","mecanique"],
+  ["carrosserie","Carrosserie","carrosserie"],
+  ["dsp","DSP","dsp"],
+  ["jantes","Jantes","jantes"],
+  ["fixline","Fixline","carrosserie"],
+  ["restor_fx","Restor FX","carrosserie"],
+];
+const RUN_TASK_LABELS:Record<string,RunOperation>={"Mécanique":"mecanique","Carrosserie":"carrosserie","DSP":"dsp","Jantes":"jantes","Fixline":"fixline","Restor FX":"restor_fx"};
 
 function num(value:unknown){const n=Number(value);return Number.isFinite(n)?n:0;}
 function fmtDate(value?:string|null){if(!value)return "—";const d=new Date(value);if(Number.isNaN(d.getTime()))return value;return new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",timeZone:"Europe/Paris"}).format(d);}
@@ -53,25 +63,50 @@ function vehicleKey(v:Vehicle){return String(v.vin||v.registration||v.workOrder|
 function activeStatus(v:Vehicle,store:SandboxStore){return store.overlays[vehicleKey(v)]?.simulatedStatus||v.status;}
 function activePart(v:Vehicle,store:SandboxStore){return store.overlays[vehicleKey(v)]?.partStatus||v.partAvailable||"NON RENSEIGNÉ FTP";}
 function isYes(value?:string|null){return Boolean(value&&/oui|yes|true|1/i.test(value));}
-function isBlocked(part?:string|null){return /COMMANDEE|A COMMANDER|INDISPONIBLE|PAS D'ENGAGEMENT/i.test(part||"");}
+function isBlocked(part?:string|null){return /COMMANDEE|A COMMANDER|INDISPONIBLE|PAS D'ENGAGEMENT|DOIT S'ENGAGER|BACK ORDER/i.test(part||"");}
 function isUrgent(v:Vehicle){return /oui|urgence/i.test(`${v.urgency||""} ${v.alert||""}`);}
 function normalizeIdentifier(value?:string|null){return String(value||"").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Z0-9]/g,"");}
+function runOperationLabel(operation:RunOperation){return RUN_OPERATIONS.find(([key])=>key===operation)?.[1]||operation;}
+function runFifoSector(operation:RunOperation){return RUN_OPERATIONS.find(([key])=>key===operation)?.[2]||operation;}
 function stageOf(status:string,partStatus?:string|null):StageKey{
   const s=status.toLowerCase(),p=(partStatus||"").toLowerCase();
   if(/anomal/.test(s))return "anomalie";
   if(/photo|sortie usine/.test(s))return "sortie";
   if(/qualit/.test(s))return "qualite";
   if(/prépar|prepar/.test(s))return "preparation";
-  if(/mécan|mecan|carross|fixline|dsp|jante|restor|travaux/.test(s))return /command|a commander|indisponible|pas d'engagement/.test(p)?"mpr":"travaux";
+  if(/mécan|mecan|carross|fixline|dsp|jante|restor|travaux/.test(s))return /command|a commander|indisponible|pas d'engagement|doit s'engager|back order/.test(p)?"mpr":"travaux";
   if(/contrôle technique|controle technique|départ ct|depart ct/.test(s))return "ct";
   if(/chiffr|devis|validation/.test(s))return "chiffrage";
   if(/expert|lavage|réceptionné|receptionne/.test(s))return "expertise";
-  if(/command|a commander|indisponible|pas d'engagement/.test(p))return "mpr";
+  if(/command|a commander|indisponible|pas d'engagement|doit s'engager|back order/.test(p))return "mpr";
   return "travaux";
+}
+function remainingOperations(v:Vehicle,store:SandboxStore):RunOperation[]{
+  const status=activeStatus(v,store).toLowerCase();
+  const alerts=(v.alert||"").toLowerCase();
+  const context=`${status} ${alerts}`;
+  const operations=new Set<RunOperation>();
+  if(isYes(v.mechanics)||/mécan|mecan/.test(context))operations.add("mecanique");
+  const bodyworkNeeded=isYes(v.bodywork)||/carross|fixline|restor/.test(context);
+  if(bodyworkNeeded){
+    if(/fixline/.test(status))operations.add("fixline");
+    else if(/restor/.test(status))operations.add("restor_fx");
+    else operations.add("carrosserie");
+  }
+  if(isYes(v.dsp)||/(^|\s)dsp(\s|$)/.test(context))operations.add("dsp");
+  if(isYes(v.wheels)||/jante/.test(context))operations.add("jantes");
+  const localTasks=store.overlays[vehicleKey(v)]?.tasks||{};
+  for(const [label,state] of Object.entries(localTasks)){
+    const operation=RUN_TASK_LABELS[label];
+    if(!operation)continue;
+    if(/Terminé|Non concerné/i.test(state))operations.delete(operation);
+    else if(/À faire|En cours/i.test(state))operations.add(operation);
+  }
+  return [...operations];
 }
 function taskStateFromSource(v:Vehicle,label:string){
   const s=v.status.toLowerCase(),key=label.toLowerCase();
-  const tokens:Record<string,string[]>={"mécanique":["mécan","mecan"],"carrosserie":["carross"],"fixline":["fixline"],"dsp":["dsp"],"jantes":["jante"],"contrôle technique":["contrôle technique","controle technique","ct"],"préparation":["prépar","prepar"],"qualité":["qualit"],"photos":["photo"]};
+  const tokens:Record<string,string[]>={"mécanique":["mécan","mecan"],"carrosserie":["carross"],"fixline":["fixline"],"restor fx":["restor"],"dsp":["dsp"],"jantes":["jante"],"contrôle technique":["contrôle technique","controle technique","ct"],"préparation":["prépar","prepar"],"qualité":["qualit"],"photos":["photo"]};
   const hit=(tokens[key]||[key]).some(t=>s.includes(t));
   if(hit&&s.includes("en cours"))return "En cours";
   if(hit&&(s.includes("attente")||s.includes("départ")||s.includes("depart")))return "À faire";
@@ -84,6 +119,7 @@ function tasksFor(v:Vehicle){
   if(isYes(v.mechanics)||/mécan|mecan/.test(status)||/mécan|mecan/.test(alerts))add("Mécanique",v.mechanics?`FTP: ${v.mechanics}`:"Déduit du statut / alerte FTP");
   if(isYes(v.bodywork)||/carross/.test(status)||/carross/.test(alerts))add("Carrosserie",v.bodywork?`FTP: ${v.bodywork}`:"Déduit du statut / alerte FTP");
   if(/fixline/.test(status)||/fixline/.test(alerts))add("Fixline","Déduit du statut / alerte FTP");
+  if(/restor/.test(status)||/restor/.test(alerts))add("Restor FX","Déduit du statut / alerte FTP");
   if(isYes(v.dsp)||/dsp/.test(status)||/dsp/.test(alerts))add("DSP",v.dsp?`FTP: ${v.dsp}`:"Déduit du statut / alerte FTP");
   if(isYes(v.wheels)||/jante/.test(status)||/jante/.test(alerts))add("Jantes",v.wheels?`FTP: ${v.wheels}`:"Déduit du statut / alerte FTP");
   if(isYes(v.technicalControl)||/contrôle technique|controle technique|départ ct|depart ct/.test(status))add("Contrôle technique",v.technicalControl?`FTP: ${v.technicalControl}`:"Déduit du statut FTP");
@@ -94,7 +130,7 @@ function tasksFor(v:Vehicle){
   return tasks;
 }
 function statusTone(status:string){const s=status.toLowerCase();if(/anomal|urgence/.test(s))return styles.red;if(/en cours/.test(s))return styles.blue;if(/attente|stocké|stocke/.test(s))return styles.amber;if(/sortie|photo|qualit/.test(s))return styles.green;return styles.neutral;}
-function partTone(status:string){if(/DISPONIBLE/i.test(status))return styles.green;if(/COMMANDEE|PARTIELLE/i.test(status))return styles.amber;if(/A COMMANDER|INDISPONIBLE|PAS D'ENGAGEMENT/i.test(status))return styles.red;return styles.neutral;}
+function partTone(status:string){if(/DISPONIBLE/i.test(status))return styles.green;if(/COMMANDEE|PARTIELLE/i.test(status))return styles.amber;if(/A COMMANDER|INDISPONIBLE|PAS D'ENGAGEMENT|DOIT S'ENGAGER|BACK ORDER/i.test(status))return styles.red;return styles.neutral;}
 
 export default function ProductionDevelopmentPage(){
   const [payload,setPayload]=useState<Payload|null>(null);
@@ -107,6 +143,7 @@ export default function ProductionDevelopmentPage(){
   const [query,setQuery]=useState("");
   const [statusFilter,setStatusFilter]=useState("ALL");
   const [processFilter,setProcessFilter]=useState("ALL");
+  const [partStatusFilter,setPartStatusFilter]=useState("ALL");
   const [onlyFactory,setOnlyFactory]=useState(true);
   const [store,setStore]=useState<SandboxStore>({overlays:{},rules:DEFAULT_RULES});
   const [storeReady,setStoreReady]=useState(false);
@@ -115,7 +152,7 @@ export default function ProductionDevelopmentPage(){
   const [statusDraft,setStatusDraft]=useState("");
   const [partDraft,setPartDraft]=useState("");
   const [pilotageMode,setPilotageMode]=useState<"run"|"fifo">("run");
-  const [runStage,setRunStage]=useState<StageKey>("preparation");
+  const [runOperation,setRunOperation]=useState<RunOperation>("mecanique");
   const [fifoSector,setFifoSector]=useState("preparation");
   const [bulkInput,setBulkInput]=useState("");
 
@@ -165,9 +202,10 @@ export default function ProductionDevelopmentPage(){
     if(onlyFactory&&!v.inFactory)return false;
     if(statusFilter!=="ALL"&&v.status!==statusFilter)return false;
     if(processFilter!=="ALL"&&v.processProfile!==processFilter)return false;
+    if(partStatusFilter!=="ALL"&&activePart(v,store)!==partStatusFilter)return false;
     const hay=`${v.registration||""} ${v.workOrder||""} ${v.client||""} ${v.vin||""} ${v.model||""} ${v.status} ${v.location||""}`.toLowerCase();
     return !query.trim()||hay.includes(query.trim().toLowerCase());
-  }),[vehicles,onlyFactory,statusFilter,processFilter,query]);
+  }),[vehicles,onlyFactory,statusFilter,processFilter,partStatusFilter,query,store]);
   const stageCounts=useMemo(()=>{
     const base=vehicles.filter(v=>v.inFactory);
     return Object.fromEntries(STAGES.map(([key])=>[key,base.filter(v=>stageOf(activeStatus(v,store),activePart(v,store))===key).length])) as Record<string,number>;
@@ -181,6 +219,13 @@ export default function ProductionDevelopmentPage(){
     for(const v of vehicles.filter(v=>v.inFactory)){const key=activePart(v,store);map.set(key,[...(map.get(key)||[]),v]);}
     return [...map.entries()].sort((a,b)=>b[1].length-a[1].length);
   },[vehicles,store]);
+  const partStatusOptions=useMemo(()=>partGroups.map(([name])=>name),[partGroups]);
+  const mprFiltered=useMemo(()=>vehicles.filter(v=>{
+    if(!v.inFactory)return false;
+    if(partStatusFilter!=="ALL"&&activePart(v,store)!==partStatusFilter)return false;
+    const hay=`${v.registration||""} ${v.workOrder||""} ${v.client||""} ${v.model||""} ${activePart(v,store)} ${v.location||""}`.toLowerCase();
+    return !query.trim()||hay.includes(query.trim().toLowerCase());
+  }),[vehicles,store,partStatusFilter,query]);
   const fifoByVehicle=useMemo(()=>{
     const map=new Map<string,Fifo[]>();
     for(const row of fifo){
@@ -190,13 +235,21 @@ export default function ProductionDevelopmentPage(){
     return map;
   },[fifo]);
   const fifoSectors=useMemo(()=>Array.from(new Map(fifo.map(row=>[row.sectorKey,row.sectorLabel])).entries()).sort((a,b)=>a[1].localeCompare(b[1],"fr")),[fifo]);
-  const runRows=useMemo(()=>vehicles.filter(v=>v.inFactory&&stageOf(activeStatus(v,store),activePart(v,store))===runStage).map(v=>{
-    const fifoRows=[...(fifoByVehicle.get(normalizeIdentifier(v.registration))||[]),...(fifoByVehicle.get(normalizeIdentifier(v.workOrder))||[])];
-    const fifoAge=Math.max(0,...fifoRows.map(row=>row.fifoAgeDays));
-    const ready=!isBlocked(activePart(v,store));
-    const score=(isUrgent(v)?100000:0)+(ready?10000:0)+fifoAge*100+v.factoryAgeDays;
-    return{v,fifoAge,ready,score};
-  }).sort((a,b)=>b.score-a.score),[vehicles,store,runStage,fifoByVehicle]);
+  const runRows=useMemo(()=>{
+    const rows:Array<{v:Vehicle;fifoAge:number;ready:boolean;score:number;operation:RunOperation}>=[];
+    for(const v of vehicles.filter(item=>item.inFactory)){
+      const remaining=remainingOperations(v,store);
+      if(remaining.length!==1||remaining[0]!==runOperation)continue;
+      const allFifoRows=[...(fifoByVehicle.get(normalizeIdentifier(v.registration))||[]),...(fifoByVehicle.get(normalizeIdentifier(v.workOrder))||[])];
+      const relevantFifoRows=allFifoRows.filter(row=>row.sectorKey===runFifoSector(runOperation));
+      const fifoAge=Math.max(0,...relevantFifoRows.map(row=>row.fifoAgeDays));
+      const ready=!isBlocked(activePart(v,store));
+      const score=(isUrgent(v)?100000:0)+(ready?10000:0)+fifoAge*100+v.factoryAgeDays;
+      rows.push({v,fifoAge,ready,score,operation:runOperation});
+    }
+    return rows.sort((a,b)=>b.score-a.score);
+  },[vehicles,store,runOperation,fifoByVehicle]);
+  const runCounts=useMemo(()=>Object.fromEntries(RUN_OPERATIONS.map(([operation])=>[operation,vehicles.filter(v=>v.inFactory&&remainingOperations(v,store).length===1&&remainingOperations(v,store)[0]===operation).length])) as Record<RunOperation,number>,[vehicles,store]);
   const fifoRows=useMemo(()=>fifo.filter(row=>row.sectorKey===fifoSector).sort((a,b)=>b.fifoAgeDays-a.fifoAgeDays),[fifo,fifoSector]);
   const vehicleLookup=useMemo(()=>{
     const map=new Map<string,Vehicle[]>();
@@ -260,40 +313,43 @@ export default function ProductionDevelopmentPage(){
         <div className={styles.stageFlow}>{STAGES.map(([key,label],index)=><div key={key} className={key==="anomalie"?styles.stageRisk:""}><span>{String(index+1).padStart(2,"0")}</span><strong>{stageCounts[key]||0}</strong><small>{label}</small></div>)}</div>
       </section>
       <section className={styles.panel} style={{marginTop:12}}>
-        <div className={styles.sectionTitle}><div><span>PILOTAGE QUOTIDIEN</span><h2>RUN & FIFO font partie du flux</h2></div><small>position {fmtDate(payload?.locationSourceModifiedAt)} · FIFO réelle KPI</small></div>
+        <div className={styles.sectionTitle}><div><span>PILOTAGE QUOTIDIEN</span><h2>RUN & FIFO font partie du flux</h2></div><small>RUN = une seule opération restante avant Préparation</small></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          <button onClick={()=>{setPilotageMode("run");setTab("pilotage");}} style={{border:"1px solid #d5e5ed",borderTop:"4px solid #009edb",borderRadius:12,background:"#f8fcfe",padding:15,textAlign:"left",cursor:"pointer"}}><span style={{fontSize:8,fontWeight:800,color:"#009edb",letterSpacing:".08em"}}>RUN DE PRODUCTION</span><strong style={{display:"block",marginTop:6,fontSize:26,color:"#004f9f",fontStyle:"italic"}}>{runRows.length}</strong><small style={{display:"block",marginTop:5,color:"#667f8f"}}>candidats {STAGES.find(([k])=>k===runStage)?.[1]} · ordre urgence → MPR → FIFO</small></button>
+          <button onClick={()=>{setPilotageMode("run");setTab("pilotage");}} style={{border:"1px solid #d5e5ed",borderTop:"4px solid #009edb",borderRadius:12,background:"#f8fcfe",padding:15,textAlign:"left",cursor:"pointer"}}><span style={{fontSize:8,fontWeight:800,color:"#009edb",letterSpacing:".08em"}}>RUN {runOperationLabel(runOperation).toUpperCase()}</span><strong style={{display:"block",marginTop:6,fontSize:26,color:"#004f9f",fontStyle:"italic"}}>{runRows.length}</strong><small style={{display:"block",marginTop:5,color:"#667f8f"}}>1 seule opération restante : {runOperationLabel(runOperation)} → Préparation</small></button>
           <button onClick={()=>{setPilotageMode("fifo");setTab("pilotage");}} style={{border:"1px solid #d5e5ed",borderTop:"4px solid #fec82f",borderRadius:12,background:"#fffdf6",padding:15,textAlign:"left",cursor:"pointer"}}><span style={{fontSize:8,fontWeight:800,color:"#8b6b00",letterSpacing:".08em"}}>FIFO INDUSTRIELLE</span><strong style={{display:"block",marginTop:6,fontSize:26,color:"#004f9f",fontStyle:"italic"}}>{fifoRows.length}</strong><small style={{display:"block",marginTop:5,color:"#667f8f"}}>{fifoSectors.find(([key])=>key===fifoSector)?.[1]||"Préparation"} · plus ancien {fifoRows[0]?`${fifoRows[0].fifoAgeDays.toFixed(1)} j`:"—"}</small></button>
         </div>
       </section>
       <section className={styles.twoCols}>
         <article className={styles.panel}><div className={styles.sectionTitle}><div><span>PRIORITÉS</span><h2>Dossiers à challenger</h2></div><small>score DEV = urgence + blocage + ancienneté</small></div><div className={styles.priorityList}>{blockers.map(({v})=><button key={vehicleKey(v)} onClick={()=>void openVehicle(v)}><div><strong>{v.registration||"Sans immat"}</strong><span>{v.model||"Modèle non renseigné"}</span></div><div><b className={statusTone(activeStatus(v,store))}>{activeStatus(v,store)}</b><small>{v.location?`${v.location} · `:""}J+{Math.round(v.factoryAgeDays)} · statut {v.statusAgeDays.toFixed(1)} j</small></div></button>)}</div></article>
-        <article className={styles.panel}><div className={styles.sectionTitle}><div><span>MPR</span><h2>Disponibilité pièces</h2></div><small>niveau agrégé fourni par le FTP</small></div><div className={styles.partSummary}>{partGroups.slice(0,8).map(([name,list])=><button key={name} onClick={()=>{setTab("mpr");setQuery(name);}}><span className={partTone(name)}/><strong>{list.length}</strong><div><b>{name}</b><small>{Math.round(list.reduce((s,v)=>s+v.partOrderedDays,0)/Math.max(list.length,1))} j de commande moy.</small></div></button>)}</div></article>
+        <article className={styles.panel}><div className={styles.sectionTitle}><div><span>MPR</span><h2>Disponibilité pièces</h2></div><small>cliquer sur un état pour filtrer les dossiers</small></div><div className={styles.partSummary}>{partGroups.slice(0,8).map(([name,list])=><button key={name} onClick={()=>{setPartStatusFilter(name);setQuery("");setTab("mpr");}}><span className={partTone(name)}/><strong>{list.length}</strong><div><b>{name}</b><small>{Math.round(list.reduce((s,v)=>s+v.partOrderedDays,0)/Math.max(list.length,1))} j de commande moy.</small></div></button>)}</div></article>
       </section>
     </>}
 
     {tab==="pilotage"&&<section className={styles.panel}>
-      <div className={styles.sectionTitle}><div><span>PILOTAGE INDUSTRIEL</span><h2>RUN de production & FIFO</h2></div><small>Le RUN est une proposition DEV · la FIFO vient du moteur KPI réel</small></div>
+      <div className={styles.sectionTitle}><div><span>PILOTAGE INDUSTRIEL</span><h2>RUN de production & FIFO</h2></div><small>RUN = dossier avec une seule opération restante avant Préparation</small></div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",padding:10,borderRadius:11,background:"#f1f7fa",marginBottom:12}}>
         <div style={{display:"flex",gap:6}}><button onClick={()=>setPilotageMode("run")} style={pilotButton(pilotageMode==="run")}>RUN DE PRODUCTION</button><button onClick={()=>setPilotageMode("fifo")} style={pilotButton(pilotageMode==="fifo")}>FIFO</button></div>
         <small style={{fontSize:8,color:"#6f8796"}}>Parc {fmtDate(payload?.sourceModifiedAt)} · positions {fmtDate(payload?.locationSourceModifiedAt)}</small>
       </div>
       {pilotageMode==="run"?<>
-        <div style={{display:"grid",gridTemplateColumns:"minmax(230px,320px) repeat(3,minmax(130px,1fr))",gap:8,marginBottom:12}}>
-          <label style={{display:"grid",gap:5,padding:10,border:"1px solid #d8e5ec",borderRadius:10,background:"#fff"}}><span style={{fontSize:7,fontWeight:800,color:"#607a8a"}}>ÉTAPE / RUN</span><select value={runStage} onChange={e=>setRunStage(e.target.value as StageKey)} style={inputStyle}>{STAGES.filter(([key])=>!['mpr','anomalie'].includes(key)).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
-          <article style={{padding:11,borderRadius:10,background:"#eaf7fc"}}><span style={{fontSize:7,fontWeight:800,color:"#4f6f82"}}>CANDIDATS</span><strong style={{display:"block",fontSize:24,color:"#004f9f"}}>{runRows.length}</strong></article>
-          <article style={{padding:11,borderRadius:10,background:"#ecfaf6"}}><span style={{fontSize:7,fontWeight:800,color:"#4f6f82"}}>MPR PRÊT</span><strong style={{display:"block",fontSize:24,color:"#004f9f"}}>{runRows.filter(row=>row.ready).length}</strong></article>
-          <article style={{padding:11,borderRadius:10,background:"#fff4e8"}}><span style={{fontSize:7,fontWeight:800,color:"#4f6f82"}}>URGENTS</span><strong style={{display:"block",fontSize:24,color:"#004f9f"}}>{runRows.filter(row=>isUrgent(row.v)).length}</strong></article>
+        <div style={{padding:10,border:"1px solid #bfe0ee",borderLeft:"4px solid #009edb",borderRadius:10,background:"#f2fbff",marginBottom:10,fontSize:9,color:"#365d74"}}><strong style={{color:"#004f9f"}}>Règle RUN :</strong> le dossier ne remonte que s’il ne reste qu’une seule opération de production avant la préparation. Exemple : RUN Méca = Mécanique puis Préparation ; RUN DSP = DSP puis Préparation.</div>
+        <div style={{display:"grid",gridTemplateColumns:"minmax(240px,330px) repeat(3,minmax(130px,1fr))",gap:8,marginBottom:12}}>
+          <label style={{display:"grid",gap:5,padding:10,border:"1px solid #d8e5ec",borderRadius:10,background:"#fff"}}><span style={{fontSize:7,fontWeight:800,color:"#607a8a"}}>RUN / DERNIÈRE OPÉRATION</span><select value={runOperation} onChange={e=>setRunOperation(e.target.value as RunOperation)} style={inputStyle}>{RUN_OPERATIONS.map(([key,label])=><option key={key} value={key}>RUN {label}</option>)}</select></label>
+          <article style={{padding:11,borderRadius:10,background:"#eaf7fc"}}><span style={{fontSize:7,fontWeight:800,color:"#4f6f82"}}>DOSSIERS RUN</span><strong style={{display:"block",fontSize:24,color:"#004f9f"}}>{runRows.length}</strong><small style={{fontSize:7,color:"#6f8796"}}>{runOperationLabel(runOperation)} → Préparation</small></article>
+          <article style={{padding:11,borderRadius:10,background:"#ecfaf6"}}><span style={{fontSize:7,fontWeight:800,color:"#4f6f82"}}>MPR PRÊT</span><strong style={{display:"block",fontSize:24,color:"#004f9f"}}>{runRows.filter(row=>row.ready).length}</strong><small style={{fontSize:7,color:"#6f8796"}}>lançables côté pièces</small></article>
+          <article style={{padding:11,borderRadius:10,background:"#fff4e8"}}><span style={{fontSize:7,fontWeight:800,color:"#4f6f82"}}>URGENTS</span><strong style={{display:"block",fontSize:24,color:"#004f9f"}}>{runRows.filter(row=>isUrgent(row.v)).length}</strong><small style={{fontSize:7,color:"#6f8796"}}>dans ce RUN</small></article>
         </div>
-        <div className={styles.tableWrap}><table><thead><tr><th>RUN</th><th>Dossier</th><th>Localisation</th><th>Statut</th><th>MPR</th><th>FIFO</th><th>Âge usine</th><th>Pourquoi maintenant ?</th></tr></thead><tbody>{runRows.slice(0,500).map((row,index)=><tr key={vehicleKey(row.v)} onClick={()=>void openVehicle(row.v)}>
-          <td><strong>#{index+1}</strong><small>priorité DEV</small></td>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>{RUN_OPERATIONS.map(([operation,label])=><button key={operation} onClick={()=>setRunOperation(operation)} style={{...pilotButton(runOperation===operation),padding:"7px 10px",fontSize:8}}>RUN {label} · {runCounts[operation]||0}</button>)}</div>
+        <div className={styles.tableWrap}><table><thead><tr><th>RUN</th><th>Dernière opération</th><th>Dossier</th><th>Localisation</th><th>Statut</th><th>MPR</th><th>FIFO métier</th><th>Âge usine</th><th>Étape suivante</th></tr></thead><tbody>{runRows.slice(0,500).map((row,index)=><tr key={vehicleKey(row.v)} onClick={()=>void openVehicle(row.v)}>
+          <td><strong>#{index+1}</strong><small>priorité RUN</small></td>
+          <td><strong>{runOperationLabel(row.operation)}</strong><small>seule opération restante</small></td>
           <td><strong>{row.v.registration||"—"}</strong><small>OR {row.v.workOrder||"—"} · {row.v.model||"—"}</small></td>
           <td><strong>{row.v.location||"—"}</strong><small>{row.v.location?fmtDate(row.v.locationSourceModifiedAt):"position indisponible"}</small></td>
           <td><b className={statusTone(activeStatus(row.v,store))}>{activeStatus(row.v,store)}</b></td>
-          <td><b className={partTone(activePart(row.v,store))}>{activePart(row.v,store)}</b></td>
-          <td><strong>{row.fifoAge?`${row.fifoAge.toFixed(1)} j`:"—"}</strong></td>
+          <td><b className={partTone(activePart(row.v,store))}>{activePart(row.v,store)}</b><small>{row.ready?"MPR compatible lancement":"Blocage MPR"}</small></td>
+          <td><strong>{row.fifoAge?`${row.fifoAge.toFixed(1)} j`:"—"}</strong><small>{runFifoSector(row.operation)}</small></td>
           <td><strong>J+{Math.round(row.v.factoryAgeDays)}</strong></td>
-          <td><small>{isUrgent(row.v)?"Urgence · ":""}{row.ready?"MPR prêt":"MPR bloquant"}{row.fifoAge?` · FIFO ${row.fifoAge.toFixed(1)} j`:""}</small></td>
+          <td><strong style={{color:"#008f87"}}>Préparation</strong><small>{isUrgent(row.v)?"Urgence · ":""}{row.ready?"prêt à lancer":"attente MPR"}</small></td>
         </tr>)}</tbody></table></div>
       </>:<>
         <div style={{display:"grid",gridTemplateColumns:"minmax(230px,320px) repeat(2,minmax(150px,1fr))",gap:8,marginBottom:12}}>
@@ -312,6 +368,7 @@ export default function ProductionDevelopmentPage(){
       <div className={styles.filters}>
         <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Immatriculation, OR, VIN, client, modèle, position…"/>
         <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="ALL">Tous les statuts</option>{statuses.map(s=><option key={s}>{s}</option>)}</select>
+        <select value={partStatusFilter} onChange={e=>setPartStatusFilter(e.target.value)}><option value="ALL">Tous les statuts MPR</option>{partStatusOptions.map(s=><option key={s} value={s}>{s}</option>)}</select>
         <select value={processFilter} onChange={e=>setProcessFilter(e.target.value)}><option value="ALL">Tous profils</option><option value="EFF">EFF</option><option value="BMW">BMW</option><option value="AUTRE">Autre / non cartographié</option></select>
         <label><input type="checkbox" checked={onlyFactory} onChange={e=>setOnlyFactory(e.target.checked)}/> En usine uniquement</label>
       </div>
@@ -340,10 +397,14 @@ export default function ProductionDevelopmentPage(){
     </section>}
 
     {tab==="mpr"&&<section className={styles.panel}>
-      <div className={styles.sectionTitle}><div><span>MPR / PIÈCES</span><h2>Vision pièces disponible dans le FTP</h2></div><small>Le FTP ne fournit pas encore le détail référence par référence.</small></div>
-      <div className={styles.partCards}>{partGroups.map(([name,list])=><article key={name}><div><span className={partTone(name)}/><b>{name}</b></div><strong>{list.length}</strong><small>{Math.round(list.reduce((s,v)=>s+v.partOrderedDays,0)/Math.max(list.length,1))} j de commande moyen</small></article>)}</div>
-      <div className={styles.filters}><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Filtrer un dossier ou un état MPR…"/><button onClick={()=>setQuery("")}>Effacer</button></div>
-      <div className={styles.cardGrid}>{vehicles.filter(v=>v.inFactory&&(!query.trim()||`${v.registration} ${v.workOrder} ${v.client} ${v.model} ${activePart(v,store)}`.toLowerCase().includes(query.toLowerCase()))).slice(0,500).map(v=><button key={vehicleKey(v)} onClick={()=>void openVehicle(v)} className={styles.vehicleCard}><div><strong>{v.registration||"Sans immat"}</strong><b className={partTone(activePart(v,store))}>{activePart(v,store)}</b></div><span>{v.model||"Modèle non renseigné"}</span><small>{v.client||"—"} · {v.location?`${v.location} · `:""}J+{Math.round(v.factoryAgeDays)} · OR {v.workOrder||"—"}</small></button>)}</div>
+      <div className={styles.sectionTitle}><div><span>MPR / PIÈCES</span><h2>Vision pièces disponible dans le FTP</h2></div><small>{mprFiltered.length} dossiers affichés · filtre par statut pièce</small></div>
+      <div className={styles.partCards}>{partGroups.map(([name,list])=><button key={name} onClick={()=>setPartStatusFilter(partStatusFilter===name?"ALL":name)} style={{padding:12,border:partStatusFilter===name?"2px solid #004f9f":"1px solid #dbe7ee",borderRadius:10,background:partStatusFilter===name?"#eef7fc":"#f9fcfd",textAlign:"left",cursor:"pointer"}}><div style={{display:"flex",alignItems:"center",gap:7}}><span className={partTone(name)} style={{width:8,height:26,borderRadius:99}}/><b style={{fontSize:8,color:"#4b687a"}}>{name}</b></div><strong style={{display:"block",marginTop:8,color:"#004f9f",fontSize:26,fontStyle:"italic"}}>{list.length}</strong><small style={{fontSize:7,color:"#81939e"}}>{Math.round(list.reduce((s,v)=>s+v.partOrderedDays,0)/Math.max(list.length,1))} j de commande moyen</small></button>)}</div>
+      <div className={styles.filters}>
+        <select value={partStatusFilter} onChange={e=>setPartStatusFilter(e.target.value)}><option value="ALL">Tous les statuts pièce</option>{partStatusOptions.map(s=><option key={s} value={s}>{s}</option>)}</select>
+        <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Immatriculation, OR, client, modèle, position…"/>
+        <button onClick={()=>{setQuery("");setPartStatusFilter("ALL");}}>Effacer les filtres</button>
+      </div>
+      <div className={styles.cardGrid}>{mprFiltered.slice(0,700).map(v=><button key={vehicleKey(v)} onClick={()=>void openVehicle(v)} className={styles.vehicleCard}><div><strong>{v.registration||"Sans immat"}</strong><b className={partTone(activePart(v,store))}>{activePart(v,store)}</b></div><span>{v.model||"Modèle non renseigné"}</span><small>{v.client||"—"} · {v.location?`${v.location} · `:""}J+{Math.round(v.factoryAgeDays)} · OR {v.workOrder||"—"}</small></button>)}</div>
     </section>}
 
     {tab==="rules"&&<section className={styles.rulesPage}>
@@ -364,6 +425,8 @@ export default function ProductionDevelopmentPage(){
       <div className={styles.drawerMeta}><b className={selected.processProfile==="AUTRE"?styles.outlinePill:styles.processPill}>{selected.processProfile}</b><span>OR {selected.workOrder||"—"}</span><span>{selected.client||"—"}</span><span>{fmtKm(selected.mileage)}</span><span>Position {selected.location||"—"}</span></div>
       <div className={styles.sourceVsSim}><div><small>STATUT FTP</small><strong>{selected.status}</strong></div><i>→</i><div><small>ÉTAT AFFICHÉ</small><strong>{activeStatus(selected,store)}</strong>{store.overlays[vehicleKey(selected)]?.simulatedStatus&&<b>SIMULÉ</b>}</div></div>
       <div className={styles.drawerKpis}><div><span>Âge usine</span><strong>J+{Math.round(selected.factoryAgeDays)}</strong></div><div><span>Âge statut</span><strong>{selected.statusAgeDays.toFixed(1)} j</strong></div><div><span>MPR</span><strong>{activePart(selected,store)}</strong></div><div><span>Localisation</span><strong>{selected.location||"—"}</strong></div></div>
+
+      {remainingOperations(selected,store).length===1&&<section className={styles.drawerSection} style={{borderLeft:"4px solid #009edb"}}><div className={styles.drawerTitle}><h3>RUN détecté</h3><small>une seule opération restante avant préparation</small></div><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:10,borderRadius:9,background:"#f0f9fd"}}><strong style={{color:"#004f9f",fontSize:14}}>RUN {runOperationLabel(remainingOperations(selected,store)[0])}</strong><span style={{fontSize:9,color:"#5d7889"}}>{runOperationLabel(remainingOperations(selected,store)[0])} → Préparation</span></div></section>}
 
       <section className={styles.drawerSection}><div className={styles.drawerTitle}><h3>Travail à faire</h3><small>Déduit des champs / alertes FTP. « Fait par qui » n’est pas disponible dans le flux actuel.</small></div><div className={styles.tasks}>{tasksFor(selected).map(task=>{const state=store.overlays[vehicleKey(selected)]?.tasks?.[task.label]||taskStateFromSource(selected,task.label);return <article key={task.label}><div><strong>{task.label}</strong><small>{task.source}</small></div><select value={state} onChange={e=>setTask(selected,task.label,e.target.value)}>{TASK_STATES.map(s=><option key={s}>{s}</option>)}</select><small>{store.overlays[vehicleKey(selected)]?.tasks?.[task.label]?`${actor} · simulation locale`:"Source FTP / déduction"}</small></article>;})}</div></section>
 
