@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - "bridge/src/index.mjs"
+      - "bridge/src/ftp-vehicle-state.mjs"
+      - "bridge/src/vehicle-location-sync.mjs"
       - "bridge/src/ftp-factory-production.mjs"
       - "bridge/src/factory-live-sync.mjs"
       - "bridge/package.json"
@@ -53,6 +55,8 @@ jobs:
       - run: npm run check
       - name: Archive changed FTP files
         run: npm run sync
+      - name: Refresh vehicle physical locations
+        run: node src/vehicle-location-sync.mjs
       - name: Refresh live Factory and certify previous day
         run: node src/factory-live-sync.mjs
       - name: Verify industrial freshness contract
@@ -76,4 +80,4 @@ jobs:
           process.exit(1);
           NODE
 
-# Manual refresh marker: 2026-08-18T11:24+02:00
+# Manual refresh marker: 2026-08-18T12:22+02:00
