@@ -52,3 +52,5 @@ jobs:
         run: node --check src/factory-live-sync.mjs && node --check src/ftp-factory-production.mjs
       - name: Refresh Factory hot path
         run: node src/factory-live-sync.mjs
+
+# Manual refresh marker: 2026-08-18T09:57+02:00
