@@ -4,15 +4,35 @@ import {activityColor} from "../activity-colors";
 import styles from "./capacitaire.module.css";
 import {exportCapacityPptx} from "./pptx-export";
 
-type StaffMember={employeeKey:string;matricule?:string|null;fullName:string;jobTitle?:string|null;sectorKey:string;sectorLabel?:string|null;teamCode?:string|null;included:boolean;boughtHours?:number;soldHours?:number;productivity?:number|null;comparable?:boolean};
+type StaffMember={
+  employeeKey:string;matricule?:string|null;fullName:string;jobTitle?:string|null;
+  sectorKey:string;sectorLabel?:string|null;workcenterKey?:string|null;workcenterLabel?:string|null;
+  teamCode?:string|null;included:boolean;boughtHours?:number;soldHours?:number;rawSoldHours?:number;
+  productivity?:number|null;comparable?:boolean
+};
 type Sector={sectorKey:string;sectorLabel:string;etp:number;people:number;observedPeople?:number;availableEtp?:number;etpSource?:string;boughtHoursPerDay:number;soldHoursPerDay:number;productivity:number|null;productionDays:number;vehiclesPerDay:number;miniHoursPerVehicle:number|null;miniHourSource:string};
 type BillingRatio={sectorKey:string;billedVehicles:number;soldHours:number;avgHoursPerVehicle:number};
 type BodyshopHistoryMonth={month:string;fixline:number;box:number;weekendExtra:number;treated:number;observedDays:number;note?:string|null};
-type BodyshopHistory={source?:string;fullMonthCount?:number;averageMonthlyTreated?:number;averageDailyTreated?:number;averageBacklog?:number;months?:BodyshopHistoryMonth[]};
+type BodyshopHistory={
+  source?:string;fullMonthCount?:number;averageMonthlyTreated?:number;averageDailyTreated?:number;
+  averageFixlineMonthly?:number;averageBoxMonthly?:number;averageBacklog?:number;
+  boxCurrentProductivity?:number|null;fixlineCurrentProductivity?:number|null;fixlineComparable?:boolean;
+  productivityPeriodEnd?:string|null;productivityNote?:string|null;months?:BodyshopHistoryMonth[]
+};
 type Payload={period?:{start?:string;end?:string;etpAsOf?:string;presenceDays?:number};inputVehiclesPerDay?:number;sectors?:Sector[];miniStandard?:{sampleVehicles?:number;bodyshopHours?:number;mechanicsHours?:number};roster?:StaffMember[];billingRatios?:BillingRatio[];bodyshopHistory?:BodyshopHistory;error?:string};
 type Verdict="pass"|"tension"|"critical"|"insufficient";
-type Result=Sector&{baseVehicles:number;baseBought:number;baseSold:number;miniAtPost:number;miniHours:number;points:number|null;targetProd:number|null;extraEtp:number|null;verdict:Verdict;rosterTotal:number;selectedEtp:number;comparablePeople:number;selectedBoughtPeriod:number;selectedSoldPeriod:number;billingAvgHours:number|null;referenceBilledVehicles:number};
-type Matrix={rowLabels:number[];colLabels:number[];values:number[][];currentRow:number;currentCol:number;targetRow:number;targetCol:number;currentCapacity:number;requiredCapacity:number;backlog:number;historicalMonthly:number;fullMonthCount:number};
+type Result=Sector&{
+  baseVehicles:number;baseBought:number;baseSold:number;miniAtPost:number;miniHours:number;
+  points:number|null;targetProd:number|null;extraEtp:number|null;verdict:Verdict;rosterTotal:number;
+  selectedEtp:number;comparablePeople:number;selectedBoughtPeriod:number;selectedSoldPeriod:number;
+  billingAvgHours:number|null;referenceBilledVehicles:number;bodyshopLoadPct?:number|null
+};
+type Matrix={
+  rowLabels:number[];colLabels:number[];values:number[][];
+  currentRow:number;currentCol:number;targetRow:number;targetCol:number;
+  currentCapacity:number;requiredCapacity:number;backlog:number;historicalMonthly:number;fullMonthCount:number;
+  boxCurrentProductivity:number|null;fixlineCurrentProductivity:number|null;productivityPeriodEnd?:string|null
+};
 
 const DEFLEET:Record<string,number>={"2026-09":65,"2026-10":113,"2026-11":134,"2026-12":50};
 const MONTHS=Object.keys(DEFLEET);
@@ -29,59 +49,223 @@ const BODYSHOP_REFERENCE=[
  [27.7,30.1,31.3,32.5,34.9,37.3,39.6,42.0,44.4],
  [28.6,31.0,32.1,33.3,35.7,38.1,40.5,42.9,45.3],
 ];
+
 function num(v:unknown){const x=Number(v);return Number.isFinite(x)?x:0}
 function fmt(v:number|null|undefined,d=1){return v==null||!Number.isFinite(Number(v))?"—":Number(v).toLocaleString("fr-FR",{minimumFractionDigits:d,maximumFractionDigits:d})}
 function monthLabel(v:string){const[y,m]=v.split("-").map(Number);return new Intl.DateTimeFormat("fr-FR",{month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(Date.UTC(y,m-1,1)))}
-function dateLabel(v?:string){return v?new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",timeZone:"UTC"}).format(new Date(`${v}T12:00:00Z`)):"—"}
+function dateLabel(v?:string|null){return v?new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",timeZone:"UTC"}).format(new Date(`${v}T12:00:00Z`)):"—"}
 function workdays(v:string){const[y,m]=v.split("-").map(Number);const last=new Date(Date.UTC(y,m,0)).getUTCDate();let total=0;for(let d=1;d<=last;d++){const day=new Date(Date.UTC(y,m-1,d)).getUTCDay();if(day!==0&&day!==6)total++}return total}
 function label(v:Verdict){return v==="pass"?"PASSE":v==="tension"?"TENSION":v==="critical"?"CRITIQUE":"DONNÉE INSUFFISANTE"}
 function normalizedSector(value:string){return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase()}
 function visibleMiniSector(sector:Sector){const key=normalizedSector(sector.sectorKey),sectorLabel=normalizedSector(sector.sectorLabel);return !HIDDEN_MINI_SECTORS.has(key)&&![...HIDDEN_MINI_SECTORS].some(hidden=>sectorLabel===hidden||sectorLabel.includes(`${hidden} `)||sectorLabel.includes(` ${hidden}`))}
+
 function makeMatrix(body:Result|undefined,days:number,history?:BodyshopHistory):Matrix|null{
- if(!body||days<=0||body.vehiclesPerDay<=0)return null;
- const currentRow=115,currentCol=65,currentRef=30;
- const scale=body.vehiclesPerDay/currentRef;
- const values=BODYSHOP_REFERENCE.map(row=>row.map(v=>v*scale));
- const requiredCapacity=body.vehiclesPerDay+(body.miniAtPost/days);
- let targetRow=BOX_ROWS[BOX_ROWS.length-1],targetCol=FIXLINE_COLS[FIXLINE_COLS.length-1],best=Number.POSITIVE_INFINITY,bestCap=Number.POSITIVE_INFINITY;
- for(let i=0;i<BOX_ROWS.length;i++)for(let j=0;j<FIXLINE_COLS.length;j++){
-   const r=BOX_ROWS[i],c=FIXLINE_COLS[j],cap=values[i][j];
-   if(r<currentRow||c<currentCol||cap+1e-9<requiredCapacity)continue;
-   const cost=(r-currentRow)+(c-currentCol);
-   if(cost<best||(cost===best&&cap<bestCap)){best=cost;bestCap=cap;targetRow=r;targetCol=c}
- }
- return{rowLabels:BOX_ROWS,colLabels:FIXLINE_COLS,values,currentRow,currentCol,targetRow,targetCol,currentCapacity:body.vehiclesPerDay,requiredCapacity,backlog:num(history?.averageBacklog),historicalMonthly:num(history?.averageMonthlyTreated),fullMonthCount:num(history?.fullMonthCount)};
+  if(!body||days<=0||body.vehiclesPerDay<=0)return null;
+  // La grille fournie est une surface de sensibilité. 115/65 n'est pas une mesure Lens.
+  // On ancre le modèle sur un point neutre 100/100 = débit historique réellement observé.
+  const currentRow=100,currentCol=100;
+  const rowIndex=BOX_ROWS.indexOf(currentRow),colIndex=FIXLINE_COLS.indexOf(currentCol);
+  const neutralRef=BODYSHOP_REFERENCE[rowIndex]?.[colIndex]??37.1;
+  const scale=body.vehiclesPerDay/neutralRef;
+  const values=BODYSHOP_REFERENCE.map(row=>row.map(v=>v*scale));
+  const requiredCapacity=body.vehiclesPerDay+(body.miniAtPost/days);
+  let targetRow=currentRow,targetCol=currentCol,best=Number.POSITIVE_INFINITY,bestCap=Number.POSITIVE_INFINITY;
+  for(let i=0;i<BOX_ROWS.length;i++)for(let j=0;j<FIXLINE_COLS.length;j++){
+    const r=BOX_ROWS[i],c=FIXLINE_COLS[j],cap=values[i][j];
+    if(r<currentRow||c<currentCol||cap+1e-9<requiredCapacity)continue;
+    const cost=Math.abs(r-currentRow)+Math.abs(c-currentCol);
+    if(cost<best||(cost===best&&cap<bestCap)){best=cost;bestCap=cap;targetRow=r;targetCol=c}
+  }
+  return{
+    rowLabels:BOX_ROWS,colLabels:FIXLINE_COLS,values,currentRow,currentCol,targetRow,targetCol,
+    currentCapacity:body.vehiclesPerDay,requiredCapacity,backlog:num(history?.averageBacklog),
+    historicalMonthly:num(history?.averageMonthlyTreated),fullMonthCount:num(history?.fullMonthCount),
+    boxCurrentProductivity:history?.boxCurrentProductivity==null?null:num(history.boxCurrentProductivity),
+    fixlineCurrentProductivity:history?.fixlineCurrentProductivity==null?null:num(history.fixlineCurrentProductivity),
+    productivityPeriodEnd:history?.productivityPeriodEnd??null
+  };
 }
 
 export default function CapacitySimulator(){
- const[data,setData]=useState<Payload|null>(null),[month,setMonth]=useState(MONTHS[0]),[mini,setMini]=useState(DEFLEET[MONTHS[0]]),[loading,setLoading]=useState(true),[error,setError]=useState(""),[openSector,setOpenSector]=useState<string|null>(null),[rosterSearch,setRosterSearch]=useState(""),[savingKey,setSavingKey]=useState<string|null>(null),[exporting,setExporting]=useState(false);
- async function load(){setLoading(true);setError("");try{const r=await fetch("/api/capacity-simple",{cache:"no-store"});const p=await r.json().catch(()=>({})) as Payload;if(!r.ok||p.error)throw new Error(p.error||"Calcul capacitaire indisponible.");setData(p)}catch(e){setError(e instanceof Error?e.message:"Calcul capacitaire indisponible.")}finally{setLoading(false)}}
- useEffect(()=>{void load()},[]);
- const days=useMemo(()=>workdays(month),[month]);
- const rows=useMemo<Result[]>(()=>{const inbound=num(data?.inputVehiclesPerDay),roster=data?.roster??[],billing=data?.billingRatios??[],periodDays=Math.max(1,num(data?.period?.presenceDays)),bodyshopDaily=num(data?.bodyshopHistory?.averageDailyTreated),bodyshopMonthly=num(data?.bodyshopHistory?.averageMonthlyTreated);return(data?.sectors??[]).filter(visibleMiniSector).map(s=>{const people=roster.filter(p=>p.sectorKey===s.sectorKey),selectedPeople=people.filter(p=>p.included),selected=people.length?selectedPeople.length:num(s.etp),selectedBoughtPeriod=people.length?selectedPeople.reduce((sum,p)=>sum+num(p.boughtHours),0):num(s.boughtHoursPerDay)*periodDays,selectedSoldPeriod=people.length?selectedPeople.reduce((sum,p)=>sum+(p.comparable?num(p.soldHours):0),0):num(s.soldHoursPerDay)*periodDays,comparablePeople=people.length?selectedPeople.filter(p=>p.comparable).length:selected,ratio=billing.find(x=>x.sectorKey===s.sectorKey),billingAvgHours=ratio&&num(ratio.avgHoursPerVehicle)>0?num(ratio.avgHoursPerVehicle):null,estimatedVehiclesPeriod=billingAvgHours?selectedSoldPeriod/billingAvgHours:0,isBody=normalizedSector(s.sectorKey)==="carrosserie",calculatedVehiclesPerDay=billingAvgHours?estimatedVehiclesPeriod/periodDays:0,vehiclesPerDay=isBody&&bodyshopDaily>0?bodyshopDaily:calculatedVehiclesPerDay,baseVehicles=isBody&&bodyshopMonthly>0?bodyshopMonthly:vehiclesPerDay*days,baseBought=selectedBoughtPeriod/periodDays*days,baseSold=selectedSoldPeriod/periodDays*days,referenceVehiclesPerDay=isBody&&bodyshopDaily>0?bodyshopDaily:ratio&&periodDays>0?num(ratio.billedVehicles)/periodDays:vehiclesPerDay,pass=inbound>0?Math.min(1,Math.max(0,referenceVehiclesPerDay/inbound)):0,h=s.miniHourSource==="standard_mini_lens"?(s.miniHoursPerVehicle==null?null:num(s.miniHoursPerVehicle)):billingAvgHours,miniAtPost=s.miniHourSource==="standard_mini_lens"?mini:mini*pass,miniHours=h==null?0:miniAtPost*h,prod=selectedBoughtPeriod>0?selectedSoldPeriod/selectedBoughtPeriod*100:null,points=h!=null&&baseBought>0?miniHours/baseBought*100:null,targetProd=points!=null&&prod!=null?prod+points:null,soldPerSelectedEtp=selected>0&&baseSold>0?baseSold/selected:0,fallbackPerEtp=7.5*days*(prod&&prod>0?prod/100:1),capacityPerEtp=soldPerSelectedEtp>0?soldPerSelectedEtp:fallbackPerEtp,extraEtp=h!=null&&capacityPerEtp>0?miniHours/capacityPerEtp:null,verdict:Verdict=selected<=0||points==null||billingAvgHours==null?"insufficient":points<=5?"pass":points<=10?"tension":"critical";return{...s,etp:selected,productivity:prod,vehiclesPerDay,miniHoursPerVehicle:h,baseVehicles,baseBought,baseSold,miniAtPost,miniHours,points,targetProd,extraEtp,verdict,rosterTotal:people.length||num(s.etp),selectedEtp:selected,comparablePeople,selectedBoughtPeriod,selectedSoldPeriod,billingAvgHours,referenceBilledVehicles:num(ratio?.billedVehicles)}})},[data,days,mini]);
- const productivityPressure=useMemo(()=>rows.filter(r=>r.points!=null).sort((a,b)=>num(b.points)-num(a.points))[0]??null,[rows]);
- const mostLoaded=useMemo(()=>[...rows].sort((a,b)=>b.miniHours-a.miniHours)[0]??null,[rows]);
- const etpPressure=useMemo(()=>rows.filter(r=>r.extraEtp!=null).sort((a,b)=>num(b.extraEtp)-num(a.extraEtp))[0]??null,[rows]);
- const overall:Verdict=rows.some(r=>r.verdict==="critical")?"critical":rows.some(r=>r.verdict==="tension")?"tension":rows.some(r=>r.verdict==="pass")?"pass":"insufficient";
- const body=rows.find(r=>normalizedSector(r.sectorKey)==="carrosserie");
- const matrix=useMemo(()=>makeMatrix(body,days,data?.bodyshopHistory),[body,days,data?.bodyshopHistory]);
- const openRoster=useMemo(()=>{if(!openSector)return[];const q=rosterSearch.trim().toLowerCase();return(data?.roster??[]).filter(p=>p.sectorKey===openSector).filter(p=>!q||`${p.fullName} ${p.matricule??""} ${p.teamCode??""} ${p.sectorLabel??""}`.toLowerCase().includes(q))},[data,openSector,rosterSearch]);
- const openRow=rows.find(r=>r.sectorKey===openSector)??null;
- function setSelectedMonth(v:string){setMonth(v);setMini(DEFLEET[v]??0)}
- function showRoster(sectorKey:string){setOpenSector(sectorKey);setRosterSearch("")}
- async function toggleStaff(member:StaffMember){if(savingKey)return;const next=!member.included;setSavingKey(member.employeeKey);setData(prev=>prev?{...prev,roster:(prev.roster??[]).map(p=>p.employeeKey===member.employeeKey?{...p,included:next}:p)}:prev);try{const r=await fetch("/api/capacity-simple",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({employeeKey:member.employeeKey,included:next})});const p=await r.json().catch(()=>({})) as {error?:string};if(!r.ok)throw new Error(p.error||"Enregistrement impossible.")}catch(e){setData(prev=>prev?{...prev,roster:(prev.roster??[]).map(p=>p.employeeKey===member.employeeKey?{...p,included:member.included}:p)}:prev);setError(e instanceof Error?e.message:"Enregistrement impossible.")}finally{setSavingKey(null)}}
- function exportPpt(){if(!rows.length)return;setExporting(true);try{exportCapacityPptx({month,monthLabel:monthLabel(month),mini,days,overall,rows,matrix})}catch(e){setError(e instanceof Error?e.message:"Export PowerPoint impossible.")}finally{setTimeout(()=>setExporting(false),300)}}
- return <main className={styles.page}>
-  <header className={styles.hero}><div className={styles.heroTop}><a className={styles.back} href="/">← KPI CRVO</a><div className={styles.heroActions}><button onClick={exportPpt} disabled={exporting||!rows.length}>{exporting?"Création PPT…":"Exporter PPT"}</button><button onClick={()=>void load()} disabled={loading}>{loading?"Actualisation…":"Actualiser"}</button></div></div><div className={styles.heroGrid}><div><span className={styles.eyebrow}>PLANIFICATION INDUSTRIELLE · LENS</span><h1>Simulateur MINI</h1><p>Les MINI sont ajoutées au volume actuel. Le simulateur répond directement à deux questions : combien de points de productivité faut-il gagner, ou combien d'ETP faut-il ajouter ?</p></div><div className={`${styles.decision} ${styles[overall]}`}><span>DÉCISION DU MOIS</span><strong>{label(overall)}</strong><p>{productivityPressure?`${productivityPressure.sectorLabel} : effort relatif max +${fmt(productivityPressure.points)} pts. ${mostLoaded?`${mostLoaded.sectorLabel} reçoit la plus forte charge (+${fmt(mostLoaded.miniHours,0)} h).`:""}`:"Données insuffisantes."}</p></div></div><div className={styles.meta}><span>Période de référence : <b>{dateLabel(data?.period?.start)} → {dateLabel(data?.period?.end)}</b></span><span>MINI : <b>en complément du flux actuel</b></span><span>Effectif : <b>référentiel RH actif au {dateLabel(data?.period?.etpAsOf)}</b></span></div></header>
-  {error&&<div className={styles.error}><strong>Information</strong><span>{error}</span><button onClick={()=>setError("")}>Fermer</button></div>}
-  {loading&&!data&&<div className={styles.loading}>Calcul des effectifs, volumes et heures réelles…</div>}
-  <section className={styles.controlPanel}><div><span>01 · VOLUME À ABSORBER</span><h2>MINI additionnelles</h2><p>Le DEFLEET Lens est préchargé. La Carrosserie est calibrée sur le débit réellement traité sur les mois pleins, avec un encours structurel moyen de {fmt(data?.bodyshopHistory?.averageBacklog,0)} VOP qui confirme que l'atelier n'est pas limité par manque de charge.</p></div><div className={styles.controls}><label>Mois<select value={month} onChange={e=>setSelectedMonth(e.target.value)}>{MONTHS.map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}</select></label><label>Volume MINI<input type="number" min={0} value={mini} onChange={e=>setMini(Math.max(0,Number(e.target.value)||0))}/></label><button onClick={()=>setMini(DEFLEET[month]??0)}>Reprendre DEFLEET</button></div></section>
-  <section className={styles.kpis}><article><span>MINI ADDITIONNELLES</span><strong>{fmt(mini,0)}</strong><small>{monthLabel(month)} · {days} jours ouvrés</small></article><article><span>MÉTIER LE PLUS CHARGÉ</span><strong>{mostLoaded?.sectorLabel??"—"}</strong><small>{mostLoaded?`+${fmt(mostLoaded.miniHours,0)} h de charge MINI`:"sur la base des heures réelles"}</small></article><article><span>EFFORT PROD. MAX</span><strong>{productivityPressure?.points==null?"—":`+${fmt(productivityPressure.points)} pts`}</strong><small>{productivityPressure?.sectorLabel??"recalculé avec les personnes cochées"}</small></article><article><span>RENFORT ETP MAX</span><strong>{etpPressure?.extraEtp==null?"—":`+${fmt(etpPressure.extraEtp)}`}</strong><small>{etpPressure?.sectorLabel??"au rendement actuel"}</small></article></section>
-  <section className={styles.panel}><div className={styles.panelHead}><div><span>02 · PAR MÉTIER</span><h2>Est-ce que le volume passe ?</h2><p>La Carrosserie utilise désormais la moyenne réelle des mois pleins du suivi Box/Fixline. Les autres métiers restent calculés depuis la facturation de la même période : heures vendues des personnes cochées ÷ temps moyen facturé par véhicule.</p></div><div className={styles.legend}><span className={styles.pass}>PASSE · ≤ +5 pts</span><span className={styles.tension}>TENSION · +5 à +10 pts</span><span className={styles.critical}>CRITIQUE · &gt; +10 pts</span></div></div><div className={styles.tableWrap}><table className={styles.capacityTable}><thead><tr><th>Métier</th><th>ETP RH actifs</th><th>Volume actuel / mois</th><th>Heures / mois</th><th>MINI au poste</th><th>Heures MINI en +</th><th>Productivité</th><th>Points à gagner</th><th>ETP en +</th><th>Verdict</th></tr></thead><tbody>{rows.map(r=>{const isBody=normalizedSector(r.sectorKey)==="carrosserie";return <tr key={r.sectorKey}><td style={{borderLeft:`5px solid ${activityColor(r.sectorLabel)}`}}><strong>{r.sectorLabel}</strong><small>{isBody?"Historique Box + Fixline":r.miniHourSource==="standard_mini_lens"?"Standard MINI Lens":"Moyenne facturée Lens"}</small></td><td><button className={styles.rosterTrigger} onClick={()=>showRoster(r.sectorKey)} title="Voir les collaborateurs comptabilisés">{fmt(r.selectedEtp,0)} <span>ETP</span></button><small>{fmt(r.selectedEtp,0)} / {fmt(r.rosterTotal,0)} personnes comptées · cliquer pour gérer</small></td><td><b>{isBody&&num(data?.bodyshopHistory?.averageMonthlyTreated)>0?`${fmt(r.baseVehicles,0)} VO`:r.billingAvgHours==null?"—":`${fmt(r.baseVehicles,0)} VO`}</b><small>{isBody&&num(data?.bodyshopHistory?.averageDailyTreated)>0?`${fmt(data?.bodyshopHistory?.averageMonthlyTreated,0)} VO/mois · ${fmt(data?.bodyshopHistory?.averageDailyTreated)} VO/j · ${fmt(data?.bodyshopHistory?.fullMonthCount,0)} mois pleins`:r.billingAvgHours==null?"moyenne facturée indisponible":`${fmt(r.baseSold,0)} h ÷ ${fmt(r.billingAvgHours,2)} h/VO · ${fmt(r.vehiclesPerDay)} / jour`}</small></td><td><b>{fmt(r.baseSold,0)} h vendues</b><small>{fmt(r.baseBought,0)} h achetées · même population</small></td><td><b>{fmt(r.miniAtPost,0)}</b><small>MINI estimées</small></td><td><b>{r.miniHoursPerVehicle==null?"—":`+${fmt(r.miniHours,0)} h`}</b><small>{r.miniHoursPerVehicle==null?"ratio absent":`${fmt(r.miniHoursPerVehicle,2)} h / MINI`}</small></td><td><b>{r.productivity==null?"—":`${fmt(r.productivity)} %`}</b><small>{fmt(r.comparablePeople,0)} personne(s) comparable(s)</small></td><td><b className={r.verdict==="critical"?styles.negative:r.verdict==="tension"?styles.warning:styles.positive}>{r.points==null?"—":`+${fmt(r.points)} pts`}</b><small>{r.targetProd==null?"":`cible ≈ ${fmt(r.targetProd)} %`}</small></td><td><b>{r.extraEtp==null?"—":`+${fmt(r.extraEtp)}`}</b><small>au rendement actuel / ETP</small></td><td><span className={`${styles.verdict} ${styles[r.verdict]}`}>{label(r.verdict)}</span></td></tr>})}</tbody></table></div></section>
-  <section className={`${styles.panel} ${styles.scenarioPanel}`}><div className={styles.panelHead}><div><span>03 · COMMENT LIRE</span><h2>{monthLabel(month)} · scénario DEFLEET</h2><p>Le pavé suit le mois et le volume MINI choisis. Les couleurs identifient les ateliers ; le badge indique séparément le niveau de risque.</p></div><div className={styles.scenarioBadge}><span>VOLUME MINI</span><strong>{fmt(mini,0)}</strong><small>{days} jours ouvrés · en complément</small></div></div><div className={styles.scenarioGrid}>{rows.map(r=>{const color=activityColor(r.sectorLabel),isBody=normalizedSector(r.sectorKey)==="carrosserie";return <article key={`scenario-${r.sectorKey}`} className={styles.scenarioCard} style={{borderLeftColor:color,boxShadow:`inset 0 3px 0 ${color}22`}}><div className={styles.scenarioCardHead}><div><strong style={{color}}>{r.sectorLabel}</strong><small>{fmt(r.selectedEtp,0)} ETP sélectionnés · {isBody?`${fmt(r.baseVehicles,0)} VO/mois de référence historique`:r.billingAvgHours==null?"volume non calculable":`${fmt(r.baseVehicles,0)} VO/mois estimés`} · {fmt(r.miniAtPost,0)} MINI au poste</small></div><span className={`${styles.verdict} ${styles[r.verdict]}`}>{label(r.verdict)}</span></div><div className={styles.scenarioMetrics}><div><span>PRODUCTIVITÉ ACTUELLE</span><b>{r.productivity==null?"—":`${fmt(r.productivity)} %`}</b><small>{fmt(r.baseSold,0)} h vendues / {fmt(r.baseBought,0)} h achetées</small></div><div><span>PRODUCTIVITÉ NÉCESSAIRE</span><b>{r.targetProd==null?"—":`${fmt(r.targetProd)} %`}</b><small>{r.points==null?"donnée insuffisante":`+${fmt(r.points)} points à gagner`}</small></div><div><span>ETP À AJOUTER</span><b>{r.extraEtp==null?"—":`+${fmt(r.extraEtp)}`}</b><small>si la productivité actuelle ne bouge pas</small></div><div><span>ETP CIBLE TOTAL</span><b>{r.extraEtp==null?"—":fmt(r.selectedEtp+r.extraEtp)}</b><small>{fmt(r.selectedEtp,0)} actuels + renfort calculé</small></div><div><span>CHARGE MINI EN +</span><b style={{color}}>{r.miniHoursPerVehicle==null?"—":`${fmt(r.miniHours,0)} h`}</b><small>{r.miniHoursPerVehicle==null?"ratio non disponible":`${fmt(r.miniHoursPerVehicle,2)} h par MINI au poste`}</small></div></div><p className={styles.scenarioAdvice}>{r.points==null||r.extraEtp==null?"Le métier ne dispose pas encore d'assez de données comparables pour proposer un levier fiable.":r.points<=5?`Le volume est absorbable avec l'effectif sélectionné si la productivité passe de ${fmt(r.productivity)} % à environ ${fmt(r.targetProd)} %. Alternative : ${fmt(r.extraEtp)} ETP supplémentaire.`:r.points<=10?`Le secteur est en tension : il faut gagner ${fmt(r.points)} points de productivité, ou ajouter environ ${fmt(r.extraEtp)} ETP pour conserver la performance actuelle.`:`Le secteur est critique : à effectif inchangé il faudrait viser environ ${fmt(r.targetProd)} % de productivité. À productivité actuelle, prévoir environ ${fmt(r.extraEtp)} ETP supplémentaires.`}</p></article>})}</div><div className={styles.scenarioRule}><strong>Lecture de décision</strong><span>Le métier le plus chargé correspond désormais à la plus forte charge MINI en heures. L'effort de productivité maximum est affiché séparément pour éviter de confondre charge absolue et tension relative.</span></div></section>
-  <section className={styles.panel}><div className={styles.panelHead}><div><span>04 · CARROSSERIE</span><h2>Matrice capacitaire Box × Fixline</h2><p>La matrice est recalée sur l'historique réel des mois pleins de février à juillet : moyenne Box + Fixline, compléments du samedi inclus. L'encours moyen de {fmt(data?.bodyshopHistory?.averageBacklog,0)} VOP est un encours structurel : il confirme que le débit observé correspond à une capacité réellement sollicitée et n'est pas additionné une seconde fois au besoin mensuel.</p></div>{matrix&&<div className={styles.scenarioBadge}><span>BESOIN CIBLE</span><strong>{fmt(matrix.requiredCapacity)} VO/j</strong><small>capacité historique {fmt(matrix.currentCapacity)} VO/j</small></div>}</div>{matrix?<div className={styles.tableWrap} style={{marginTop:18}}><table style={{width:"100%",minWidth:980,borderCollapse:"collapse",fontSize:11}}><thead><tr><th style={{padding:"10px 12px",background:"#5b9bd5",color:"#fff",textAlign:"left"}}>Box \ Fixline</th>{matrix.colLabels.map(c=><th key={c} style={{padding:"10px",background:"#5b9bd5",color:"#fff",textAlign:"center"}}>{c}%</th>)}</tr></thead><tbody>{matrix.rowLabels.map((r,i)=><tr key={r}><th style={{padding:"10px 12px",background:"#5b9bd5",color:"#fff",textAlign:"right"}}>{r}%</th>{matrix.colLabels.map((c,j)=>{const value=matrix.values[i][j],current=r===matrix.currentRow&&c===matrix.currentCol,target=r===matrix.targetRow&&c===matrix.targetCol,ok=value>=matrix.requiredCapacity;return <td key={c} style={{padding:"10px",textAlign:"center",fontWeight:900,color:target?"#fff":current?"#004f9f":ok?"#176e50":"#004f9f",background:current?"#ffe08a":target?"#009edb":ok?"#e8f7f0":"#edf2f6",border:"1px solid #fff"}}>{fmt(value)}</td>})}</tr>)}</tbody></table></div>:<p className={styles.note}>La matrice apparaîtra dès qu'un débit Carrosserie comparable est disponible.</p>}{matrix&&<div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:10,marginTop:14}}><div style={{padding:14,border:"1px solid #f0d276",borderRadius:12,background:"#fff9e8"}}><small>CAPACITÉ HISTORIQUE</small><strong style={{display:"block",marginTop:5,color:"#004f9f"}}>{fmt(matrix.currentCapacity)} VO/j</strong><span>repère Box {matrix.currentRow}% · Fixline {matrix.currentCol}%</span></div><div style={{padding:14,border:"1px solid #d9e6ee",borderRadius:12,background:"#f8fbfd"}}><small>MOIS PLEINS OBSERVÉS</small><strong style={{display:"block",marginTop:5,color:"#004f9f"}}>{fmt(matrix.historicalMonthly,0)} VO/mois</strong><span>moyenne de {fmt(matrix.fullMonthCount,0)} mois</span></div><div style={{padding:14,border:"1px solid #f0d276",borderRadius:12,background:"#fff9e8"}}><small>ENCOURS STRUCTUREL</small><strong style={{display:"block",marginTop:5,color:"#8a6900"}}>{fmt(matrix.backlog,0)} VOP</strong><span>charge disponible en permanence · non additionnée</span></div><div style={{padding:14,border:"1px solid #9bd9ee",borderRadius:12,background:"#eefaff"}}><small>CIBLE MINI</small><strong style={{display:"block",marginTop:5,color:"#009edb"}}>{fmt(matrix.requiredCapacity)} VO/j</strong><span>{fmt(matrix.currentCapacity)} + {fmt((body?.miniAtPost??0)/days)} MINI/j · Box {matrix.targetRow}% / Fixline {matrix.targetCol}%</span></div></div>}</section>
-  <section className={styles.panel}><div className={styles.panelHead}><div><span>05 · STANDARD MINI LENS</span><h2>Charge par dossier</h2></div></div><div className={styles.standardGrid}><div><span>CARROSSERIE + PEINTURE</span><strong>{fmt(data?.miniStandard?.bodyshopHours??7.92,2)} h</strong></div><div><span>MÉCANIQUE</span><strong>{fmt(data?.miniStandard?.mechanicsHours??1.17,2)} h</strong></div><div><span>ÉCHANTILLON</span><strong>{fmt(data?.miniStandard?.sampleVehicles??569,0)}</strong></div></div><p className={styles.note}>Pour les autres métiers, la charge par MINI utilise le temps moyen facturé par véhicule observé sur exactement la même période que les heures vendues. Pour la Carrosserie, le débit de référence est désormais issu du suivi historique Box/Fixline fourni.</p></section>
-  <footer className={styles.footer}><strong>Export PowerPoint</strong><span>Le bouton Exporter PPT génère une présentation 16:9 aux couleurs CRVO avec synthèse, charge par métier, matrice Carrosserie Box × Fixline, leviers productivité / ETP et plan d'action.</span></footer>
-  {openSector&&<div className={styles.rosterOverlay} onMouseDown={e=>{if(e.currentTarget===e.target)setOpenSector(null)}}><section className={styles.rosterModal}><div className={styles.rosterHead}><div><span>EFFECTIF DU SIMULATEUR</span><h2>{openRow?.sectorLabel??openSector}</h2><p><b>{openRow?.selectedEtp??0}</b> personne(s) comptée(s) sur <b>{openRow?.rosterTotal??0}</b> · productivité recalculée : <b>{openRow?.productivity==null?"—":`${fmt(openRow.productivity)} %`}</b>.</p></div><button className={styles.closeRoster} onClick={()=>setOpenSector(null)} aria-label="Fermer">×</button></div><input className={styles.rosterSearch} value={rosterSearch} onChange={e=>setRosterSearch(e.target.value)} placeholder="Rechercher un nom, matricule ou équipe…"/><div className={styles.rosterList}>{openRoster.map(member=><label key={member.employeeKey} className={`${styles.rosterPerson} ${member.included?styles.rosterIncluded:styles.rosterExcluded}`}><input type="checkbox" checked={member.included} disabled={savingKey===member.employeeKey} onChange={()=>void toggleStaff(member)}/><span className={styles.rosterName}><strong>{member.fullName}</strong><small>{member.sectorLabel||openRow?.sectorLabel}{member.teamCode?` · équipe ${member.teamCode}`:""}{member.matricule?` · ${member.matricule}`:""}</small><small>{member.comparable?`${fmt(member.soldHours,1)} h vendues / ${fmt(member.boughtHours,1)} h achetées · ${member.productivity==null?"—":`${fmt(member.productivity)} %`}`:num(member.soldHours)>0?`${fmt(member.soldHours,1)} h vendues · non comparables car 0 h achetée sur la période`:`Aucune heure comparable sur la période`}</small></span><span className={styles.rosterState}>{savingKey===member.employeeKey?"Enregistrement…":member.included?"COMPTÉ":"EXCLU"}</span></label>)}{openRoster.length===0&&<div className={styles.rosterEmpty}>Aucun collaborateur ne correspond à la recherche.</div>}</div><div className={styles.rosterFoot}><span>Chaque coche modifie immédiatement les heures, la productivité, le volume estimé et le besoin capacitaire du métier.</span><button onClick={()=>setOpenSector(null)}>Terminer</button></div></section></div>}
- </main>
+  const[data,setData]=useState<Payload|null>(null),[month,setMonth]=useState(MONTHS[0]),[mini,setMini]=useState(DEFLEET[MONTHS[0]]),
+    [loading,setLoading]=useState(true),[error,setError]=useState(""),[openSector,setOpenSector]=useState<string|null>(null),
+    [rosterSearch,setRosterSearch]=useState(""),[savingKey,setSavingKey]=useState<string|null>(null),[exporting,setExporting]=useState(false);
+
+  async function load(){
+    setLoading(true);setError("");
+    try{
+      const r=await fetch("/api/capacity-simple",{cache:"no-store"});
+      const p=await r.json().catch(()=>({})) as Payload;
+      if(!r.ok||p.error)throw new Error(p.error||"Calcul capacitaire indisponible.");
+      setData(p);
+    }catch(e){setError(e instanceof Error?e.message:"Calcul capacitaire indisponible.")}
+    finally{setLoading(false)}
+  }
+  useEffect(()=>{void load()},[]);
+  const days=useMemo(()=>workdays(month),[month]);
+
+  const rows=useMemo<Result[]>(()=>{
+    const inbound=num(data?.inputVehiclesPerDay),roster=data?.roster??[],billing=data?.billingRatios??[],
+      periodDays=Math.max(1,num(data?.period?.presenceDays)),history=data?.bodyshopHistory,
+      historicalBodyDaily=num(history?.averageDailyTreated),historicalBodyMonthly=num(history?.averageMonthlyTreated);
+
+    return(data?.sectors??[]).filter(visibleMiniSector).map(s=>{
+      const people=roster.filter(p=>p.sectorKey===s.sectorKey),selectedPeople=people.filter(p=>p.included),
+        selected=people.length?selectedPeople.length:num(s.etp),selectedShare=people.length?selected/people.length:1,
+        selectedBoughtPeriod=people.length?selectedPeople.reduce((sum,p)=>sum+num(p.boughtHours),0):num(s.boughtHoursPerDay)*periodDays,
+        selectedSoldPeriod=people.length?selectedPeople.reduce((sum,p)=>sum+(p.comparable?num(p.soldHours):0),0):num(s.soldHoursPerDay)*periodDays,
+        comparablePeople=people.length?selectedPeople.filter(p=>p.comparable).length:selected,
+        ratio=billing.find(x=>x.sectorKey===s.sectorKey),
+        billingAvgHours=ratio&&num(ratio.avgHoursPerVehicle)>0?num(ratio.avgHoursPerVehicle):null,
+        estimatedVehiclesPeriod=billingAvgHours?selectedSoldPeriod/billingAvgHours:0,
+        isBody=normalizedSector(s.sectorKey)==="carrosserie",
+        calculatedVehiclesPerDay=billingAvgHours?estimatedVehiclesPeriod/periodDays:0,
+        vehiclesPerDay=isBody&&historicalBodyDaily>0?historicalBodyDaily*selectedShare:calculatedVehiclesPerDay,
+        baseVehicles=isBody&&historicalBodyMonthly>0?historicalBodyMonthly*selectedShare:vehiclesPerDay*days,
+        baseBought=selectedBoughtPeriod/periodDays*days,
+        baseSold=selectedSoldPeriod/periodDays*days,
+        referenceVehiclesPerDay=isBody&&historicalBodyDaily>0?vehiclesPerDay:ratio&&periodDays>0?num(ratio.billedVehicles)/periodDays:vehiclesPerDay,
+        pass=inbound>0?Math.min(1,Math.max(0,referenceVehiclesPerDay/inbound)):0,
+        h=s.miniHourSource==="standard_mini_lens"?(s.miniHoursPerVehicle==null?null:num(s.miniHoursPerVehicle)):billingAvgHours,
+        miniAtPost=s.miniHourSource==="standard_mini_lens"?mini:mini*pass,
+        miniHours=h==null?0:miniAtPost*h;
+
+      let prod:number|null,points:number|null,targetProd:number|null,extraEtp:number|null,bodyshopLoadPct:number|null=null,verdict:Verdict;
+      if(isBody){
+        prod=history?.boxCurrentProductivity==null?null:num(history.boxCurrentProductivity);
+        bodyshopLoadPct=baseVehicles>0?miniAtPost/baseVehicles*100:null;
+        points=bodyshopLoadPct;
+        targetProd=null;
+        const vehiclesPerEtp=selected>0&&baseVehicles>0?baseVehicles/selected:0;
+        extraEtp=vehiclesPerEtp>0?miniAtPost/vehiclesPerEtp:null;
+        verdict=selected<=0||bodyshopLoadPct==null?"insufficient":bodyshopLoadPct<=5?"pass":bodyshopLoadPct<=10?"tension":"critical";
+      }else{
+        prod=selectedBoughtPeriod>0?selectedSoldPeriod/selectedBoughtPeriod*100:null;
+        points=h!=null&&baseBought>0?miniHours/baseBought*100:null;
+        targetProd=points!=null&&prod!=null?prod+points:null;
+        const soldPerSelectedEtp=selected>0&&baseSold>0?baseSold/selected:0,
+          fallbackPerEtp=7.5*days*(prod&&prod>0?prod/100:1),
+          capacityPerEtp=soldPerSelectedEtp>0?soldPerSelectedEtp:fallbackPerEtp;
+        extraEtp=h!=null&&capacityPerEtp>0?miniHours/capacityPerEtp:null;
+        verdict=selected<=0||points==null||billingAvgHours==null?"insufficient":points<=5?"pass":points<=10?"tension":"critical";
+      }
+      return{...s,etp:selected,productivity:prod,vehiclesPerDay,miniHoursPerVehicle:h,baseVehicles,baseBought,baseSold,miniAtPost,miniHours,
+        points,targetProd,extraEtp,verdict,rosterTotal:people.length||num(s.etp),selectedEtp:selected,comparablePeople,selectedBoughtPeriod,
+        selectedSoldPeriod,billingAvgHours,referenceBilledVehicles:num(ratio?.billedVehicles),bodyshopLoadPct};
+    });
+  },[data,days,mini]);
+
+  const productivityPressure=useMemo(()=>rows.filter(r=>normalizedSector(r.sectorKey)!=="carrosserie"&&r.points!=null).sort((a,b)=>num(b.points)-num(a.points))[0]??null,[rows]);
+  const mostLoaded=useMemo(()=>[...rows].sort((a,b)=>b.miniHours-a.miniHours)[0]??null,[rows]);
+  const etpPressure=useMemo(()=>rows.filter(r=>r.extraEtp!=null).sort((a,b)=>num(b.extraEtp)-num(a.extraEtp))[0]??null,[rows]);
+  const overall:Verdict=rows.some(r=>r.verdict==="critical")?"critical":rows.some(r=>r.verdict==="tension")?"tension":rows.some(r=>r.verdict==="pass")?"pass":"insufficient";
+  const body=rows.find(r=>normalizedSector(r.sectorKey)==="carrosserie");
+  const matrix=useMemo(()=>makeMatrix(body,days,data?.bodyshopHistory),[body,days,data?.bodyshopHistory]);
+
+  const openRoster=useMemo(()=>{
+    if(!openSector)return[];
+    const q=rosterSearch.trim().toLowerCase();
+    return(data?.roster??[]).filter(p=>p.sectorKey===openSector)
+      .filter(p=>!q||`${p.fullName} ${p.matricule??""} ${p.teamCode??""} ${p.sectorLabel??""} ${p.workcenterLabel??""}`.toLowerCase().includes(q));
+  },[data,openSector,rosterSearch]);
+  const openRow=rows.find(r=>r.sectorKey===openSector)??null;
+
+  function setSelectedMonth(v:string){setMonth(v);setMini(DEFLEET[v]??0)}
+  function showRoster(sectorKey:string){setOpenSector(sectorKey);setRosterSearch("")}
+  async function toggleStaff(member:StaffMember){
+    if(savingKey)return;const next=!member.included;setSavingKey(member.employeeKey);
+    setData(prev=>prev?{...prev,roster:(prev.roster??[]).map(p=>p.employeeKey===member.employeeKey?{...p,included:next}:p)}:prev);
+    try{
+      const r=await fetch("/api/capacity-simple",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({employeeKey:member.employeeKey,included:next})});
+      const p=await r.json().catch(()=>({})) as {error?:string};if(!r.ok)throw new Error(p.error||"Enregistrement impossible.");
+    }catch(e){
+      setData(prev=>prev?{...prev,roster:(prev.roster??[]).map(p=>p.employeeKey===member.employeeKey?{...p,included:member.included}:p)}:prev);
+      setError(e instanceof Error?e.message:"Enregistrement impossible.");
+    }finally{setSavingKey(null)}
+  }
+  function exportPpt(){if(!rows.length)return;setExporting(true);try{exportCapacityPptx({month,monthLabel:monthLabel(month),mini,days,overall,rows,matrix})}catch(e){setError(e instanceof Error?e.message:"Export PowerPoint impossible.")}finally{setTimeout(()=>setExporting(false),300)}}
+
+  return <main className={styles.page}>
+    <header className={styles.hero}>
+      <div className={styles.heroTop}><a className={styles.back} href="/">← KPI CRVO</a><div className={styles.heroActions}><button onClick={exportPpt} disabled={exporting||!rows.length}>{exporting?"Création PPT…":"Exporter PPT"}</button><button onClick={()=>void load()} disabled={loading}>{loading?"Actualisation…":"Actualiser"}</button></div></div>
+      <div className={styles.heroGrid}><div><span className={styles.eyebrow}>PLANIFICATION INDUSTRIELLE · LENS</span><h1>Simulateur MINI</h1><p>Les MINI sont ajoutées au volume actuel. Le simulateur sépare désormais les métriques réellement mesurées des hypothèses de sensibilité : aucun pourcentage Box/Fixline n'est inventé.</p></div><div className={`${styles.decision} ${styles[overall]}`}><span>DÉCISION DU MOIS</span><strong>{label(overall)}</strong><p>{productivityPressure?`${productivityPressure.sectorLabel} : effort relatif max +${fmt(productivityPressure.points)} pts. ${mostLoaded?`${mostLoaded.sectorLabel} reçoit la plus forte charge (+${fmt(mostLoaded.miniHours,0)} h).`:""}`:"Données insuffisantes."}</p></div></div>
+      <div className={styles.meta}><span>Période de référence : <b>{dateLabel(data?.period?.start)} → {dateLabel(data?.period?.end)}</b></span><span>MINI : <b>en complément du flux actuel</b></span><span>Effectif : <b>référentiel RH actif au {dateLabel(data?.period?.etpAsOf)}</b></span></div>
+    </header>
+
+    {error&&<div className={styles.error}><strong>Information</strong><span>{error}</span><button onClick={()=>setError("")}>Fermer</button></div>}
+    {loading&&!data&&<div className={styles.loading}>Calcul des effectifs, volumes et heures réelles…</div>}
+
+    <section className={styles.controlPanel}><div><span>01 · VOLUME À ABSORBER</span><h2>MINI additionnelles</h2><p>La Carrosserie est calibrée sur le débit réellement traité sur les mois pleins. L'encours moyen de {fmt(data?.bodyshopHistory?.averageBacklog,0)} VOP confirme une charge disponible permanente ; il n'est pas additionné une seconde fois.</p></div><div className={styles.controls}><label>Mois<select value={month} onChange={e=>setSelectedMonth(e.target.value)}>{MONTHS.map(m=><option key={m} value={m}>{monthLabel(m)}</option>)}</select></label><label>Volume MINI<input type="number" min={0} value={mini} onChange={e=>setMini(Math.max(0,Number(e.target.value)||0)}/></label><button onClick={()=>setMini(DEFLEET[month]??0)}>Reprendre DEFLEET</button></div></section>
+
+    <section className={styles.kpis}>
+      <article><span>MINI ADDITIONNELLES</span><strong>{fmt(mini,0)}</strong><small>{monthLabel(month)} · {days} jours ouvrés</small></article>
+      <article><span>MÉTIER LE PLUS CHARGÉ</span><strong>{mostLoaded?.sectorLabel??"—"}</strong><small>{mostLoaded?`+${fmt(mostLoaded.miniHours,0)} h de charge MINI`:"sur la base des heures réelles"}</small></article>
+      <article><span>EFFORT PROD. MAX</span><strong>{productivityPressure?.points==null?"—":`+${fmt(productivityPressure.points)} pts`}</strong><small>{productivityPressure?.sectorLabel??"hors Carrosserie pilotée par débit"}</small></article>
+      <article><span>RENFORT ETP MAX</span><strong>{etpPressure?.extraEtp==null?"—":`+${fmt(etpPressure.extraEtp)}`}</strong><small>{etpPressure?.sectorLabel??"au rendement actuel"}</small></article>
+    </section>
+
+    <section className={styles.panel}><div className={styles.panelHead}><div><span>02 · PAR MÉTIER</span><h2>Est-ce que le volume passe ?</h2><p>Carrosserie = débit historique réel. Les autres métiers = heures vendues ÷ temps moyen facturé par véhicule sur la même période et la même population.</p></div><div className={styles.legend}><span className={styles.pass}>PASSE · ≤ +5 %</span><span className={styles.tension}>TENSION · +5 à +10 %</span><span className={styles.critical}>CRITIQUE · &gt; +10 %</span></div></div>
+      <div className={styles.tableWrap}><table className={styles.capacityTable}><thead><tr><th>Métier</th><th>ETP RH actifs</th><th>Volume actuel / mois</th><th>Heures / mois</th><th>MINI au poste</th><th>Heures MINI en +</th><th>Performance actuelle</th><th>Effort à absorber</th><th>ETP en +</th><th>Verdict</th></tr></thead><tbody>
+        {rows.map(r=>{const isBody=normalizedSector(r.sectorKey)==="carrosserie",hist=data?.bodyshopHistory;return <tr key={r.sectorKey}>
+          <td style={{borderLeft:`5px solid ${activityColor(r.sectorLabel)}`}}><strong>{r.sectorLabel}</strong><small>{isBody?"Historique Box + Fixline":r.miniHourSource==="standard_mini_lens"?"Standard MINI Lens":"Moyenne facturée Lens"}</small></td>
+          <td><button className={styles.rosterTrigger} onClick={()=>showRoster(r.sectorKey)}>{fmt(r.selectedEtp,0)} <span>ETP</span></button><small>{fmt(r.selectedEtp,0)} / {fmt(r.rosterTotal,0)} personnes comptées · cliquer pour gérer</small></td>
+          <td><b>{r.billingAvgHours==null&&!isBody?"—":`${fmt(r.baseVehicles,0)} VO`}</b><small>{isBody?`${fmt(r.vehiclesPerDay)} VO/j · historique ${fmt(hist?.averageMonthlyTreated,0)} VO/mois à effectif complet`:r.billingAvgHours==null?"moyenne facturée indisponible":`${fmt(r.baseSold,0)} h ÷ ${fmt(r.billingAvgHours,2)} h/VO · ${fmt(r.vehiclesPerDay)} / jour`}</small></td>
+          <td><b>{fmt(r.baseSold,0)} h vendues</b><small>{isBody?"Box comparable ; Fixline mesurée collectivement":`${fmt(r.baseBought,0)} h achetées · même population`}</small></td>
+          <td><b>{fmt(r.miniAtPost,0)}</b><small>MINI estimées</small></td>
+          <td><b>{r.miniHoursPerVehicle==null?"—":`+${fmt(r.miniHours,0)} h`}</b><small>{r.miniHoursPerVehicle==null?"ratio absent":`${fmt(r.miniHoursPerVehicle,2)} h / MINI`}</small></td>
+          <td><b>{isBody?(hist?.boxCurrentProductivity==null?"—":`Box ${fmt(hist.boxCurrentProductivity)} %`):r.productivity==null?"—":`${fmt(r.productivity)} %`}</b><small>{isBody?`Fixline : collectif · période au ${dateLabel(hist?.productivityPeriodEnd)}`:`${fmt(r.comparablePeople,0)} personne(s) comparable(s)`}</small></td>
+          <td><b className={r.verdict==="critical"?styles.negative:r.verdict==="tension"?styles.warning:styles.positive}>{r.points==null?"—":isBody?`+${fmt(r.points)} % débit`:`+${fmt(r.points)} pts`}</b><small>{isBody?`besoin ${fmt(r.vehiclesPerDay+(r.miniAtPost/days))} VO/j`:r.targetProd==null?"":`cible ≈ ${fmt(r.targetProd)} %`}</small></td>
+          <td><b>{r.extraEtp==null?"—":`+${fmt(r.extraEtp)}`}</b><small>{isBody?"si le débit / ETP reste identique":"au rendement actuel / ETP"}</small></td>
+          <td><span className={`${styles.verdict} ${styles[r.verdict]}`}>{label(r.verdict)}</span></td>
+        </tr>})}
+      </tbody></table></div>
+    </section>
+
+    <section className={`${styles.panel} ${styles.scenarioPanel}`}><div className={styles.panelHead}><div><span>03 · COMMENT LIRE</span><h2>{monthLabel(month)} · scénario DEFLEET</h2><p>Les métiers à l'heure sont pilotés en productivité. La Carrosserie est pilotée en débit réel afin de ne pas fabriquer un ratio Fixline individuel.</p></div><div className={styles.scenarioBadge}><span>VOLUME MINI</span><strong>{fmt(mini,0)}</strong><small>{days} jours ouvrés · en complément</small></div></div>
+      <div className={styles.scenarioGrid}>{rows.map(r=>{const color=activityColor(r.sectorLabel),isBody=normalizedSector(r.sectorKey)==="carrosserie",hist=data?.bodyshopHistory;return <article key={`scenario-${r.sectorKey}`} className={styles.scenarioCard} style={{borderLeftColor:color,boxShadow:`inset 0 3px 0 ${color}22`}}>
+        <div className={styles.scenarioCardHead}><div><strong style={{color}}>{r.sectorLabel}</strong><small>{fmt(r.selectedEtp,0)} ETP · {isBody?`${fmt(r.baseVehicles,0)} VO/mois de capacité historique recalée`:r.billingAvgHours==null?"volume non calculable":`${fmt(r.baseVehicles,0)} VO/mois estimés`} · {fmt(r.miniAtPost,0)} MINI</small></div><span className={`${styles.verdict} ${styles[r.verdict]}`}>{label(r.verdict)}</span></div>
+        <div className={styles.scenarioMetrics}>
+          <div><span>{isBody?"BOX OBSERVÉ":"PRODUCTIVITÉ ACTUELLE"}</span><b>{isBody?(hist?.boxCurrentProductivity==null?"—":`${fmt(hist.boxCurrentProductivity)} %`):r.productivity==null?"—":`${fmt(r.productivity)} %`}</b><small>{isBody?"Fixline : mesure collective, ratio individuel neutralisé":`${fmt(r.baseSold,0)} h vendues / ${fmt(r.baseBought,0)} h achetées`}</small></div>
+          <div><span>{isBody?"DÉBIT NÉCESSAIRE":"PRODUCTIVITÉ NÉCESSAIRE"}</span><b>{isBody?`${fmt(r.vehiclesPerDay+r.miniAtPost/days)} VO/j`:r.targetProd==null?"—":`${fmt(r.targetProd)} %`}</b><small>{r.points==null?"donnée insuffisante":isBody?`+${fmt(r.points)} % de débit vs historique`:`+${fmt(r.points)} points à gagner`}</small></div>
+          <div><span>ETP À AJOUTER</span><b>{r.extraEtp==null?"—":`+${fmt(r.extraEtp)}`}</b><small>{isBody?"alternative si le débit/ETP ne progresse pas":"si la productivité actuelle ne bouge pas"}</small></div>
+          <div><span>ETP CIBLE TOTAL</span><b>{r.extraEtp==null?"—":fmt(r.selectedEtp+r.extraEtp)}</b><small>{fmt(r.selectedEtp,0)} actuels + renfort calculé</small></div>
+          <div><span>CHARGE MINI EN +</span><b style={{color}}>{r.miniHoursPerVehicle==null?"—":`${fmt(r.miniHours,0)} h`}</b><small>{r.miniHoursPerVehicle==null?"ratio non disponible":`${fmt(r.miniHoursPerVehicle,2)} h par MINI au poste`}</small></div>
+        </div>
+        <p className={styles.scenarioAdvice}>{isBody
+          ?`La Carrosserie est pilotée sur ${fmt(r.vehiclesPerDay)} VO/j réellement observés. Pour ce scénario, il faut atteindre ${fmt(r.vehiclesPerDay+r.miniAtPost/days)} VO/j. La productivité Box mesurée est ${hist?.boxCurrentProductivity==null?"indisponible":`${fmt(hist.boxCurrentProductivity)} %`} ; la Fixline reste volontairement en mesure collective.`
+          :r.points==null||r.extraEtp==null?"Le métier ne dispose pas encore d'assez de données comparables pour proposer un levier fiable."
+          :r.points<=5?`Le volume est absorbable si la productivité passe de ${fmt(r.productivity)} % à environ ${fmt(r.targetProd)} %. Alternative : ${fmt(r.extraEtp)} ETP.`
+          :r.points<=10?`Le secteur est en tension : gagner ${fmt(r.points)} points ou ajouter environ ${fmt(r.extraEtp)} ETP.`
+          :`Le secteur est critique : viser environ ${fmt(r.targetProd)} % ou ajouter environ ${fmt(r.extraEtp)} ETP.`}</p>
+      </article>})}</div>
+      <div className={styles.scenarioRule}><strong>Lecture de décision</strong><span>Charge absolue, effort de productivité et débit Carrosserie sont séparés. La matrice Box/Fixline ci-dessous n'est plus présentée comme une mesure du point actuel.</span></div>
+    </section>
+
+    <section className={styles.panel}><div className={styles.panelHead}><div><span>04 · CARROSSERIE</span><h2>Matrice de sensibilité Box × Fixline</h2><p>Correction méthodologique : le 115% Box / 65% Fixline de la trame d'origine n'était pas une mesure Lens. La grille est désormais recalée sur un repère neutre 100/100 = débit historique moyen Lens. Le point réel disponible est affiché séparément : Box mesuré ; Fixline collective.</p></div>{matrix&&<div className={styles.scenarioBadge}><span>BESOIN CIBLE</span><strong>{fmt(matrix.requiredCapacity)} VO/j</strong><small>historique {fmt(matrix.currentCapacity)} VO/j</small></div>}</div>
+      {matrix?<div className={styles.tableWrap} style={{marginTop:18}}><table style={{width:"100%",minWidth:980,borderCollapse:"collapse",fontSize:11}}><thead><tr><th style={{padding:"10px 12px",background:"#5b9bd5",color:"#fff",textAlign:"left"}}>Box \ Fixline</th>{matrix.colLabels.map(c=><th key={c} style={{padding:"10px",background:"#5b9bd5",color:"#fff",textAlign:"center"}}>{c}%</th>)}</tr></thead><tbody>{matrix.rowLabels.map((r,i)=><tr key={r}><th style={{padding:"10px 12px",background:"#5b9bd5",color:"#fff",textAlign:"right"}}>{r}%</th>{matrix.colLabels.map((c,j)=>{const value=matrix.values[i][j],calibration=r===matrix.currentRow&&c===matrix.currentCol,target=r===matrix.targetRow&&c===matrix.targetCol,ok=value>=matrix.requiredCapacity;return <td key={c} style={{padding:"10px",textAlign:"center",fontWeight:900,color:target?"#fff":calibration?"#004f9f":ok?"#176e50":"#004f9f",background:target?"#009edb":calibration?"#ffe08a":ok?"#e8f7f0":"#edf2f6",border:"1px solid #fff"}}>{fmt(value)}</td>})}</tr>)}</tbody></table></div>:<p className={styles.note}>La matrice apparaîtra dès qu'un débit Carrosserie comparable est disponible.</p>}
+      {matrix&&<div style={{display:"grid",gridTemplateColumns:"repeat(5,minmax(0,1fr))",gap:10,marginTop:14}}>
+        <div style={{padding:14,border:"1px solid #d9e6ee",borderRadius:12,background:"#f8fbfd"}}><small>DÉBIT HISTORIQUE</small><strong style={{display:"block",marginTop:5,color:"#004f9f"}}>{fmt(matrix.currentCapacity)} VO/j</strong><span>{fmt(matrix.historicalMonthly,0)} VO/mois · {fmt(matrix.fullMonthCount,0)} mois pleins</span></div>
+        <div style={{padding:14,border:"1px solid #f0d276",borderRadius:12,background:"#fff9e8"}}><small>BOX RÉEL MESURÉ</small><strong style={{display:"block",marginTop:5,color:"#8a6900"}}>{matrix.boxCurrentProductivity==null?"—":`${fmt(matrix.boxCurrentProductivity)} %`}</strong><span>au {dateLabel(matrix.productivityPeriodEnd)} · sous le seuil mini de la grille (80%)</span></div>
+        <div style={{padding:14,border:"1px solid #d9e6ee",borderRadius:12,background:"#f8fbfd"}}><small>FIXLINE RÉELLE</small><strong style={{display:"block",marginTop:5,color:"#004f9f"}}>COLLECTIF</strong><span>pas de % individuel fiable · aucun 65% supposé</span></div>
+        <div style={{padding:14,border:"1px solid #d9e6ee",borderRadius:12,background:"#f8fbfd"}}><small>CALIBRATION GRILLE</small><strong style={{display:"block",marginTop:5,color:"#004f9f"}}>100% / 100%</strong><span>= {fmt(matrix.currentCapacity)} VO/j · repère de modèle, pas performance réelle</span></div>
+        <div style={{padding:14,border:"1px solid #9bd9ee",borderRadius:12,background:"#eefaff"}}><small>CIBLE INDICATIVE MINI</small><strong style={{display:"block",marginTop:5,color:"#009edb"}}>{fmt(matrix.requiredCapacity)} VO/j</strong><span>zone modèle : Box {matrix.targetRow}% / Fixline {matrix.targetCol}%</span></div>
+      </div>}
+      {matrix&&<p className={styles.note}>Encours structurel : {fmt(matrix.backlog,0)} VOP. Il confirme que le débit historique a été observé sous charge ; il n'est pas ajouté au volume MINI. La cellule cyan est une combinaison indicative de sensibilité, pas une mesure de productivité actuelle.</p>}
+    </section>
+
+    <section className={styles.panel}><div className={styles.panelHead}><div><span>05 · STANDARD MINI LENS</span><h2>Charge par dossier</h2></div></div><div className={styles.standardGrid}><div><span>CARROSSERIE + PEINTURE</span><strong>{fmt(data?.miniStandard?.bodyshopHours??7.92,2)} h</strong></div><div><span>MÉCANIQUE</span><strong>{fmt(data?.miniStandard?.mechanicsHours??1.17,2)} h</strong></div><div><span>ÉCHANTILLON</span><strong>{fmt(data?.miniStandard?.sampleVehicles??569,0)}</strong></div></div><p className={styles.note}>Pour les autres métiers, la charge par MINI utilise le temps moyen facturé par véhicule sur la même période que les heures vendues. Pour la Carrosserie, le débit de référence provient de l'historique Box/Fixline fourni.</p></section>
+
+    <footer className={styles.footer}><strong>Export PowerPoint</strong><span>Le PPT reprend la synthèse, la charge par métier et la matrice Carrosserie. Les valeurs réelles et les hypothèses de sensibilité doivent rester distinguées.</span></footer>
+
+    {openSector&&<div className={styles.rosterOverlay} onMouseDown={e=>{if(e.currentTarget===e.target)setOpenSector(null)}}><section className={styles.rosterModal}>
+      <div className={styles.rosterHead}><div><span>EFFECTIF DU SIMULATEUR</span><h2>{openRow?.sectorLabel??openSector}</h2><p><b>{openRow?.selectedEtp??0}</b> personne(s) comptée(s) sur <b>{openRow?.rosterTotal??0}</b>.</p></div><button className={styles.closeRoster} onClick={()=>setOpenSector(null)} aria-label="Fermer">×</button></div>
+      <input className={styles.rosterSearch} value={rosterSearch} onChange={e=>setRosterSearch(e.target.value)} placeholder="Rechercher un nom, matricule, métier ou équipe…"/>
+      <div className={styles.rosterList}>{openRoster.map(member=><label key={member.employeeKey} className={`${styles.rosterPerson} ${member.included?styles.rosterIncluded:styles.rosterExcluded}`}>
+        <input type="checkbox" checked={member.included} disabled={savingKey===member.employeeKey} onChange={()=>void toggleStaff(member)}/>
+        <span className={styles.rosterName}><strong>{member.fullName}</strong><small>{member.workcenterLabel||member.sectorLabel||openRow?.sectorLabel}{member.teamCode?` · équipe ${member.teamCode}`:""}{member.matricule?` · ${member.matricule}`:""}</small><small>{member.comparable?`${fmt(member.soldHours,1)} h vendues / ${fmt(member.boughtHours,1)} h achetées · ${member.productivity==null?"—":`${fmt(member.productivity)} %`}`:(member.workcenterKey==="fixline"||normalizedSector(member.sectorLabel??"").includes("fixline"))?"Fixline : mesure collective · productivité individuelle neutralisée":num(member.soldHours)>0?`${fmt(member.soldHours,1)} h vendues · non comparables`:"Aucune heure comparable sur la période"}</small></span>
+        <span className={styles.rosterState}>{savingKey===member.employeeKey?"Enregistrement…":member.included?"COMPTÉ":"EXCLU"}</span>
+      </label>)}{openRoster.length===0&&<div className={styles.rosterEmpty}>Aucun collaborateur ne correspond à la recherche.</div>}</div>
+      <div className={styles.rosterFoot}><span>Chaque coche recalcule immédiatement la capacité et les besoins du métier. Fixline reste collective.</span><button onClick={()=>setOpenSector(null)}>Terminer</button></div>
+    </section></div>}
+  </main>
 }
