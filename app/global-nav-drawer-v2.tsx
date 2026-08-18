@@ -1,23 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 
 type GroupKey="book"|"animation"|"cockpit"|"client"|"settings";
 type Me={role:"admin"|"user";accessProfile:"admin"|"service_manager"|"team_manager"|"custom";pagePermissions:string[]};
 const CLOSED:Record<GroupKey,boolean>={book:false,animation:false,cockpit:false,client:false,settings:false};
 function rootHref(view:string){return `/?nav=${encodeURIComponent(view)}`;}
 function activeGroup(path:string):GroupKey|null{if(path.startsWith("/performance/productivite")||path.startsWith("/animation-mensuelle")||path.startsWith("/animation-centre/rh"))return"animation";if(path.startsWith("/cockpit-v2")||path.startsWith("/intelligence"))return"cockpit";if(path.startsWith("/dashboard-client")||path.startsWith("/clients"))return"client";if(/^\/(account|data-rh|sources)/.test(path))return"settings";return null;}
-
 async function readMe(){const response=await fetch("/api/auth/me",{cache:"no-store",headers:{"Cache-Control":"no-cache"}});if(!response.ok)throw new Error(String(response.status));const payload=await response.json();return (payload?.user??null) as Me|null;}
 
 export default function GlobalNavDrawerV2(){
-  const[me,setMe]=useState<Me|null>(null);const[drawer,setDrawer]=useState(false);const[open,setOpen]=useState<Record<GroupKey,boolean>>(CLOSED);
-  useEffect(()=>{let dead=false;let timer=0;let attempt=0;const run=async()=>{try{const value=await readMe();if(!dead&&value)setMe(value);}catch{attempt+=1;if(!dead&&attempt<4)timer=window.setTimeout(run,attempt*500);}};void run();return()=>{dead=true;window.clearTimeout(timer);};},[]);
-  useEffect(()=>{const group=activeGroup(window.location.pathname);if(group)setOpen({...CLOSED,[group]:true});},[]);
-  const admin=me?.role==="admin";const allowed=(key:string)=>Boolean(me&&(admin||me.pagePermissions?.includes("*")||me.pagePermissions?.includes(key)));
-  const animationVisible=allowed("data_rh")||allowed("productivity")||allowed("monthly_animation")||admin;const cockpitVisible=allowed("cockpit")||allowed("bodyshop")||allowed("intelligence")||admin;const clientVisible=allowed("client_dashboard");
+  const pathname=usePathname();const[me,setMe]=useState<Me|null>(null);const[drawer,setDrawer]=useState(false);const[open,setOpen]=useState<Record<GroupKey,boolean>>(CLOSED);const standalone=pathname==="/expertise-mobile"||pathname.startsWith("/expertise/client/");
+  useEffect(()=>{if(standalone)return;let dead=false;let timer=0;let attempt=0;const run=async()=>{try{const value=await readMe();if(!dead&&value)setMe(value);}catch{attempt+=1;if(!dead&&attempt<4)timer=window.setTimeout(run,attempt*500);}};void run();return()=>{dead=true;window.clearTimeout(timer);};},[standalone]);
+  useEffect(()=>{const group=activeGroup(pathname);if(group)setOpen({...CLOSED,[group]:true});},[pathname]);
+  const admin=me?.role==="admin";const allowed=(key:string)=>Boolean(me&&(admin||me.pagePermissions?.includes("*")||me.pagePermissions?.includes(key)));const animationVisible=allowed("data_rh")||allowed("productivity")||allowed("monthly_animation")||admin;const cockpitVisible=allowed("cockpit")||allowed("bodyshop")||allowed("intelligence")||admin;const clientVisible=allowed("client_dashboard");
   const profile=useMemo(()=>!me?"":admin?"ADMIN":me.accessProfile==="service_manager"?"CHEF DE SERVICE":me.accessProfile==="team_manager"?"CHEF D'ÉQUIPE":"ACCÈS PERSONNALISÉ",[me,admin]);
-  if(!me)return null;
+  if(standalone||!me)return null;
   const toggle=(key:GroupKey)=>setOpen(current=>({...CLOSED,[key]:!current[key]}));
   const group=(key:GroupKey,label:string,children:ReactNode)=><section className="gn2-group"><button type="button" onClick={()=>toggle(key)}><span>{label}</span><i className={open[key]?"open":""}>›</i></button><div className={`gn2-collapse${open[key]?" open":""}`}><div>{children}</div></div></section>;
   const link=(href:string,label:string,restricted=false)=><a className="gn2-link" href={href} onClick={()=>setDrawer(false)}><span>{label}</span>{restricted&&<small>ADMIN</small>}<i>›</i></a>;
