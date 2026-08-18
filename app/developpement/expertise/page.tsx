@@ -29,7 +29,6 @@ type MechanicsSection={
 type ExpertiseRecord={vehicleKey:string;grade:GradeKey|null;general:GeneralSection;mechanics:MechanicsSection;damages:Damage[];status:"draft"|"completed";updatedAt:string};
 type ExpertiseStore=Record<string,ExpertiseRecord>;
 type FileBucket="exteriorPhotos"|"interiorPhotos"|"maintenanceDocuments"|"otherDocuments";
-
 type ElementFamily="wheel"|"glass"|"mirror"|"bumper"|"roof"|"simple"|"complex"|"interior"|"other";
 
 const STORE_KEY="crvo-expertise-sandbox-v1";
@@ -186,8 +185,10 @@ export default function ExpertiseDevelopmentPage(){
   const shockHt=record?Math.max(0,Number(String(record.mechanics.shockManualHt).replace(",","."))||0):0;
   const mechanicsHt=selectedForfaitTotal(mechanicsForfaitIds)+shockHt;
   const bodyHt=record?record.damages.reduce((sum,d)=>sum+lineHt(d),0):0;
+  const bodyTtc=record?record.damages.reduce((sum,d)=>sum+lineTtc(d),0):0;
+  const mechanicsTtc=mechanicsForfaitIds.reduce((sum,id)=>sum+(forfaitById(id)?.ttc||0),0)+shockHt*1.2;
   const totalHt=mechanicsHt+bodyHt;
-  const totalTtc=totalHt*1.2;
+  const totalTtc=mechanicsTtc+bodyTtc;
   const photoCount=record?record.general.exteriorPhotos.length+record.general.interiorPhotos.length+record.damages.reduce((sum,d)=>sum+d.photos.length,0):0;
   const serviceOptions=record?mechanicForfaits("service",record.mechanics.category):[];
   const tyreOptions=mechanicForfaits("tyre",record?.mechanics.category||"");
@@ -241,7 +242,7 @@ export default function ExpertiseDevelopmentPage(){
 
             <div className={styles.subSection}><div className={styles.subHead}><div><strong>Pneumatiques</strong><span>Marque, dimension, usure mesurée et RUNFLAT</span></div><label className={styles.inlineSelect}><span>Forfait montage / géométrie</span><select value={record.mechanics.tyreForfaitId} onChange={e=>updateMechanics({tyreForfaitId:e.target.value})}><option value="">Aucun</option>{tyreOptions.map(f=><option key={f.id} value={f.id}>{f.label} · {money(f.ht)} HT</option>)}</select></label></div>
               <div className={styles.tyreTable}><div className={styles.tyreHead}><span>Roue</span><span>Marque</span><span>Dimension</span><span>Usure mm</span><span>État</span><span>RUNFLAT</span></div>{record.mechanics.tyres.map(tyre=><div className={styles.tyreRow} key={tyre.position}><b>{tyre.position}</b><input value={tyre.brand} onChange={e=>updateTyre(tyre.position,{brand:e.target.value})} placeholder="Michelin…"/><input value={tyre.dimension} onChange={e=>updateTyre(tyre.position,{dimension:e.target.value})} placeholder="225/45 R18"/><input inputMode="decimal" value={tyre.treadMm} onChange={e=>updateTyre(tyre.position,{treadMm:e.target.value})} placeholder="3,5"/><select value={tyre.status} onChange={e=>updateTyre(tyre.position,{status:e.target.value as Tyre["status"]})}><option value="">—</option><option value="OK">OK</option><option value="SURVEILLER">À surveiller</option><option value="REMPLACER">À remplacer</option></select><label className={styles.check}><input type="checkbox" checked={tyre.runflat} onChange={e=>updateTyre(tyre.position,{runflat:e.target.checked})}/> Oui</label></div>)}</div>
-              <small className={styles.ruleHint}>Cahier des charges fourni : profondeur mini 3,5 mm ; la marque attendue dépend du grade. fileciteturn250file0</small>
+              <small className={styles.ruleHint}>Cahier des charges fourni : profondeur mini 3,5 mm ; la marque attendue dépend du grade.</small>
             </div>
 
             <div className={styles.mechGrid}>
