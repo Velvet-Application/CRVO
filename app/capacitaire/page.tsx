@@ -1,4 +1,4 @@
-import CapacitySimulator from "./capacity-simulator";
+import CapacitySimulator from "./capacity-simulator-defleet";
 
 export const dynamic = "force-dynamic";
 
