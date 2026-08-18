@@ -7,14 +7,13 @@ import "@fontsource/exo/800.css";
 import "@fontsource/exo/800-italic.css";
 import "./globals.css";
 import "./production-fixes.css";
-import GlobalNavDrawer from "./global-nav-drawer";
-import HomeSideMenu from "./home-side-menu";
+import GlobalNavDrawer from "./global-nav-drawer-v2";
+import HomeSideMenu from "./home-side-menu-v2";
 import DataTrustGuard from "./data-trust-guard";
 import AuthNav from "./auth-nav";
 import ActivityColorBinder from "./activity-color-binder";
 import KioskFetchBridge from "./kiosk-fetch-bridge";
 import PwaRegister from "./pwa-register";
-import Expertise3dEnhancer from "./expertise-3d-enhancer";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -38,7 +37,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <PwaRegister />
     <KioskFetchBridge />
     <ActivityColorBinder />
-    <Expertise3dEnhancer />
     <GlobalNavDrawer />
     <HomeSideMenu />
     <DataTrustGuard />
