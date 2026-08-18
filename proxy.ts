@@ -12,16 +12,17 @@ function apiUnauthorized(status=401,message="Authentification requise."){return 
 function has(session:Session,key:string){return session.role==="admin"||session.page_permissions?.includes("*")||session.page_permissions?.includes(key);}
 function firstAllowed(session:Session){if(has(session,"reporting")||has(session,"book"))return "/";if(has(session,"settings"))return "/?nav=objectives";if(has(session,"data_rh"))return "/animation-centre/rh";if(has(session,"productivity"))return "/performance/productivite";if(has(session,"monthly_animation"))return "/animation-mensuelle";if(has(session,"cockpit"))return "/cockpit-v2";if(has(session,"bodyshop"))return "/cockpit-v2/carrosserie";if(has(session,"client_dashboard"))return "/dashboard-client";if(has(session,"intelligence"))return "/intelligence";return "/account";}
 function requiredPermission(path:string):string|null{if(path==="/performance/productivite"||path.startsWith("/api/productivity")||path.startsWith("/api/staff/suggestions"))return "productivity";if(path.startsWith("/animation-mensuelle")||path.startsWith("/api/monthly-animation"))return "monthly_animation";if(path.startsWith("/animation-centre/rh")||path.startsWith("/data-rh")||path.startsWith("/api/data-import")||path.startsWith("/api/staff/directory")||path.startsWith("/api/staff/competencies")||path.startsWith("/api/staff/operational"))return "data_rh";if(path.startsWith("/cockpit-v2/carrosserie")||path.startsWith("/api/bodyshop"))return "bodyshop";if(path.startsWith("/cockpit-v2")||path.startsWith("/api/cockpit-v2")||path.startsWith("/pilotage")||path.startsWith("/api/pilotage")||path.startsWith("/api/operational-live"))return "cockpit";if(path.startsWith("/dashboard-client")||path.startsWith("/clients")||path.startsWith("/api/client-dashboard")||path.startsWith("/api/clients"))return "client_dashboard";if(path.startsWith("/intelligence")||path.startsWith("/api/intelligence"))return "intelligence";if(path.startsWith("/book")||path.startsWith("/api/import-book"))return "book";return null;}
-function adminOnlyPath(path:string){return path.startsWith("/animation-mensuelle/payplan")||path.startsWith("/animation-mensuelle/acces")||path.startsWith("/api/payplan")||path.startsWith("/capacitaire")||path.startsWith("/api/capacity-simulator")||path.startsWith("/api/capacity-simple")||path.startsWith("/developpement")||path.startsWith("/api/development")||path==="/atelier"||path==="/direction"||path.startsWith("/api/kiosk/atelier")||path.startsWith("/api/kiosk/direction");}
+function adminOnlyPath(path:string){return path.startsWith("/animation-mensuelle/payplan")||path.startsWith("/animation-mensuelle/acces")||path.startsWith("/api/payplan")||path.startsWith("/capacitaire")||path.startsWith("/api/capacity-simulator")||path.startsWith("/api/capacity-simple")||path.startsWith("/developpement")||path.startsWith("/api/development")||path==="/expertise-mobile"||path==="/atelier"||path==="/direction"||path.startsWith("/api/kiosk/atelier")||path.startsWith("/api/kiosk/direction");}
 
 export async function proxy(request:NextRequest){
   const path=request.nextUrl.pathname;
-  if(path==="/expertise-mobile"){
+  if(path==="/developpement/expertise-mobile"){
     const url=request.nextUrl.clone();
-    url.pathname="/developpement/expertise-mobile";
+    url.pathname="/expertise-mobile";
     return NextResponse.redirect(url,307);
   }
-  if(isStatic(path)||path==="/api/health")return NextResponse.next();
+  const publicClientPortal=path.startsWith("/expertise/client/")||path.startsWith("/api/expertise/client/");
+  if(isStatic(path)||path==="/api/health"||publicClientPortal)return NextResponse.next();
   const token=request.cookies.get(COOKIE)?.value;const publicLogin=path==="/login"||path==="/api/auth/login";
   if(!token){if(publicLogin)return NextResponse.next();if(path.startsWith("/api/"))return apiUnauthorized();const url=new URL("/login",request.url);if(path!=="/")url.searchParams.set("next",`${path}${request.nextUrl.search}`.slice(0,1000));return NextResponse.redirect(url);}
   try{
