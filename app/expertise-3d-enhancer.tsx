@@ -11,6 +11,10 @@ const PARTS = [
   ["Jante AVG","AVG","wheelFL"],["Jante AVD","AVD","wheelFR"],["Jante ARG","ARG","wheelRL"],["Jante ARD","ARD","wheelRR"],
 ] as const;
 
+type DetailVehicle={
+  client?:string|null;manufacturer?:string|null;model?:string|null;registration?:string|null;folderNumber?:string|null;workOrder?:string|null;vin?:string|null;mileage?:number|null;site?:string|null;location?:string|null;status?:string|null;
+};
+
 function findSvgGroup(svg: SVGSVGElement, expected: string) {
   const groups = Array.from(svg.querySelectorAll("g"));
   return groups.find((group) => group.querySelector("text")?.textContent?.trim().toUpperCase() === expected.toUpperCase()) ?? null;
@@ -80,11 +84,50 @@ function buildViewer(svg: SVGSVGElement) {
   parent.insertBefore(root, svg.nextSibling);
 }
 
+function textValue(value:unknown){return typeof value==="string"&&value.trim()?value.trim():"—";}
+function info(label:string,value:unknown){return `<article class="${styles.identityInfo}"><span>${label}</span><strong>${textValue(value)}</strong></article>`;}
+
+async function enhanceIdentity(){
+  const label=Array.from(document.querySelectorAll("span")).find((node)=>node.textContent?.trim()==="DOSSIER EXPERTISE");
+  const header=label?.parentElement?.parentElement as HTMLElement|null;
+  if(!header)return;
+  const spans=Array.from(header.querySelectorAll("span")).map((node)=>node.textContent?.trim()||"");
+  const vin=spans.find((value)=>value.startsWith("VIN "))?.slice(4).trim();
+  const workOrder=spans.find((value)=>value.startsWith("OR "))?.slice(3).trim();
+  const registration=header.querySelector("h2")?.textContent?.trim()||"";
+  const vehicleId=(vin&&vin!=="—"?vin:workOrder&&workOrder!=="—"?workOrder:registration).trim();
+  if(!vehicleId)return;
+  const existing=header.parentElement?.querySelector<HTMLElement>("[data-crvo-mpf-identity]");
+  if(existing?.dataset.vehicleKey===vehicleId)return;
+  existing?.remove();
+
+  const placeholder=document.createElement("section");
+  placeholder.dataset.crvoMpfIdentity="1";
+  placeholder.dataset.vehicleKey=vehicleId;
+  placeholder.className=styles.identityPreamble;
+  placeholder.innerHTML=`<div class="${styles.identityLoading}">Chargement identité dossier MPF…</div>`;
+  header.parentElement?.insertBefore(placeholder,header);
+
+  try{
+    const response=await fetch(`/api/development/production?vehicle=${encodeURIComponent(vehicleId)}&_=${Date.now()}`,{cache:"no-store"});
+    const payload=await response.json() as {detail?:{vehicle?:DetailVehicle}|null};
+    const vehicle=payload.detail?.vehicle;
+    if(!response.ok||!vehicle)throw new Error(`HTTP ${response.status}`);
+    placeholder.innerHTML=`
+      <div class="${styles.identityTitle}"><div><span>PRÉAMBULE · IDENTITÉ DOSSIER MPF</span><strong>Client & véhicule</strong></div><small>Données issues du miroir MPF / EtatduParc</small></div>
+      <div class="${styles.identityHero}"><article><span>CLIENT / DONNEUR D'ORDRE</span><strong>${textValue(vehicle.client)}</strong></article><article><span>VÉHICULE</span><strong>${textValue(vehicle.manufacturer)} ${textValue(vehicle.model)==="—"?"":textValue(vehicle.model)}</strong><small>${textValue(vehicle.registration)}</small></article></div>
+      <div class="${styles.identityGrid}">${info("Dossier MPF",vehicle.folderNumber)}${info("Ordre de réparation",vehicle.workOrder)}${info("VIN",vehicle.vin)}${info("Kilométrage",vehicle.mileage!=null?`${Math.round(Number(vehicle.mileage)).toLocaleString("fr-FR")} km`:null)}${info("Site",vehicle.site)}${info("Position",vehicle.location)}${info("Statut MPF",vehicle.status)}</div>`;
+  }catch{
+    placeholder.innerHTML=`<div class="${styles.identityLoading}">Identité MPF temporairement indisponible.</div>`;
+  }
+}
+
 export default function Expertise3dEnhancer(){
   useEffect(()=>{
     const scan=()=>{
       if(window.location.pathname!=="/developpement/expertise")return;
       document.querySelectorAll<SVGSVGElement>('svg[aria-label="Vue véhicule interactive"]').forEach(buildViewer);
+      void enhanceIdentity();
     };
     scan();
     const observer=new MutationObserver(scan);
