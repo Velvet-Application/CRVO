@@ -39,8 +39,7 @@ function fmtDate(value?:string|null){if(!value)return "—";const d=new Date(val
 function readComment(v:Vehicle){try{const raw=localStorage.getItem(STORE_KEY);if(!raw)return null;const parsed=JSON.parse(raw) as OverlayStore;return parsed.overlays?.[vehicleKey(v)]?.comments?.[0]??null;}catch{return null;}}
 function isProductionTable(table:HTMLTableElement){const text=table.querySelector("thead")?.textContent||"";return /Dossier/i.test(text)&&/(Statut|FIFO|RUN)/i.test(text);}
 function rowVehicle(row:HTMLTableRowElement,vehicles:Vehicle[]){
-  const first=row.querySelector("td")?.textContent||"";
-  const tokens=first.split(/\s+/).map(normalize).filter(Boolean);
+  const tokens=(row.textContent||"").split(/\s+/).map(normalize).filter(Boolean);
   return vehicles.find(v=>tokens.includes(normalize(v.registration))||tokens.includes(normalize(v.workOrder)))||null;
 }
 
@@ -68,9 +67,10 @@ export default function ProductionAdvancedTools(){
       const vehicle=rowVehicle(row,vehicles);if(!vehicle){setHover(null);return;}
       setHover({vehicle,x:event.clientX,y:event.clientY,comment:readComment(vehicle)});
     };
+    const leave=()=>setHover(null);
     document.addEventListener("mousemove",move);
-    document.addEventListener("mouseleave",()=>setHover(null));
-    return()=>document.removeEventListener("mousemove",move);
+    document.addEventListener("mouseleave",leave);
+    return()=>{document.removeEventListener("mousemove",move);document.removeEventListener("mouseleave",leave);};
   },[pathname,vehicles]);
 
   if(pathname!=="/developpement/production"||!hover)return null;
