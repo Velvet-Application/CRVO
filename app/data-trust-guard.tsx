@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type State="checking"|"green"|"amber"|"red";
 type Warning={code?:string;severity?:string;message?:string;count?:number;ageMinutes?:number};
 type HealthPayload={ok?:boolean;dataTrustOk?:boolean;trustLevel?:"green"|"amber"|"red";dataReady?:boolean;warnings?:Warning[];production?:{snapshotDate?:string;sourceAgeMinutes?:number;sourceName?:string};ftp?:{syncAgeMinutes?:number;lastSuccessAt?:string}};
 
+function minuteLabel(value:unknown){
+  const age=Number(value);
+  return Number.isFinite(age)?`${Math.max(0,Math.round(age)).toLocaleString("fr-FR")} min`:"durée inconnue";
+}
+
 export default function DataTrustGuard(){
   const [state,setState]=useState<State>("checking");
   const [health,setHealth]=useState<HealthPayload|null>(null);
+
   useEffect(()=>{
     const requested=new URLSearchParams(window.location.search).get("nav");
     if(requested==="objectives"||requested==="sources"){setState("green");return;}
@@ -21,13 +27,66 @@ export default function DataTrustGuard(){
         setHealth(payload);
         if(!response.ok||payload.dataReady!==true||payload.trustLevel==="red"||payload.dataTrustOk===false){setState("red");return;}
         setState(payload.trustLevel==="amber"?"amber":"green");
-      }catch{if(!cancelled){setHealth(null);setState("red");}}
+      }catch{
+        if(!cancelled){setHealth(null);setState("red");}
+      }
     }
-    void check();const timer=window.setInterval(()=>void check(),60000);return()=>{cancelled=true;window.clearInterval(timer);};
+    void check();
+    const timer=window.setInterval(()=>void check(),60000);
+    return()=>{cancelled=true;window.clearInterval(timer);};
   },[]);
-  useEffect(()=>{document.body.classList.toggle("crvo-data-unavailable",state==="red");return()=>document.body.classList.remove("crvo-data-unavailable");},[state]);
+
+  const signalWarnings=useMemo(()=>{
+    const all=(health?.warnings??[]).filter(w=>w?.message);
+    const important=all.filter(w=>w.severity==="critical"||w.severity==="warning");
+    return (important.length?important:all).slice(0,4);
+  },[health]);
+
   if(state==="checking"||state==="green")return null;
-  const warnings=(health?.warnings??[]).filter(w=>w?.message).slice(0,state==="red"?4:2);
-  if(state==="amber")return <div className="crvo-trust-watch" role="status"><strong>CONFIANCE DONNÉES · À SURVEILLER</strong><span>{warnings.map(w=>w.message).join(" · ")||"Une source nécessite une surveillance, les données restent exploitables."}</span><small>FTP vérifié il y a {Number(health?.ftp?.syncAgeMinutes??0).toLocaleString("fr-FR",{maximumFractionDigits:0})} min · source métier {Number(health?.production?.sourceAgeMinutes??0).toLocaleString("fr-FR",{maximumFractionDigits:0})} min</small><style>{`.crvo-trust-watch{position:fixed;z-index:145;left:50%;top:8px;transform:translateX(-50%);width:min(720px,calc(100vw - 130px));display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px 12px;border:1px solid #efd995;border-radius:10px;background:rgba(255,249,234,.97);box-shadow:0 8px 24px rgba(72,57,12,.10);font-family:Exo,Arial,sans-serif;color:#725918}.crvo-trust-watch strong{font-size:8px;letter-spacing:.09em;white-space:nowrap}.crvo-trust-watch span{font-size:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.crvo-trust-watch small{font-size:7px;color:#8b7433;white-space:nowrap}@media(max-width:760px){.crvo-trust-watch{top:54px;width:calc(100vw - 24px);grid-template-columns:1fr}.crvo-trust-watch span{white-space:normal}.crvo-trust-watch small{display:none}}@media print{.crvo-trust-watch{display:none!important}}`}</style></div>;
-  return <div className="crvo-trust-alert" role="alert"><span>DONNÉES NON CERTIFIÉES</span><strong>Le pilotage opérationnel est volontairement neutralisé.</strong><p>{warnings.map(w=>w.message).join(" · ")||"La fraîcheur ou l'intégrité d'une source critique ne permet pas de présenter ces chiffres comme la situation réelle du centre."}</p><small>Le KPI CRVO fonctionne en mode fail-closed : aucune ancienne donnée n'est présentée silencieusement comme une donnée actuelle.</small><button type="button" onClick={()=>location.reload()}>RECONTRÔLER LES SOURCES</button><style>{`.crvo-data-unavailable .main-workspace{filter:grayscale(.7);opacity:.20;pointer-events:none;user-select:none}.crvo-data-unavailable .sidebar-bottom{opacity:.35}.crvo-trust-alert{position:fixed;z-index:180;left:calc(250px + 50%);top:150px;transform:translateX(-50%);width:min(650px,calc(100vw - 300px));padding:25px 28px;border:1px solid #efc8c5;border-left:5px solid #eb5b56;border-radius:14px;background:#fff;box-shadow:0 24px 60px rgba(26,58,79,.22);font-family:Exo,Arial,sans-serif;color:#17364d}.crvo-trust-alert span{display:block;color:#c53b39;font-size:9px;font-weight:800;letter-spacing:.13em}.crvo-trust-alert strong{display:block;margin-top:6px;color:#004f9f;font-size:22px;font-weight:800;font-style:italic}.crvo-trust-alert p{margin:10px 0 8px;color:#667f8f;font-size:11px;line-height:1.55}.crvo-trust-alert small{display:block;margin-bottom:16px;color:#8b5a59;font-size:8px;line-height:1.5}.crvo-trust-alert button{min-height:38px;padding:0 14px;border:0;border-radius:8px;background:#004f9f;color:#fff;font:800 9px Exo,Arial,sans-serif;letter-spacing:.08em}@media(max-width:760px){.crvo-data-unavailable .main-workspace{filter:grayscale(.7);opacity:.20}.crvo-trust-alert{left:50%;top:90px;width:calc(100vw - 28px)}}@media print{.crvo-trust-alert{display:none!important}}`}</style></div>;
+
+  const isRed=state==="red";
+  const ftpAge=minuteLabel(health?.ftp?.syncAgeMinutes);
+  const sourceAge=minuteLabel(health?.production?.sourceAgeMinutes);
+  const message=signalWarnings.map(w=>w.message).join("  •  ") || "Une source critique nécessite un contrôle avant lecture comme donnée temps réel.";
+  const tickerText=`${message}  •  Dernière synchronisation FTP : ${ftpAge}  •  Âge de la source métier : ${sourceAge}`;
+
+  return <aside className={`crvo-trust-ticker ${isRed?"is-red":"is-amber"}`} role={isRed?"alert":"status"} aria-live={isRed?"assertive":"polite"}>
+    <div className="crvo-trust-ticker__shell" title={tickerText}>
+      <strong>{isRed?"DONNÉES À RECONTRÔLER":"SOURCE À SURVEILLER"}</strong>
+      <div className="crvo-trust-ticker__viewport">
+        <div className="crvo-trust-ticker__track">
+          <span>{tickerText}</span><i aria-hidden="true">◆</i>
+          <span aria-hidden="true">{tickerText}</span><i aria-hidden="true">◆</i>
+        </div>
+      </div>
+      <small>CONTRÔLE AUTO · 60 S</small>
+    </div>
+    <style>{`
+      .crvo-trust-ticker{position:fixed;z-index:190;left:0;right:0;bottom:0;padding:0;font-family:Exo,Arial,sans-serif;pointer-events:none}
+      .crvo-trust-ticker__shell{pointer-events:auto;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;min-height:36px;padding:7px 18px;border-top:1px solid rgba(0,79,159,.22);background:rgba(247,251,254,.98);box-shadow:0 -8px 30px rgba(22,57,83,.12);backdrop-filter:blur(12px);color:#17364d}
+      .crvo-trust-ticker.is-amber .crvo-trust-ticker__shell{border-top-color:#e6c261;background:rgba(255,249,231,.98)}
+      .crvo-trust-ticker.is-red .crvo-trust-ticker__shell{border-top:2px solid #eb5b56;background:rgba(255,245,244,.99)}
+      .crvo-trust-ticker strong{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;font-size:10px;letter-spacing:.09em;font-weight:800;color:#6c5918}
+      .crvo-trust-ticker strong:before{content:"";width:8px;height:8px;border-radius:50%;background:#e4b93e;box-shadow:0 0 0 5px rgba(228,185,62,.13)}
+      .crvo-trust-ticker.is-red strong{color:#b43c3a}.crvo-trust-ticker.is-red strong:before{background:#eb5b56;box-shadow:0 0 0 5px rgba(235,91,86,.13)}
+      .crvo-trust-ticker__viewport{min-width:0;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent)}
+      .crvo-trust-ticker__track{display:flex;align-items:center;width:max-content;white-space:nowrap;will-change:transform;animation:crvoTrustMarquee 28s linear infinite;font-size:11px;font-weight:600;color:#496b82}
+      .crvo-trust-ticker.is-red .crvo-trust-ticker__track{color:#7e5452}
+      .crvo-trust-ticker__track span{padding-right:26px}.crvo-trust-ticker__track i{padding-right:26px;font-style:normal;font-size:7px;color:#009edb}
+      .crvo-trust-ticker small{white-space:nowrap;font-size:8px;font-weight:700;letter-spacing:.08em;color:#7890a0}
+      .crvo-trust-ticker__shell:hover .crvo-trust-ticker__track{animation-play-state:paused}
+      @keyframes crvoTrustMarquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+      @media(max-width:760px){
+        .crvo-trust-ticker{top:max(8px,env(safe-area-inset-top));bottom:auto;left:8px;right:8px}
+        .crvo-trust-ticker__shell{grid-template-columns:auto minmax(0,1fr);gap:10px;min-height:38px;padding:8px 11px;border:1px solid rgba(0,79,159,.18);border-radius:11px;box-shadow:0 8px 26px rgba(22,57,83,.16)}
+        .crvo-trust-ticker.is-amber .crvo-trust-ticker__shell{border-color:#e6c261}
+        .crvo-trust-ticker.is-red .crvo-trust-ticker__shell{border:1.5px solid #eb5b56}
+        .crvo-trust-ticker strong{font-size:8px;letter-spacing:.07em}.crvo-trust-ticker strong:before{width:7px;height:7px;box-shadow:0 0 0 4px rgba(228,185,62,.13)}
+        .crvo-trust-ticker.is-red strong:before{box-shadow:0 0 0 4px rgba(235,91,86,.13)}
+        .crvo-trust-ticker__track{font-size:9px;animation-duration:24s}.crvo-trust-ticker small{display:none}
+      }
+      @media(prefers-reduced-motion:reduce){.crvo-trust-ticker__viewport{overflow:auto;mask-image:none}.crvo-trust-ticker__track{width:auto;animation:none;white-space:normal}.crvo-trust-ticker__track span[aria-hidden="true"],.crvo-trust-ticker__track i{display:none}}
+      @media print{.crvo-trust-ticker{display:none!important}}
+    `}</style>
+  </aside>;
 }
