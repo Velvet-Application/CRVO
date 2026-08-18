@@ -27,29 +27,49 @@ function numeric(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function timestamp(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const direct = new Date(raw);
+  if (!Number.isNaN(direct.getTime())) return direct.toISOString();
+  const french = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!french) return null;
+  const year = french[3].length === 2 ? Number(`20${french[3]}`) : Number(french[3]);
+  const date = new Date(Date.UTC(year, Number(french[2]) - 1, Number(french[1]), Number(french[4] || 0), Number(french[5] || 0), Number(french[6] || 0)));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 export function parseEtatduParcVehicleState(buffer, { snapshotAt, sourceModifiedAt }) {
   return objects(buffer).map((row) => ({
     snapshot_at: snapshotAt,
     source_modified_at: sourceModifiedAt ? new Date(sourceModifiedAt).toISOString() : null,
-    registration: value(row, "Immatriculation") || null,
+    registration: value(row, "Immatriculation", "Immat.") || null,
     work_order: value(row, "OR") || null,
     client: value(row, "Client") || null,
-    vin: value(row, "VIN") || null,
+    vin: value(row, "VIN", "Vin") || null,
     model: value(row, "Modèle", "Modele") || null,
     mileage: numeric(value(row, "KM")),
-    status: value(row, "Dernier statut") || null,
+    status: value(row, "Dernier statut", "Etat actuel") || null,
+    status_at: timestamp(value(row, "Dernier statut (Date)")),
     status_age_days: numeric(value(row, "Dernier statut (Durée Jours Ouv")),
-    factory_age_days: numeric(value(row, "Depuis reception (Durée Jours O")),
+    factory_age_days: numeric(value(row, "Depuis reception (Durée Jours O", "LeadTime Usine (Jours")),
     alert: value(row, "Alerte") || null,
     urgency: value(row, "Urgence") || null,
-    mechanics: value(row, "Mécanique", "Mecanique") || null,
+    mechanics: value(row, "Mécanique", "Mecanique", "Mecanique - 3 Heures") || null,
     bodywork: value(row, "Carrosserie") || null,
     technical_control: value(row, "CT") || null,
     dsp: value(row, "DSP") || null,
     wheels: value(row, "Jantes") || null,
     part_available: value(row, "Pièce disponible", "Piece disponible") || null,
-    part_ordered_days: numeric(value(row, "Pièce commandée (Durée Jours Ou", "Piece commandee (Duree Jours Ou")),
-    metadata: { type: value(row, "Type") || null },
+    part_ordered_days: numeric(value(row, "Pièce commandée (Durée Jours Ou", "Piece commandee (Duree Jours Ou", "LeadTime Pièces (Jours")),
+    metadata: {
+      type: value(row, "Type", "Flux") || null,
+      position: value(row, "Position") || null,
+      site: value(row, "Site", "Nom SITE", "Libelle Site") || null,
+      manufacturer: value(row, "Constructeur", "Marque") || null,
+      folder_number: value(row, "Numéro de dossier", "Numero de dossier") || null,
+      source_schema: value(row, "Position") ? "park_with_position" : "park_live",
+    },
   })).filter((row) => row.registration || row.work_order || row.vin);
 }
 
@@ -68,6 +88,6 @@ export function computeSectorBacklog(rows) {
     { sector_key: "mecanique", sector_label: "Mécanique", vehicle_count: count((row) => park(row) && present(row.mechanics)) },
     { sector_key: "carrosserie", sector_label: "Carrosserie", vehicle_count: count((row) => park(row) && present(row.bodywork)) },
     { sector_key: "parc_travaux", sector_label: "Parc travaux", vehicle_count: count((row) => park(row) && normalize(row.part_available) === "piece disponible") },
-    { sector_key: "preparation", sector_label: "Préparation", vehicle_count: count((row) => status(row) === "stocke sur parc d attente preparation") },
+    { sector_key: "preparation", sector_label: "Préparation", vehicle_count: count((row) => /preparation/.test(status(row))) },
   ];
 }
