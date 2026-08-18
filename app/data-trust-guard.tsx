@@ -68,7 +68,7 @@ export default function DataTrustGuard(){
     ?(ftpAgeValue!=null&&ftpAgeValue>180?"DONNÉES NON CERTIFIÉES":"DONNÉES À RECONTRÔLER")
     :state==="alert"?"ALERTE FRAÎCHEUR":"VIGILANCE DONNÉES";
 
-  return <aside className={`crvo-trust-ticker is-${state}`} role={isRed?"alert":"status"} aria-live={isRed?"assertive":"polite"}>
+  return <aside className={`crvo-trust-ticker is-${state}`} data-contract="CONFIANCE DONNÉES · À SURVEILLER" role={isRed?"alert":"status"} aria-live={isRed?"assertive":"polite"}>
     <div className="crvo-trust-ticker__shell" title={tickerText}>
       <strong>{label}</strong>
       <div className="crvo-trust-ticker__viewport">
