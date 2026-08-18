@@ -1,0 +1,33 @@
+.stockPanelWeighted{--weighted-aging:1}
+.weightedAging{display:flex!important;gap:0!important;min-height:96px;margin:12px 0 0;overflow:hidden;border-radius:12px;background:#e8f0f4;box-shadow:inset 0 0 0 1px rgba(0,79,159,.08)}
+.weightedAging>div{box-sizing:border-box;flex:0 0 auto;min-width:0;min-height:96px;padding:12px 14px!important;border-radius:0!important;display:block!important;position:relative;color:#fff;overflow:hidden}
+.weightedAging>div+div{box-shadow:-2px 0 0 rgba(255,255,255,.9)}
+.weightedAging span{display:block!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.weightedAging strong{display:inline-block!important;margin-top:8px;margin-right:6px;line-height:1;vertical-align:baseline}
+.weightedAging small{display:inline-block!important;white-space:nowrap;vertical-align:baseline}
+.compactSegment{padding-left:8px!important;padding-right:8px!important}
+.compactSegment span{font-size:8px!important;letter-spacing:-.02em}
+.compactSegment strong{font-size:21px!important;margin-right:3px!important}
+.compactSegment small{font-size:7px!important}
+
+@media (min-width:1400px) and (min-height:800px){
+  .stockPanelWeighted{grid-template-rows:auto minmax(0,1fr) auto!important}
+  .weightedAging{height:100%;min-height:0!important;margin:clamp(8px,.55vh,16px) 0 0!important;align-self:stretch;border-radius:clamp(10px,.5vw,18px)!important}
+  .weightedAging>div{height:100%;min-height:0!important;padding:clamp(10px,.65vw,24px)!important;display:flex!important;flex-direction:column;justify-content:center;align-items:flex-start!important;gap:0!important}
+  .weightedAging span{font-size:clamp(9px,.44vw,17px)!important}
+  .weightedAging strong{font-size:clamp(25px,1.35vw,51px)!important;margin:clamp(7px,.45vh,14px) 0 0!important}
+  .weightedAging small{display:block!important;font-size:clamp(8px,.4vw,15px)!important;margin-top:clamp(2px,.15vh,5px)}
+  .compactSegment{padding-left:clamp(8px,.42vw,15px)!important;padding-right:clamp(8px,.42vw,15px)!important}
+  .compactSegment span{font-size:clamp(7px,.34vw,13px)!important}
+  .compactSegment strong{font-size:clamp(22px,1.05vw,40px)!important}
+  .compactSegment small{font-size:clamp(7px,.32vw,12px)!important}
+}
+
+@media (max-width:700px){
+  .weightedAging{display:grid!important;grid-template-columns:1fr!important;gap:6px!important;min-height:0;margin-top:10px;background:transparent;box-shadow:none;overflow:visible;border-radius:0}
+  .weightedAging>div{width:100%;min-height:68px;padding:10px 12px!important;border-radius:10px!important;display:grid!important;grid-template-columns:1fr auto;grid-template-rows:auto auto;align-items:center}
+  .weightedAging>div+div{box-shadow:none}
+  .weightedAging span{grid-column:1;grid-row:1;font-size:9px!important}
+  .weightedAging strong{grid-column:2;grid-row:1/3;margin:0!important;font-size:25px!important}
+  .weightedAging small{grid-column:1;grid-row:2;font-size:8px!important}
+}
