@@ -26,6 +26,11 @@ type VehicleRow = {
   wheels: string | null;
   part_available: string | null;
   part_ordered_days: number | string | null;
+  location?: string | null;
+  location_source_modified_at?: string | null;
+  site?: string | null;
+  manufacturer?: string | null;
+  folder_number?: string | null;
   metadata: Record<string, unknown> | null;
 };
 
@@ -36,12 +41,27 @@ type EventRow = {
   event_time: string | null;
 };
 
+type FifoRow = {
+  sector_key: string;
+  sector_label: string;
+  registration: string | null;
+  work_order: string | null;
+  status: string | null;
+  alert: string | null;
+  urgency: string | null;
+  status_age_days: number | string | null;
+  factory_age_days: number | string | null;
+  fifo_age_days: number | string | null;
+};
+
 type SnapshotRpc = {
   connected: boolean;
   snapshotAt: string | null;
   sourceModifiedAt: string | null;
+  locationSourceModifiedAt?: string | null;
   excludedBcaVom: number;
   vehicles: VehicleRow[];
+  fifo?: FifoRow[];
   detail?: { vehicle: VehicleRow; events: EventRow[] } | null;
 };
 
@@ -92,6 +112,11 @@ function normalizeVehicle(row: VehicleRow) {
     wheels: row.wheels,
     partAvailable: row.part_available,
     partOrderedDays: num(row.part_ordered_days),
+    location: row.location ?? null,
+    locationSourceModifiedAt: row.location_source_modified_at ?? null,
+    site: row.site ?? null,
+    manufacturer: row.manufacturer ?? null,
+    folderNumber: row.folder_number ?? null,
     sourceType,
     processProfile: processProfile(row),
     inFactory,
@@ -124,11 +149,24 @@ export async function GET(request: Request) {
     const detail = snapshot.detail
       ? { vehicle: normalizeVehicle(snapshot.detail.vehicle), events: snapshot.detail.events ?? [] }
       : null;
+    const fifo = (snapshot.fifo ?? []).map((row) => ({
+      sectorKey: row.sector_key,
+      sectorLabel: row.sector_label,
+      registration: row.registration,
+      workOrder: row.work_order,
+      status: row.status,
+      alert: row.alert,
+      urgency: row.urgency,
+      statusAgeDays: num(row.status_age_days),
+      factoryAgeDays: num(row.factory_age_days),
+      fifoAgeDays: num(row.fifo_age_days),
+    }));
 
     return NextResponse.json({
       connected: true,
       mode: "development-sandbox-read-only",
       sourceModifiedAt: snapshot.sourceModifiedAt,
+      locationSourceModifiedAt: snapshot.locationSourceModifiedAt ?? null,
       snapshotAt: snapshot.snapshotAt,
       excludedBcaVom: Number(snapshot.excludedBcaVom ?? 0),
       stats: {
@@ -140,6 +178,7 @@ export async function GET(request: Request) {
         stale: stale.length,
       },
       vehicles,
+      fifo,
       detail,
     }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
   } catch (error) {
