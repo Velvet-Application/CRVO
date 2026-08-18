@@ -48,7 +48,34 @@ type BodyshopHistory = {
   averageMonthlyTreated?: number;
   averageDailyTreated?: number;
   averageBacklog?: number;
+  boxCurrentProductivity?: number | null;
+  fixlineCurrentProductivity?: number | null;
+  fixlineComparable?: boolean;
+  productivityPeriodEnd?: string | null;
+  productivityNote?: string | null;
   months?: BodyshopHistoryMonth[];
+};
+
+type HistoricalProductivitySector = {
+  sectorKey: string;
+  boughtHours: number;
+  soldHours: number;
+  productivity: number | null;
+  monthCount: number;
+  fixlineExcluded: boolean;
+};
+
+type HistoricalProductivity = {
+  connected?: boolean;
+  source?: string;
+  sourceSheet?: string;
+  method?: string;
+  period?: {
+    start?: string;
+    end?: string;
+    months?: number;
+  };
+  sectors?: HistoricalProductivitySector[];
 };
 
 type CapacityPayload = {
@@ -61,6 +88,7 @@ type CapacityPayload = {
   roster?: StaffMember[];
   billingRatios?: BillingRatio[];
   bodyshopHistory?: BodyshopHistory;
+  historicalProductivity?: HistoricalProductivity;
 };
 
 function isTimeout(error: unknown) {
@@ -84,6 +112,10 @@ async function readBodyshopHistory(tokenHash: string) {
   return authRpc<BodyshopHistory>("kpi_capacity_bodyshop_reference", { p_session_hash: tokenHash });
 }
 
+async function readHistoricalProductivity(tokenHash: string) {
+  return authRpc<HistoricalProductivity>("kpi_capacity_historical_productivity", { p_session_hash: tokenHash });
+}
+
 export async function GET() {
   const current = await currentSession();
   if (!current || current.session.role !== "admin") {
@@ -104,14 +136,16 @@ export async function GET() {
       return NextResponse.json(payload, { status: 503, headers: { "Cache-Control": "no-store" } });
     }
 
-    const [roster, billing, bodyshopHistory] = await Promise.all([
+    const [roster, billing, bodyshopHistory, historicalProductivity] = await Promise.all([
       readRoster(current.tokenHash),
       readBillingRatios(current.tokenHash),
       readBodyshopHistory(current.tokenHash),
+      readHistoricalProductivity(current.tokenHash),
     ]);
     payload.roster = roster;
     payload.billingRatios = billing.ratios ?? [];
     payload.bodyshopHistory = bodyshopHistory;
+    payload.historicalProductivity = historicalProductivity;
 
     return NextResponse.json(payload, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
   } catch (error) {
