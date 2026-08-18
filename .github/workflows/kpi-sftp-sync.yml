@@ -75,3 +75,5 @@ jobs:
           console.error('industrial freshness contract failed',last);
           process.exit(1);
           NODE
+
+# Manual refresh marker: 2026-08-18T11:24+02:00
