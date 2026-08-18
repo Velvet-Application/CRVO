@@ -57,21 +57,11 @@ export async function GET(request: Request) {
     if (Object.keys(remoteTargets).length === 0) {
       const legacy = legacyCookie(request, key);
       const recoveredTargets = cleanDailyTargets(legacy?.sortieDailyTargets, key);
-      const objectives = Array.isArray(payload.objectives) ? payload.objectives as unknown[] : [];
       if (Object.keys(recoveredTargets).length > 0) {
-        if (canManage(session) && objectives.length > 0) {
-          try {
-            await authRpc<RpcRow[]>("kpi_objectives_save", {
-              p_token_hash: session.tokenHash,
-              p_month: month,
-              p_objectives: objectives,
-              p_daily_targets: recoveredTargets,
-            });
-          } catch (recoveryError) {
-            console.error("crvo_objectives_legacy_recovery_persist_failed", recoveryError);
-          }
-        }
-        return NextResponse.json({ ...payload, sortieDailyTargets: recoveredTargets, legacyDailyTargetsRecovered: true }, { headers: { "Cache-Control": "no-store" } });
+        // Lecture uniquement : une requête GET ne doit jamais modifier le référentiel industriel.
+        // Les anciennes valeurs navigateur peuvent être affichées comme secours, puis doivent être
+        // confirmées explicitement via PUT par un utilisateur autorisé avant toute persistance Supabase.
+        return NextResponse.json({ ...payload, sortieDailyTargets: recoveredTargets, legacyDailyTargetsRecovered: true, legacyDailyTargetsPersisted: false }, { headers: { "Cache-Control": "no-store" } });
       }
     }
 
