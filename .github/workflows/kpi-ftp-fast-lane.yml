@@ -1,0 +1,54 @@
+name: KPI CRVO - fast lane FTP Factory
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "bridge/src/factory-live-sync.mjs"
+      - "bridge/src/ftp-factory-production.mjs"
+      - "bridge/package.json"
+      - "bridge/package-lock.json"
+      - ".github/workflows/kpi-ftp-fast-lane.yml"
+  schedule:
+    # Fast lane indépendante, intercalée 2 minutes après la synchronisation complète.
+    # Objectif : capter un nouveau Factory dans les minutes suivant son dépôt,
+    # tout en évitant les déclenchements au début de l'heure où GitHub peut être plus chargé.
+    - cron: "3,8,13,18,23,28,33,38,43,48,53,58 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kpi-crvo-ftp-live
+  cancel-in-progress: false
+
+jobs:
+  factory-fast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    defaults:
+      run:
+        working-directory: bridge
+    env:
+      FTP_HOST: ${{ secrets.FTP_HOST || secrets.SFTP_HOST }}
+      FTP_PORT: ${{ secrets.FTP_PORT || secrets.SFTP_PORT }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME || secrets.SFTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD || secrets.SFTP_PASSWORD }}
+      FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR || secrets.SFTP_REMOTE_DIR }}
+      FTP_SECURE: ${{ vars.FTP_SECURE || 'false' }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      KPI_SOURCE_ID: dfbb57cc-8771-4e53-b52b-38defa389b64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: bridge/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Validate Factory bridge
+        run: node --check src/factory-live-sync.mjs && node --check src/ftp-factory-production.mjs
+      - name: Refresh Factory hot path
+        run: node src/factory-live-sync.mjs
