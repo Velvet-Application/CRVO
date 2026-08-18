@@ -131,10 +131,21 @@ export async function GET(request: Request) {
   const requestedVehicle = new URL(request.url).searchParams.get("vehicle")?.trim() || null;
 
   try {
-    const snapshot = await authRpc<SnapshotRpc>("kpi_production_dev_snapshot", {
+    // The former all-in-one RPC occasionally hit the PostgREST statement timeout while
+    // serialising vehicles + locations + FIFO in one response. Keep the vehicle mirror
+    // lightweight and fetch FIFO independently so the SAS remains available even if FIFO
+    // is temporarily slower. Detail requests do not need the full FIFO at all.
+    const snapshotPromise = authRpc<SnapshotRpc>("kpi_production_dev_snapshot_light", {
       p_token_hash: current.tokenHash,
       p_vehicle: requestedVehicle,
     });
+    const fifoPromise = requestedVehicle
+      ? Promise.resolve([] as FifoRow[])
+      : authRpc<FifoRow[]>("kpi_production_dev_fifo", {
+          p_token_hash: current.tokenHash,
+        }).catch(() => [] as FifoRow[]);
+
+    const [snapshot, fifoRows] = await Promise.all([snapshotPromise, fifoPromise]);
 
     if (!snapshot?.connected) {
       return NextResponse.json({ connected: false, error: "Aucun reflet FTP véhicule disponible." }, { status: 503, headers: { "Cache-Control": "no-store" } });
@@ -143,13 +154,13 @@ export async function GET(request: Request) {
     const vehicles = (snapshot.vehicles ?? []).map(normalizeVehicle);
     const inFactory = vehicles.filter((vehicle) => vehicle.inFactory);
     const inbound = vehicles.filter((vehicle) => !vehicle.inFactory && vehicle.status.toLowerCase().includes("transport aller"));
-    const partBlocked = inFactory.filter((vehicle) => /COMMANDEE|A COMMANDER|INDISPONIBLE|PAS D'ENGAGEMENT/i.test(vehicle.partAvailable ?? ""));
+    const partBlocked = inFactory.filter((vehicle) => /COMMANDEE|A COMMANDER|INDISPONIBLE|PAS D'ENGAGEMENT|DOIT S'ENGAGER|BACK ORDER/i.test(vehicle.partAvailable ?? ""));
     const urgent = inFactory.filter((vehicle) => /oui|urgence/i.test(`${vehicle.urgency ?? ""} ${vehicle.alert ?? ""}`));
     const stale = inFactory.filter((vehicle) => vehicle.statusAgeDays >= 2);
     const detail = snapshot.detail
       ? { vehicle: normalizeVehicle(snapshot.detail.vehicle), events: snapshot.detail.events ?? [] }
       : null;
-    const fifo = (snapshot.fifo ?? []).map((row) => ({
+    const fifo = fifoRows.map((row) => ({
       sectorKey: row.sector_key,
       sectorLabel: row.sector_label,
       registration: row.registration,
