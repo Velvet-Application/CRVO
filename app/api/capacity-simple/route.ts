@@ -140,7 +140,11 @@ export async function GET() {
       readRoster(current.tokenHash),
       readBillingRatios(current.tokenHash),
       readBodyshopHistory(current.tokenHash),
-      readHistoricalProductivity(current.tokenHash),
+      readHistoricalProductivity(current.tokenHash).catch(() => ({
+        connected: false,
+        method: "Référence historique indisponible : repli explicite sur la période opérationnelle courante.",
+        sectors: [],
+      } satisfies HistoricalProductivity)),
     ]);
     payload.roster = roster;
     payload.billingRatios = billing.ratios ?? [];
