@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import styles from "./direction.module.css";
 import tv from "./direction-tv.module.css";
+import agingUi from "./direction-aging.module.css";
 
 type Production = { name:string; value:number; tone:string };
 type Snapshot = {
@@ -339,10 +340,16 @@ export default function DirectionPage() {
       </div>)}</div>
     </section>
 
-    <section className={`${styles.stockPanel} ${tv.stockPanel}`}>
+    <section className={`${styles.stockPanel} ${tv.stockPanel} ${agingUi.stockPanelWeighted}`}>
       <div className={`${styles.stockLead} ${tv.stockLead}`}><span>VIEILLISSEMENT DU PARC · ÉTAT À {parkTime}</span><div><h2>{stock}</h2><p>véhicules en stock usine</p></div></div>
-      <div className={`${styles.agingBar} ${tv.agingBar}`}>{aging.map(item => <i key={item.label} className={item.cls} style={{width:`${stock ? item.value/stock*100 : 0}%`}} title={`${item.label}: ${item.value}`}/>)}</div>
-      <div className={`${styles.agingCards} ${tv.agingCards}`}>{aging.map(item => <div key={item.label} className={item.cls}><span>{item.label}</span><strong>{item.value}</strong><small>{stock ? Math.round(item.value/stock*100) : 0}% du parc</small></div>)}</div>
+      <div className={`${styles.agingCards} ${tv.agingCards} ${agingUi.weightedAging}`} role="img" aria-label={`Répartition du parc par ancienneté sur ${stock} véhicules`}>
+        {aging.map(item => {
+          const share = stock ? item.value/stock*100 : 0;
+          return <div key={item.label} className={`${item.cls} ${share > 0 && share < 12 ? agingUi.compactSegment : ""}`} style={{flexBasis:`${share}%`}} title={`${item.label}: ${item.value} véhicules (${Math.round(share)}% du parc)`}>
+            <span>{item.label}</span><strong>{item.value}</strong><small>{Math.round(share)}% du parc</small>
+          </div>;
+        })}
+      </div>
       <div className={`${styles.stockSignal} ${tv.stockSignal}`}><span>PARC &gt; 15 J</span><strong>{live.over15}</strong><i/><span>PARC &gt; 20 J</span><strong>{live.over20}</strong></div>
     </section>
 
