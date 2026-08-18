@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { authRpc, currentSession } from "../../../lib/crvo-auth";
 
 export const dynamic = "force-dynamic";
+// Read-only digital twin: refreshed from the latest certified EtatduParc FTP snapshot.
 
 type VehicleRow = {
   snapshot_at: string | null;
