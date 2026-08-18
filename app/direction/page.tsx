@@ -188,10 +188,8 @@ export default function DirectionPage() {
       const months = [...new Set([latest?.date.slice(0,7), previous?.date.slice(0,7)].filter(Boolean) as string[])];
       const objectivePairs = await Promise.all(months.map(async (month) => {
         try {
-          // Même source autoritaire que le tableau de bord principal : objectifs datés Supabase.
-          const objectiveResponse = await fetch(`/api/objectives?month=${month}&_=${Date.now()}`, { cache:"no-store", headers:{"Cache-Control":"no-cache"} });
-          if (!objectiveResponse.ok) throw new Error(`Objectifs ${objectiveResponse.status}`);
-          const objectivePayload = await objectiveResponse.json() as ObjectivesPayload;
+          const objectiveResponse = await fetch(`/api/kiosk/direction?resource=objectives&month=${month}&_=${Date.now()}`, { cache:"no-store" });
+          const objectivePayload = objectiveResponse.ok ? await objectiveResponse.json() as ObjectivesPayload : {};
           return [month, objectivePayload] as const;
         } catch {
           return [month, {}] as const;
