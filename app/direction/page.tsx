@@ -133,7 +133,8 @@ function targetFor(name:string, date:string, payload?:ObjectivesPayload) {
   const key = sectorKeys[name];
   const monthlyTarget = payload?.objectives?.find((item) => item.sectorKey === key)?.dailyTarget;
   if (name === "Sortie usine") {
-    return payload?.sortieDailyTargets?.[date] ?? monthlyTarget ?? fallbackTargets[name] ?? 0;
+    const exact = payload?.sortieDailyTargets?.[date];
+    return Number.isFinite(Number(exact)) ? Number(exact) : 0;
   }
   return monthlyTarget ?? fallbackTargets[name] ?? 0;
 }
@@ -188,11 +189,18 @@ export default function DirectionPage() {
       const months = [...new Set([latest?.date.slice(0,7), previous?.date.slice(0,7)].filter(Boolean) as string[])];
       const objectivePairs = await Promise.all(months.map(async (month) => {
         try {
-          const objectiveResponse = await fetch(`/api/kiosk/direction?resource=objectives&month=${month}&_=${Date.now()}`, { cache:"no-store" });
-          const objectivePayload = objectiveResponse.ok ? await objectiveResponse.json() as ObjectivesPayload : {};
+          const objectiveResponse = await fetch(`/api/objectives?month=${month}&_=${Date.now()}`, { cache:"no-store", headers:{"Cache-Control":"no-cache"} });
+          if (!objectiveResponse.ok) throw new Error(`Objectifs ${objectiveResponse.status}`);
+          const objectivePayload = await objectiveResponse.json() as ObjectivesPayload;
           return [month, objectivePayload] as const;
         } catch {
-          return [month, {}] as const;
+          try {
+            const fallbackResponse = await fetch(`/api/kiosk/direction?resource=objectives&month=${month}&_=${Date.now()}`, { cache:"no-store", headers:{"Cache-Control":"no-cache"} });
+            if (!fallbackResponse.ok) throw new Error(`Kiosk objectifs ${fallbackResponse.status}`);
+            return [month, await fallbackResponse.json() as ObjectivesPayload] as const;
+          } catch {
+            return [month, {}] as const;
+          }
         }
       }));
       setDashboard(payload);
@@ -260,14 +268,14 @@ export default function DirectionPage() {
   const liveObjectives = objectivesByMonth[live.date.slice(0,7)];
   const yesterdayObjectives = yesterday ? objectivesByMonth[yesterday.date.slice(0,7)] : undefined;
   const liveExitTarget = targetFor("Sortie usine", live.date, liveObjectives);
-  const yesterdayExitTarget = yesterday ? targetFor("Sortie usine", yesterday.date, yesterdayObjectives) : fallbackTargets["Sortie usine"];
+  const yesterdayExitTarget = yesterday ? targetFor("Sortie usine", yesterday.date, yesterdayObjectives) : 0;
   const currentFlow = dashboard?.liveFlow?.date === live.date ? dashboard.liveFlow : null;
   const todayOperations = [
     { key:"received", label:"Véhicules reçus", value:currentFlow?.received ?? live.entries, source:"FTP TOTAUX", detail:"réceptions de la journée" },
     { key:"prep", label:"Prépa restant", value:currentFlow?.preparationRemaining ?? 0, source:"FTP PARC USINE", detail:"en attente / en cours Prépa" },
     { key:"quality", label:"Qualité restant", value:currentFlow?.qualityRemaining ?? 0, source:"FTP PARC USINE", detail:"en attente / en cours Qualité" },
     { key:"photo", label:"Photo restant", value:currentFlow?.photoRemaining ?? 0, source:"FTP PARC USINE", detail:"en attente / en cours Photo" },
-    { key:"exits", label:"Sorties usine", value:currentFlow?.exits ?? live.exits, source:"FTP TOTAUX", detail:`objectif ${liveExitTarget}` },
+    { key:"exits", label:"Sorties usine", value:currentFlow?.exits ?? live.exits, source:"FTP TOTAUX", detail:liveExitTarget>0?`objectif ${liveExitTarget}`:"objectif journalier indisponible" },
   ];
 
   return <main className={`${styles.page} ${tv.page}`}>
@@ -285,7 +293,7 @@ export default function DirectionPage() {
         {yesterday ? <div className={`${styles.yesterdayBody} ${tv.yesterdayBody}`}>
           <div className={`${styles.yesterdaySummary} ${tv.yesterdaySummary}`}>
             <div><em>EN</em><span>Entrées</span><strong>{yesterday.entries}</strong><small>véhicules reçus</small></div>
-            <div><em>SO</em><span>Sorties</span><strong>{yesterday.exits}</strong><small className={yesterday.exits >= yesterdayExitTarget ? styles.goodText : styles.badText}>{yesterday.exits >= yesterdayExitTarget ? "+" : ""}{yesterday.exits-yesterdayExitTarget} vs objectif {yesterdayExitTarget}</small></div>
+            <div><em>SO</em><span>Sorties</span><strong>{yesterday.exits}</strong><small className={yesterdayExitTarget>0 && yesterday.exits >= yesterdayExitTarget ? styles.goodText : styles.badText}>{yesterdayExitTarget>0 ? `${yesterday.exits >= yesterdayExitTarget ? "+" : ""}${yesterday.exits-yesterdayExitTarget} vs objectif ${yesterdayExitTarget}` : "objectif journalier indisponible"}</small></div>
             <div><em>ST</em><span>Stock fin de journée</span><strong>{yesterday.stock}</strong><small>{dayBeforeYesterday ? `${yesterday.stock-dayBeforeYesterday.stock > 0 ? "+" : ""}${yesterday.stock-dayBeforeYesterday.stock} vs veille` : "stock usine"}</small></div>
           </div>
           <div className={`${styles.sectorHead} ${tv.sectorHead}`}><strong>PAR SECTEUR</strong><span>réalisé / objectif journalier</span></div>
@@ -297,8 +305,8 @@ export default function DirectionPage() {
               <span>{item.name}</span>
               <div><strong>{item.value}</strong><small>/ {target || "—"}</small></div>
               <i><b style={{width:`${Math.min(Math.max(pct,0),100)}%`}}/></i>
-              <em>{pct}%</em>
-              <small className={delta >= 0 ? styles.goodText : styles.badText}>{delta >= 0 ? "+" : ""}{delta}</small>
+              <em>{target ? `${pct}%` : "—"}</em>
+              <small className={delta >= 0 ? styles.goodText : styles.badText}>{target ? `${delta >= 0 ? "+" : ""}${delta}` : "objectif manquant"}</small>
             </div>;
           })}</div>
         </div> : <div className={styles.empty}>Clôture de la veille indisponible.</div>}
@@ -318,7 +326,7 @@ export default function DirectionPage() {
 
     <section className={`${styles.livePanel} ${tv.livePanel}`}>
       <div className={`${styles.liveHero} ${tv.liveHero}`}>
-        <div><span>PRODUCTION DU JOUR · RÉALISÉ À {factoryTime}</span><h2>{live.exits}<small>/ {liveExitTarget}</small></h2><p>sorties usine · objectif du jour {liveExitTarget} · {fullDate(live.date)}</p></div>
+        <div><span>PRODUCTION DU JOUR · RÉALISÉ À {factoryTime}</span><h2>{live.exits}<small>/ {liveExitTarget || "—"}</small></h2><p>sorties usine · {liveExitTarget>0?`objectif du jour ${liveExitTarget}`:"objectif journalier indisponible"} · {fullDate(live.date)}</p></div>
         <div className={`${styles.liveHeroRight} ${tv.liveHeroRight}`}><span>Véhicules reçus</span><strong>{live.entries}</strong><span>Stock usine</span><strong>{live.stock}</strong></div>
       </div>
       <div className={`${styles.flowSourceBar} ${tv.flowSourceBar}`}><span>FTP TOTAUX</span><i/><span>FTP PARC USINE · ÉTAT À {parkTime}</span></div>
@@ -338,6 +346,6 @@ export default function DirectionPage() {
       <div className={`${styles.stockSignal} ${tv.stockSignal}`}><span>PARC &gt; 15 J</span><strong>{live.over15}</strong><i/><span>PARC &gt; 20 J</span><strong>{live.over20}</strong></div>
     </section>
 
-    <footer className={`${styles.footer} ${tv.footer}`}><span>CRVO Lens · écran direction</span><span>Écran {screenRefresh || "—"} · objectif du jour {liveExitTarget} · CA {financeLatest ? compactDate(financeLatest.date) : "—"} · production FTP {factoryTime} · parc FTP {parkTime}</span></footer>
+    <footer className={`${styles.footer} ${tv.footer}`}><span>CRVO Lens · écran direction</span><span>Écran {screenRefresh || "—"} · objectif du jour {liveExitTarget || "—"} · CA {financeLatest ? compactDate(financeLatest.date) : "—"} · production FTP {factoryTime} · parc FTP {parkTime}</span></footer>
   </main>;
 }
