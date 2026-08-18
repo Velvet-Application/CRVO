@@ -32,6 +32,25 @@ type BillingRatioPayload = {
   ratios?: BillingRatio[];
 };
 
+type BodyshopHistoryMonth = {
+  month: string;
+  fixline: number;
+  box: number;
+  weekendExtra: number;
+  treated: number;
+  observedDays: number;
+  note?: string | null;
+};
+
+type BodyshopHistory = {
+  source?: string;
+  fullMonthCount?: number;
+  averageMonthlyTreated?: number;
+  averageDailyTreated?: number;
+  averageBacklog?: number;
+  months?: BodyshopHistoryMonth[];
+};
+
 type CapacityPayload = {
   connected?: boolean;
   error?: string;
@@ -41,6 +60,7 @@ type CapacityPayload = {
   miniStandard?: Record<string, unknown>;
   roster?: StaffMember[];
   billingRatios?: BillingRatio[];
+  bodyshopHistory?: BodyshopHistory;
 };
 
 function isTimeout(error: unknown) {
@@ -58,6 +78,10 @@ async function readRoster(tokenHash: string) {
 
 async function readBillingRatios(tokenHash: string) {
   return authRpc<BillingRatioPayload>("kpi_capacity_billing_ratios", { p_session_hash: tokenHash });
+}
+
+async function readBodyshopHistory(tokenHash: string) {
+  return authRpc<BodyshopHistory>("kpi_capacity_bodyshop_reference", { p_session_hash: tokenHash });
 }
 
 export async function GET() {
@@ -80,12 +104,14 @@ export async function GET() {
       return NextResponse.json(payload, { status: 503, headers: { "Cache-Control": "no-store" } });
     }
 
-    const [roster, billing] = await Promise.all([
+    const [roster, billing, bodyshopHistory] = await Promise.all([
       readRoster(current.tokenHash),
       readBillingRatios(current.tokenHash),
+      readBodyshopHistory(current.tokenHash),
     ]);
     payload.roster = roster;
     payload.billingRatios = billing.ratios ?? [];
+    payload.bodyshopHistory = bodyshopHistory;
 
     return NextResponse.json(payload, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0" } });
   } catch (error) {
@@ -117,6 +143,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, employeeKey, included: body.included }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("crvo_capacity_staff_set_failed", error);
-    return NextResponse.json({ error: "Impossible d'enregistrer cette sélection." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ error: "Impossible d'enregistrer cette sélection." }, { status: 503 });
   }
 }
