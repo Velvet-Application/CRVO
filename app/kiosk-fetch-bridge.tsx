@@ -16,9 +16,6 @@ function rewrite(url: URL, pathname: string) {
     target = "/api/kiosk/direction";
     if (source === "/api/dashboard") resource = "dashboard";
     else if (source === "/api/objectives") resource = "objectives";
-    // La finance Direction reste sur /api/finance : cette API authentifiée
-    // utilise le même moteur certifié que le kiosk et évite une dépendance
-    // au pont client pour un indicateur critique.
   }
 
   if (!target || !resource) return null;
@@ -52,9 +49,13 @@ export default function KioskFetchBridge() {
   }, []);
   return <style>{`
     body.crvo-kiosk-mode .gn-trigger,
+    body.crvo-kiosk-mode .gn2-trigger,
     body.crvo-kiosk-mode .gn-backdrop,
+    body.crvo-kiosk-mode .gn2-backdrop,
     body.crvo-kiosk-mode .gn-drawer,
+    body.crvo-kiosk-mode .gn2-drawer,
     body.crvo-kiosk-mode .crvo-auth-nav,
-    body.crvo-kiosk-mode .hsm{display:none!important}
+    body.crvo-kiosk-mode .hsm,
+    body.crvo-kiosk-mode .hsm2{display:none!important}
   `}</style>;
 }
