@@ -13,10 +13,10 @@ on:
       - "bridge/package-lock.json"
       - ".github/workflows/kpi-sftp-sync.yml"
   schedule:
-    # Redondance industrielle : tentative toutes les 5 minutes.
-    # GitHub Actions restant best-effort, la fraicheur réelle est surveillée par /api/health.
-    # Contrat de service : heartbeat réussi < 15 min, incident critique au-delà de 30 min.
-    - cron: "*/5 * * * *"
+    # Synchronisation complète toutes les 5 minutes, volontairement décalée du début d'heure.
+    # Le fast-lane Factory est intercalé 2 minutes plus tard dans un workflow indépendant.
+    # Cible opérationnelle : heartbeat < 15 min. UI : vigilance > 60 min, critique > 180 min.
+    - cron: "1,6,11,16,21,26,31,36,41,46,51,56 * * * *"
 
 permissions:
   contents: read
