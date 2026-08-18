@@ -2,7 +2,7 @@
   "name": "CRVO Expertise Mobile",
   "short_name": "CRVO Expertise",
   "description": "Saisie mobile des dossiers expertise CRVO.",
-  "start_url": "/expertise-mobile",
+  "start_url": "/developpement/expertise-mobile",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f4f9fc",
