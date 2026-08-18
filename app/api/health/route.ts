@@ -14,7 +14,7 @@ async function rpc<T>(name:string):Promise<T>{let lastError:unknown;for(let atte
 
 export async function GET(){
   try{
-    // Contrat industriel v3 : surveillance à 30 min, criticité FTP seulement au-delà d'une heure.
+    // Contrat industriel v3 : l'absence de synchronisation FTP devient critique seulement au-delà d'une heure.
     const [trust,financeHealth]=await Promise.all([rpc<IndustrialHealth>("kpi_industrial_health_v3_public"),rpc<FinanceHealth>("kpi_industrial_finance_health_public")]);
     const objectiveReady=Number(trust.production?.dailyExitTarget??0)>0;
     const platformOk=Boolean(trust.dataReady&&trust.bottlenecksReady&&trust.clientDashboardReady&&financeHealth.ready&&objectiveReady);
