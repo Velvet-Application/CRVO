@@ -14,6 +14,7 @@ import AuthNav from "./auth-nav";
 import ActivityColorBinder from "./activity-color-binder";
 import KioskFetchBridge from "./kiosk-fetch-bridge";
 import PwaRegister from "./pwa-register";
+import Expertise3dEnhancer from "./expertise-3d-enhancer";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -37,6 +38,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <PwaRegister />
     <KioskFetchBridge />
     <ActivityColorBinder />
+    <Expertise3dEnhancer />
     <GlobalNavDrawer />
     <HomeSideMenu />
     <DataTrustGuard />
