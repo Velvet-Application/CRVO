@@ -7,6 +7,7 @@ import "@fontsource/exo/800.css";
 import "@fontsource/exo/800-italic.css";
 import "./globals.css";
 import "./production-fixes.css";
+import "./expertise-workspace-fixes.css";
 import GlobalNavDrawer from "./global-nav-drawer-v2";
 import HomeSideMenu from "./home-side-menu-v2";
 import DataTrustGuard from "./data-trust-guard";
