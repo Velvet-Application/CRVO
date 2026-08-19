@@ -27,6 +27,16 @@ export async function GET(request: Request) {
   const current = await access();
   if (!current) return json({ error: "Accès Temps de travail requis." }, 403);
   const url = new URL(request.url);
+  if (url.searchParams.get("organization") === "1") {
+    if (current.session.role !== "admin") return json({ error: "Accès administrateur requis." }, 403);
+    try {
+      const payload = await authRpc<Record<string, unknown>>("kpi_worktime_organization_admin", { p_session_hash: current.tokenHash });
+      return json(payload);
+    } catch (error) {
+      console.error("worktime_organization_failed", error);
+      return json({ error: "Organigramme temporairement indisponible." }, 503);
+    }
+  }
   const today = todayParis();
   const from = isoDate(url.searchParams.get("from"), today);
   const to = isoDate(url.searchParams.get("to"), from);
@@ -74,6 +84,23 @@ export async function POST(request: Request) {
         p_label: String(body.label ?? body.team ?? ""),
         p_start: body.startTime ? String(body.startTime) : null,
         p_end: body.endTime ? String(body.endTime) : null,
+      });
+      return json(result);
+    }
+    if (action === "rotation-anchor") {
+      const result = await authRpc<Record<string, unknown>>("kpi_worktime_set_rotation_anchor", {
+        p_session_hash: current.tokenHash,
+        p_anchor_monday: String(body.anchorDate ?? todayParis()),
+        p_a_morning: Boolean(body.aMorning),
+      });
+      return json(result);
+    }
+    if (action === "bind-position") {
+      if (current.session.role !== "admin") return json({ error: "Accès administrateur requis." }, 403);
+      const result = await authRpc<Record<string, unknown>>("kpi_worktime_bind_position", {
+        p_session_hash: current.tokenHash,
+        p_position_key: String(body.positionKey ?? ""),
+        p_user_id: String(body.userId ?? ""),
       });
       return json(result);
     }
