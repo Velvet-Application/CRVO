@@ -18,19 +18,21 @@ async function rpc(name:string,body:Record<string,unknown>){
   if(!response.ok){const detail=await response.text().catch(()=>"");throw new Error(`${name} ${response.status}${detail?`: ${detail.slice(0,300)}`:""}`);}
   return response.json() as Promise<Record<string,unknown>>;
 }
-async function loadDirectionFinance(history:boolean){return rpc("kpi_kiosk_direction_finance",{p_history:history});}
+async function loadDirectionFinance(history:boolean,sessionHash:string|null,kioskToken:string|null){return rpc("kpi_direction_finance_access",{p_session_hash:sessionHash,p_kiosk_token:kioskToken,p_history:history});}
 async function loadDirectionObjectives(month:string|null){const value=month&&/^20\d{2}-\d{2}$/.test(month)?`${month}-01`:null;return rpc("kpi_kiosk_objectives",{p_month:value});}
 
 export async function GET(request:Request){
   const kiosk=await kioskAuthorized(request);
+  const kioskToken=kiosk?cookieValue(request,DIRECTION_KIOSK_COOKIE):null;
+  let current:Awaited<ReturnType<typeof currentSession>>=null;
   if(!kiosk){
-    const current=await currentSession();
+    current=await currentSession();
     if(!current)return NextResponse.json({connected:false,error:"Session CRVO ou accès écran Direction requis."},{status:401,headers:{"Cache-Control":"no-store"}});
     if(current.session.role!=="admin")return NextResponse.json({connected:false,error:"Accès administrateur requis."},{status:403,headers:{"Cache-Control":"no-store"}});
   }
   const url=new URL(request.url);const resource=url.searchParams.get("resource")??"dashboard";
   try{
-    if(resource==="finance")return NextResponse.json(await loadDirectionFinance(url.searchParams.get("history")==="1"),{headers:{"Cache-Control":"private, no-store"}});
+    if(resource==="finance")return NextResponse.json(await loadDirectionFinance(url.searchParams.get("history")==="1",current?.tokenHash??null,kioskToken),{headers:{"Cache-Control":"private, no-store"}});
     if(resource==="objectives")return NextResponse.json(await loadDirectionObjectives(url.searchParams.get("month")),{headers:{"Cache-Control":"private, no-store"}});
     const requestedDate=url.searchParams.get("date")?.match(/^\d{4}-\d{2}-\d{2}$/)?.[0]??null;
     return NextResponse.json(await loadKioskDashboard(url.searchParams.get("history")==="1",requestedDate),{headers:{"Cache-Control":"private, no-store"}});
