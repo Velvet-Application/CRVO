@@ -1,0 +1,7 @@
+import { NextResponse } from "next/server";
+import { authRpc, currentSession } from "../../lib/crvo-auth";
+import { loadKioskDashboard } from "../kiosk/kiosk-data";
+
+export const dynamic="force-dynamic";
+function json(body:unknown,status=200){return NextResponse.json(body,{status,headers:{"Cache-Control":"no-store"}})}
+export async function GET(){const current=await currentSession();if(!current)return json({error:"Session requise."},401);if(current.session.role!=="admin"&&current.session.access_profile!=="team_manager")return json({error:"Accès Chef d'équipe requis."},403);try{const dashboard=await loadKioskDashboard(true,null) as {snapshot?:Record<string,unknown>;snapshots?:Array<Record<string,unknown>>;connected?:boolean;liveFreshness?:unknown};const rows=dashboard.snapshots??(dashboard.snapshot?[dashboard.snapshot]:[]);const latest=rows.at(-1)??dashboard.snapshot??null;const previous=latest?[...rows].reverse().find(row=>String(row.date??"")<String(latest.date??""))??null:null;const month=latest?`${String(latest.date).slice(0,7)}-01`:null;let objectives:Record<string,unknown>={};if(month){objectives=await authRpc<Record<string,unknown>>("kpi_objectives_get",{p_token_hash:current.tokenHash,p_month:month});}return json({connected:dashboard.connected,latest,previous,objectives,teams:current.session.role==="admin"?["*"]:current.session.team_scopes,liveFreshness:dashboard.liveFreshness});}catch(error){console.error("team_dashboard_failed",error);return json({error:"Dashboard équipe indisponible."},503)}}
