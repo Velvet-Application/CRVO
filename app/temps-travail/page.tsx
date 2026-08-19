@@ -23,7 +23,6 @@ function displayDate(value:string){return new Intl.DateTimeFormat("fr-FR",{weekd
 function inRange(date:string,event:EventRow){return event.startDate<=date&&event.endDate>=date;}
 function statusTone(event:EventRow){if(event.status==="closed")return styles.closed;if(event.justification==="pending")return styles.pending;return event.kind==="absence"?styles.absent:event.kind==="late"?styles.late:styles.early;}
 function safeFileDate(value:string){return value.replaceAll("-","");}
-function mondayOf(value:string){const date=new Date(`${value}T12:00:00Z`);const day=date.getUTCDay()||7;date.setUTCDate(date.getUTCDate()-day+1);return date.toISOString().slice(0,10);}
 function effectiveShift(shift:Shift|undefined,date:string){if(!shift)return{start:"",end:"",pending:false};if(shift.rotationMode!=="weekly_alternate")return{start:shift.startTime??"",end:shift.endTime??"",pending:false};if(!shift.rotationAnchorMonday||typeof shift.rotationAnchorPrimary!=="boolean")return{start:"",end:"",pending:true};const d=new Date(`${date}T12:00:00Z`).getTime();const a=new Date(`${shift.rotationAnchorMonday}T12:00:00Z`).getTime();const weeks=Math.floor((d-a)/(7*86400000));const usePrimary=(Math.abs(weeks)%2===0)===shift.rotationAnchorPrimary;return{start:usePrimary?(shift.startTime??""):(shift.alternateStartTime??""),end:usePrimary?(shift.endTime??""):(shift.alternateEndTime??""),pending:false};}
 function shiftText(shift:Shift){if(shift.rotationMode==="weekly_alternate"){if(shift.rotationPending)return`${shift.startTime}–${shift.endTime} / ${shift.alternateStartTime}–${shift.alternateEndTime} · alternance à ancrer`;return`${shift.currentStartTime??"—"}–${shift.currentEndTime??"—"} cette semaine · alternance hebdo`;}if(shift.breakStart&&shift.breakEnd)return`${shift.startTime}–${shift.breakStart} · ${shift.breakEnd}–${shift.endTime}`;return shift.startTime&&shift.endTime?`${shift.startTime}–${shift.endTime}`:"Horaire à paramétrer";}
 function scopeText(data:Payload){if(data.organization)return`${data.organization.title} · ${data.organization.teams.includes("*")?"toutes équipes":data.organization.teams.map(t=>`Équipe ${t}`).join(" / ")} · ${data.organization.sectors.includes("*")?"tous secteurs":data.organization.sectors.map(s=>SECTOR_LABEL[s]??s).join(" / ")}`;return data.access.teams.includes("*")?"Tous les collaborateurs":data.access.teams.map(team=>`Équipe ${team}`).join(" · ");}
@@ -33,15 +32,23 @@ export default function WorktimePage(){
   const[entity,setEntity]=useState<"CRVO"|"TRANSPHERE">("CRVO");
   const[from,setFrom]=useState(today);const[to,setTo]=useState(today);const[focusDate,setFocusDate]=useState(today);
   const[data,setData]=useState<Payload|null>(null);const[loading,setLoading]=useState(true);const[error,setError]=useState("");const[notice,setNotice]=useState("");const[search,setSearch]=useState("");
+  const[teamFilter,setTeamFilter]=useState("*");const[sectorFilter,setSectorFilter]=useState("*");
   const[selected,setSelected]=useState<Person|null>(null);const[kind,setKind]=useState<Kind>("absence");const[reason,setReason]=useState("paid_leave");const[startDate,setStartDate]=useState(today);const[endDate,setEndDate]=useState(today);const[eventTime,setEventTime]=useState("");const[comment,setComment]=useState("");const[saving,setSaving]=useState(false);
   const[settings,setSettings]=useState(false);const[personPanel,setPersonPanel]=useState(false);
 
   async function load(nextEntity=entity,nextFrom=from,nextTo=to){setLoading(true);setError("");try{const response=await fetch(`/api/worktime?entity=${nextEntity}&from=${nextFrom}&to=${nextTo}&_=${Date.now()}`,{cache:"no-store"});const payload=await response.json() as Payload&{error?:string};if(!response.ok)throw new Error(payload.error||"Chargement impossible.");setData(payload);setEntity(payload.entity);}catch(cause){setError(cause instanceof Error?cause.message:"Chargement impossible.");}finally{setLoading(false);}}
   useEffect(()=>{void load();},[]);
+  useEffect(()=>{setTeamFilter("*");setSectorFilter("*");},[data?.entity]);
 
+  const fullScopeAccess=Boolean(data&&(data.access.role==="admin"||data.access.profile==="hr"));
+  const teamOptions=useMemo(()=>Array.from(new Set((data?.people??[]).map(person=>person.team).filter((value):value is string=>Boolean(value)))).sort((a,b)=>a.localeCompare(b,"fr")),[data]);
+  const sectorOptions=useMemo(()=>Array.from(new Set((data?.people??[]).map(person=>person.sector).filter((value):value is string=>Boolean(value)))).sort((a,b)=>(SECTOR_LABEL[a]??a).localeCompare(SECTOR_LABEL[b]??b,"fr")),[data]);
+  const matchesScope=(person:{team?:string|null;sector?:string|null})=>(teamFilter==="*"||person.team===teamFilter)&&(sectorFilter==="*"||person.sector===sectorFilter);
+  const filteredPeople=useMemo(()=>{const q=search.trim().toLowerCase();return(data?.people??[]).filter(person=>matchesScope(person)&&(!q||`${person.name} ${person.team??""} ${person.service??""} ${person.matricule??""} ${person.sector??""}`.toLowerCase().includes(q)));},[data,search,teamFilter,sectorFilter]);
+  const filteredEvents=useMemo(()=>(data?.events??[]).filter(item=>matchesScope(item)),[data,teamFilter,sectorFilter]);
   const shiftMap=useMemo(()=>new Map((data?.shifts??[]).map(item=>[item.team,item])),[data]);
-  const eventsByEmployee=useMemo(()=>{const map=new Map<string,EventRow[]>();for(const item of data?.events??[]){const list=map.get(item.employeeKey)??[];list.push(item);map.set(item.employeeKey,list);}return map;},[data]);
-  const filteredPeople=useMemo(()=>{const q=search.trim().toLowerCase();return(data?.people??[]).filter(person=>!q||`${person.name} ${person.team??""} ${person.service??""} ${person.matricule??""} ${person.sector??""}`.toLowerCase().includes(q));},[data,search]);
+  const eventsByEmployee=useMemo(()=>{const map=new Map<string,EventRow[]>();for(const item of filteredEvents){const list=map.get(item.employeeKey)??[];list.push(item);map.set(item.employeeKey,list);}return map;},[filteredEvents]);
+  const visibleSummary=useMemo(()=>{if(!data)return{absentToday:0,lateToday:0,earlyToday:0,pendingJustifications:0,openEvents:0};if(teamFilter==="*"&&sectorFilter==="*")return data.summary;const open=filteredEvents.filter(item=>item.status==="open");return{absentToday:open.filter(item=>item.kind==="absence"&&inRange(today,item)).length,lateToday:open.filter(item=>item.kind==="late"&&item.startDate===today).length,earlyToday:open.filter(item=>item.kind==="early_departure"&&item.startDate===today).length,pendingJustifications:open.filter(item=>item.justification==="pending").length,openEvents:open.length};},[data,filteredEvents,teamFilter,sectorFilter,today]);
 
   function personShift(person:Person){const key=person.team??((person.sector==="admin"||person.sector==="magasin")?"J":"");return shiftMap.get(key);}
   function openEvent(person:Person,nextKind:Kind){const shift=effectiveShift(personShift(person),focusDate);setSelected(person);setKind(nextKind);setStartDate(focusDate);setEndDate(focusDate);setReason(nextKind==="absence"?"paid_leave":"other");setComment("");setEventTime(nextKind==="late"?shift.start:nextKind==="early_departure"?shift.end:"");}
@@ -51,7 +58,7 @@ export default function WorktimePage(){
   async function setRotation(aMorning:boolean){const response=await fetch("/api/worktime",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"rotation-anchor",anchorDate:today,aMorning})});const payload=await response.json().catch(()=>({})) as{error?:string};if(!response.ok){setError(payload.error||"Rotation impossible à enregistrer.");return;}setNotice(`Rotation enregistrée : équipe ${aMorning?"A":"B"} du matin cette semaine.`);setSettings(false);await load();}
   async function addTranspherePerson(event:FormEvent<HTMLFormElement>){event.preventDefault();const fd=new FormData(event.currentTarget);const name=String(fd.get("name")??"").trim();const key=String(fd.get("key")??"").trim();const team=String(fd.get("team")??"TRANSPHERE").trim();const service=String(fd.get("service")??"").trim();const response=await fetch("/api/worktime",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"person",employeeKey:key,name,team,service,active:true})});const payload=await response.json().catch(()=>({})) as{error?:string};if(!response.ok){setError(payload.error||"Collaborateur impossible à créer.");return;}event.currentTarget.reset();setNotice(`${name} ajouté au référentiel Transphère.`);await load();}
 
-  async function exportXlsx(){if(!data)return;const XLSX=await import("@e965/xlsx");const rows:Array<Record<string,unknown>>=[];for(const item of data.events){let cursor=new Date(`${item.startDate}T12:00:00Z`);const end=new Date(`${item.endDate}T12:00:00Z`);while(cursor<=end){rows.push({Entité:data.entity,Date:cursor.toISOString().slice(0,10),Matricule:data.people.find(p=>p.employeeKey===item.employeeKey)?.matricule??"",Collaborateur:item.employeeName,Équipe:item.team??"",Secteur:SECTOR_LABEL[item.sector??""]??item.sector??"",Service:item.service??"",Événement:KIND_LABEL[item.kind],Motif:LABELS[item.reason]??item.reason,Heure:item.eventTime??"",Justificatif:item.justification==="received"?"Reçu":item.justification==="pending"?"En attente":"Non requis",Statut:item.status==="closed"?"Clôturé":"Ouvert",Commentaire:item.comment??"",Déclaré_par:item.createdBy,Déclaré_le:item.createdAt,Clôturé_par:item.closedBy??"",Clôturé_le:item.closedAt??""});cursor.setUTCDate(cursor.getUTCDate()+1);}}
+  async function exportXlsx(){if(!data)return;const XLSX=await import("@e965/xlsx");const rows:Array<Record<string,unknown>>=[];for(const item of filteredEvents){let cursor=new Date(`${item.startDate}T12:00:00Z`);const end=new Date(`${item.endDate}T12:00:00Z`);while(cursor<=end){rows.push({Entité:data.entity,Date:cursor.toISOString().slice(0,10),Matricule:data.people.find(p=>p.employeeKey===item.employeeKey)?.matricule??"",Collaborateur:item.employeeName,Équipe:item.team??"",Secteur:SECTOR_LABEL[item.sector??""]??item.sector??"",Service:item.service??"",Événement:KIND_LABEL[item.kind],Motif:LABELS[item.reason]??item.reason,Heure:item.eventTime??"",Justificatif:item.justification==="received"?"Reçu":item.justification==="pending"?"En attente":"Non requis",Statut:item.status==="closed"?"Clôturé":"Ouvert",Commentaire:item.comment??"",Déclaré_par:item.createdBy,Déclaré_le:item.createdAt,Clôturé_par:item.closedBy??"",Clôturé_le:item.closedAt??""});cursor.setUTCDate(cursor.getUTCDate()+1);}}
     const sheet=XLSX.utils.json_to_sheet(rows);sheet["!cols"]=[12,12,14,28,10,18,12,18,32,10,14,12,36,20,20,20,20].map(w=>({wch:w}));const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,"Temps de travail");XLSX.writeFile(book,`Suivi_temps_${data.entity}_${safeFileDate(from)}_${safeFileDate(to)}.xlsx`);}
 
   function changePeriod(nextFrom:string,nextTo:string){setFrom(nextFrom);setTo(nextTo);if(focusDate<nextFrom||focusDate>nextTo)setFocusDate(nextFrom);void load(entity,nextFrom,nextTo);}
@@ -60,7 +67,7 @@ export default function WorktimePage(){
   if(loading&&!data)return <main className={styles.loading}><div/><strong>Chargement du suivi du temps…</strong></main>;
   if(!data)return <main className={styles.loading}><strong>Suivi du temps indisponible</strong><span>{error}</span></main>;
 
-  const canAll=data.access.canClose||data.access.role==="admin";
+  const canAll=fullScopeAccess||data.access.canClose;
   const selectedShift=selected?effectiveShift(personShift(selected),focusDate):null;
   return <main className={styles.page}>
     <header className={styles.header}>
@@ -76,17 +83,21 @@ export default function WorktimePage(){
     {error&&<div className={styles.error}>{error}</div>}{notice&&<div className={styles.notice}>{notice}<button onClick={()=>setNotice("")}>×</button></div>}
 
     <section className={styles.summary}>
-      <div><span>ABSENTS AUJOURD'HUI</span><strong>{data.summary.absentToday}</strong><small>sur le périmètre visible</small></div>
-      <div><span>RETARDS</span><strong>{data.summary.lateToday}</strong><small>déclarés aujourd'hui</small></div>
-      <div><span>DÉPARTS ANTICIPÉS</span><strong>{data.summary.earlyToday}</strong><small>déclarés aujourd'hui</small></div>
-      <div className={data.summary.pendingJustifications?styles.warningCard:""}><span>JUSTIFICATIFS EN ATTENTE</span><strong>{data.summary.pendingJustifications}</strong><small>{data.summary.openEvents} événement(s) ouvert(s)</small></div>
+      <div><span>ABSENTS AUJOURD'HUI</span><strong>{visibleSummary.absentToday}</strong><small>sur le périmètre visible</small></div>
+      <div><span>RETARDS</span><strong>{visibleSummary.lateToday}</strong><small>déclarés aujourd'hui</small></div>
+      <div><span>DÉPARTS ANTICIPÉS</span><strong>{visibleSummary.earlyToday}</strong><small>déclarés aujourd'hui</small></div>
+      <div className={visibleSummary.pendingJustifications?styles.warningCard:""}><span>JUSTIFICATIFS EN ATTENTE</span><strong>{visibleSummary.pendingJustifications}</strong><small>{visibleSummary.openEvents} événement(s) ouvert(s)</small></div>
     </section>
 
     <section className={styles.controls}>
       <div><label>DU<input type="date" value={from} max={to} onChange={e=>changePeriod(e.target.value,to)}/></label><label>AU<input type="date" value={to} min={from} onChange={e=>changePeriod(from,e.target.value)}/></label></div>
       <label className={styles.focus}>JOUR AFFICHÉ<input type="date" value={focusDate} min={from} max={to} onChange={e=>setFocusDate(e.target.value)}/></label>
+      {fullScopeAccess&&<div className={styles.scopeFilters}>
+        {data.entity==="CRVO"&&<label>SECTEUR<select value={sectorFilter} onChange={e=>setSectorFilter(e.target.value)}><option value="*">Tous les secteurs</option>{sectorOptions.map(value=><option value={value} key={value}>{SECTOR_LABEL[value]??value}</option>)}</select></label>}
+        <label>ÉQUIPE<select value={teamFilter} onChange={e=>setTeamFilter(e.target.value)}><option value="*">Toutes les équipes</option>{teamOptions.map(value=><option value={value} key={value}>Équipe {value}</option>)}</select></label>
+      </div>}
       <label className={styles.search}>RECHERCHER<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Nom, matricule, service…"/></label>
-      <div className={styles.scope}><span>PÉRIMÈTRE</span><strong>{scopeText(data)}</strong></div>
+      <div className={styles.scope}><span>PÉRIMÈTRE</span><strong>{fullScopeAccess?(teamFilter==="*"&&sectorFilter==="*"?"Accès total":`${sectorFilter==="*"?"Tous secteurs":SECTOR_LABEL[sectorFilter]??sectorFilter} · ${teamFilter==="*"?"toutes équipes":`Équipe ${teamFilter}`}`):scopeText(data)}</strong></div>
     </section>
 
     <section className={styles.shiftStrip}>
@@ -107,12 +118,12 @@ export default function WorktimePage(){
       </article>
 
       <article className={styles.history}>
-        <div className={styles.sectionHead}><div><span>HISTORIQUE · {displayDate(from)} → {displayDate(to)}</span><h2>Événements déclarés</h2></div><small>{data.events.length} événement(s)</small></div>
-        <div className={styles.historyList}>{data.events.map(row=><div className={styles.historyRow} key={row.id}>
+        <div className={styles.sectionHead}><div><span>HISTORIQUE · {displayDate(from)} → {displayDate(to)}</span><h2>Événements déclarés</h2></div><small>{filteredEvents.length} événement(s)</small></div>
+        <div className={styles.historyList}>{filteredEvents.map(row=><div className={styles.historyRow} key={row.id}>
           <div className={`${styles.kindDot} ${statusTone(row)}`}/><div className={styles.historyMain}><strong>{row.employeeName}</strong><span>{KIND_LABEL[row.kind]} · {LABELS[row.reason]??row.reason}</span><small>{row.startDate===row.endDate?displayDate(row.startDate):`${displayDate(row.startDate)} → ${displayDate(row.endDate)}`}{row.eventTime?` · ${row.eventTime}`:""} · déclaré par {row.createdBy}</small>{row.comment&&<p>{row.comment}</p>}</div>
           <div className={styles.historyStatus}><b className={row.status==="closed"?styles.locked:""}>{row.status==="closed"?"CLÔTURÉ RH":"OUVERT"}</b>{row.justification==="pending"&&<em>JUSTIFICATIF ATTENDU</em>}{row.closedBy&&<small>{row.closedBy}</small>}</div>
           <div className={styles.rowActions}>{data.access.canClose?(row.status==="open"?<button onClick={()=>void setStatus(row,"close")}>CLÔTURER</button>:<button onClick={()=>void setStatus(row,"reopen")}>RÉOUVRIR</button>):row.status==="open"&&<button onClick={()=>void setStatus(row,"cancel")}>ANNULER</button>}</div>
-        </div>)}{!data.events.length&&<div className={styles.empty}>Aucun événement sur cette période.</div>}</div>
+        </div>)}{!filteredEvents.length&&<div className={styles.empty}>Aucun événement sur cette période.</div>}</div>
       </article>
     </section>
 
