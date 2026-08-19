@@ -15,6 +15,7 @@ import AuthNav from "./auth-nav";
 import ActivityColorBinder from "./activity-color-binder";
 import KioskFetchBridge from "./kiosk-fetch-bridge";
 import PwaRegister from "./pwa-register";
+import DailyAnimationLauncher from "./daily-animation-launcher";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <HomeSideMenu />
     <DataTrustGuard />
     <AuthNav />
+    <DailyAnimationLauncher />
     {children}
   </body></html>;
 }
