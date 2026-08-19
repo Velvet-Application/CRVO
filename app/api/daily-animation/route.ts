@@ -173,10 +173,8 @@ function buildMail(summary: AnimationSummary, signature: SignatureProfile) {
   lines.push("", "Bonne journée à tous,");
 
   const animationBody = lines.join("\n");
-  const deltaPart = exitDelta == null ? "" : ` · ${signed(exitDelta, " VOP")}`;
-  const caPart = revenueDelta == null ? "" : ` · CA ${signed(Math.round(revenueDelta / 1000), " k€")}`;
   return {
-    subject: `[CRVO ${centre}] Animation ${reportDate}${deltaPart}${caPart}`,
+    subject: `📈 Book CRVO Lens - Journée du ${reportDate} 📈`,
     body: animationBody,
     plainBody: `${animationBody}\n\n${signaturePlain(signature)}`,
   };
