@@ -11,12 +11,10 @@ import "./expertise-workspace-fixes.css";
 import GlobalNavDrawer from "./global-nav-drawer-v2";
 import HomeSideMenu from "./home-side-menu-v2";
 import DataTrustGuard from "./data-trust-guard";
-import AuthNav from "./auth-nav";
 import ActivityColorBinder from "./activity-color-binder";
 import KioskFetchBridge from "./kiosk-fetch-bridge";
 import PwaRegister from "./pwa-register";
 import DailyAnimationOneClick from "./daily-animation-one-click-v2";
-import EnvironmentSwitcher from "./environment-switcher";
 import TransphereAccessManager from "./transphere-access-manager";
 import WorktimeAnnualizationPanel from "./worktime-annualization-panel";
 import AtelierPublicScreen from "./atelier-public-screen";
@@ -49,10 +47,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <GlobalNavDrawer />
     <HomeSideMenu />
     <DataTrustGuard />
-    <AuthNav />
     <NotificationCenter />
     <DailyAnimationOneClick />
-    <EnvironmentSwitcher />
     <TransphereAccessManager />
     <WorktimeAnnualizationPanel />
     <AtelierPublicScreen />
