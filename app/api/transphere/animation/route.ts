@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authRpc, currentSession } from "../../../lib/crvo-auth";
+import { authRpc, currentSession, hasPageAccess } from "../../../lib/crvo-auth";
 import { emailHtml, graphRecipient, signatureFor, signaturePlain, type MailRecipient } from "../../../lib/daily-animation-mail-config";
 
 export const dynamic = "force-dynamic";
@@ -58,13 +58,57 @@ function buildMail(summary: Dashboard) {
 }
 
 export async function GET() {
-  const current = await currentSession(); if (!current) return json({ error: "Session CRVO requise." }, 401); if (current.session.role !== "admin") return json({ error: "Accès administrateur requis." }, 403);
-  try { const summary = await authRpc<Dashboard>("kpi_transphere_dashboard_admin", { p_session_hash: current.tokenHash, p_report_date: null }); const mail = buildMail(summary); const signature = signatureFor(current.session.username); return json({ ...mail, graphConfigured: Boolean(graphConfig()), signature: { name: signature.name, title: signature.title }, plainBody: `${mail.body}\n\n${signaturePlain(signature)}` }); } catch (error) { console.error("transphere_animation_get_failed", error); return json({ error: "Animation Transphère indisponible." }, 503); }
+  const current = await currentSession();
+  if (!current) return json({ error: "Session requise." }, 401);
+  if (!hasPageAccess(current.session, "transphere")) return json({ error: "Accès Transphère requis." }, 403);
+  try {
+    const summary = await authRpc<Dashboard>("kpi_transphere_dashboard_admin", { p_session_hash: current.tokenHash, p_report_date: null });
+    const mail = buildMail(summary);
+    const signature = signatureFor(current.session.username);
+    return json({ ...mail, graphConfigured: Boolean(graphConfig()), signature: { name: signature.name, title: signature.title }, plainBody: `${mail.body}\n\n${signaturePlain(signature)}` });
+  } catch (error) {
+    console.error("transphere_animation_get_failed", error);
+    return json({ error: "Animation Transphère indisponible." }, 503);
+  }
 }
 
 export async function POST(request: Request) {
-  const current = await currentSession(); if (!current) return json({ error: "Session CRVO requise." }, 401); if (current.session.role !== "admin") return json({ error: "Accès administrateur requis." }, 403);
-  const config = graphConfig(); if (!config) return json({ error: "Microsoft 365 non configuré.", graphConfigured: false }, 501);
-  const body = await request.json().catch(() => null) as PostBody | null; const subject = String(body?.subject ?? "").slice(0, 240); const bodyText = String(body?.bodyText ?? "").slice(0, 20000); const filename = String(body?.filename ?? "Book_TRANSPHERE.pdf").replace(/[^a-zA-Z0-9._ -]/g, "_"); const pdfBase64 = String(body?.pdfBase64 ?? "").replace(/^data:application\/pdf;base64,/, ""); if (!subject || !bodyText || !pdfBase64) return json({ error: "Objet, texte ou PDF manquant." }, 400);
-  try { const token = await graphToken(config); const signature = signatureFor(current.session.username); const response = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(config.mailbox)}/messages`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ subject, body: { contentType: "HTML", content: emailHtml(bodyText, signature) }, toRecipients: TO.map(graphRecipient), attachments: [{ "@odata.type": "#microsoft.graph.fileAttachment", name: filename, contentType: "application/pdf", contentBytes: pdfBase64 }] }), cache: "no-store" }); const created = await response.json().catch(() => ({})) as { id?: string; webLink?: string; error?: { message?: string } }; if (!response.ok || !created.id) throw new Error(created.error?.message || `Microsoft Graph ${response.status}`); let webLink = created.webLink; if (!webLink) { const read = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(config.mailbox)}/messages/${encodeURIComponent(created.id)}?$select=webLink`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }); const result = await read.json().catch(() => ({})) as { webLink?: string }; webLink = result.webLink; } return json({ ok: true, webLink: webLink || null }); } catch (error) { console.error("transphere_outlook_failed", error); return json({ error: error instanceof Error ? error.message : "Brouillon Outlook impossible." }, 502); }
+  const current = await currentSession();
+  if (!current) return json({ error: "Session requise." }, 401);
+  if (!hasPageAccess(current.session, "transphere")) return json({ error: "Accès Transphère requis." }, 403);
+  const config = graphConfig();
+  if (!config) return json({ error: "Microsoft 365 non configuré.", graphConfigured: false }, 501);
+  const body = await request.json().catch(() => null) as PostBody | null;
+  const subject = String(body?.subject ?? "").slice(0, 240);
+  const bodyText = String(body?.bodyText ?? "").slice(0, 20000);
+  const filename = String(body?.filename ?? "Book_TRANSPHERE.pdf").replace(/[^a-zA-Z0-9._ -]/g, "_");
+  const pdfBase64 = String(body?.pdfBase64 ?? "").replace(/^data:application\/pdf;base64,/, "");
+  if (!subject || !bodyText || !pdfBase64) return json({ error: "Objet, texte ou PDF manquant." }, 400);
+  try {
+    const token = await graphToken(config);
+    const signature = signatureFor(current.session.username);
+    const response = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(config.mailbox)}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        subject,
+        body: { contentType: "HTML", content: emailHtml(bodyText, signature) },
+        toRecipients: TO.map(graphRecipient),
+        attachments: [{ "@odata.type": "#microsoft.graph.fileAttachment", name: filename, contentType: "application/pdf", contentBytes: pdfBase64 }],
+      }),
+      cache: "no-store",
+    });
+    const created = await response.json().catch(() => ({})) as { id?: string; webLink?: string; error?: { message?: string } };
+    if (!response.ok || !created.id) throw new Error(created.error?.message || `Microsoft Graph ${response.status}`);
+    let webLink = created.webLink;
+    if (!webLink) {
+      const read = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(config.mailbox)}/messages/${encodeURIComponent(created.id)}?$select=webLink`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const result = await read.json().catch(() => ({})) as { webLink?: string };
+      webLink = result.webLink;
+    }
+    return json({ ok: true, webLink: webLink || null });
+  } catch (error) {
+    console.error("transphere_outlook_failed", error);
+    return json({ error: error instanceof Error ? error.message : "Brouillon Outlook impossible." }, 502);
+  }
 }
