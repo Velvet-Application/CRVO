@@ -24,7 +24,14 @@ export default function NotificationCenter(){
     }catch{}
   },[]);
 
-  useEffect(()=>{void load();const timer=window.setInterval(()=>void load(),30000);return()=>window.clearInterval(timer);},[load]);
+  useEffect(()=>{
+    void load();
+    const refresh=()=>{if(document.visibilityState==="visible")void load();};
+    const timer=window.setInterval(refresh,120000);
+    document.addEventListener("visibilitychange",refresh);
+    window.addEventListener("focus",refresh);
+    return()=>{window.clearInterval(timer);document.removeEventListener("visibilitychange",refresh);window.removeEventListener("focus",refresh);};
+  },[load]);
 
   async function markRead(id?:string){
     try{await fetch("/api/notifications",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(id?{id}:{})});}catch{}
@@ -34,7 +41,7 @@ export default function NotificationCenter(){
   const active=useMemo(()=>(data.notifications??[]).filter(item=>!item.resolvedAt),[data.notifications]);
 
   return <>
-    <button className="crvo-notification-bell" aria-label={`Notifications${data.unread?` · ${data.unread} non lue(s)`:""}`} onClick={()=>{setOpen(value=>!value);if(!open&&data.unread)void markRead();}}>
+    <button className="crvo-notification-bell" aria-label={`Notifications${data.unread?` · ${data.unread} non lue(s)`:""}`} onClick={()=>{const next=!open;setOpen(next);if(next)void load();if(next&&data.unread)void markRead();}}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></svg>
       {data.unread>0&&<b>{data.unread>99?"99+":data.unread}</b>}
     </button>
