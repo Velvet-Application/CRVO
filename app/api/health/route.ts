@@ -6,7 +6,7 @@ const SUPABASE_URL="https://tvmkhvfmdstkunwwuzuz.supabase.co";
 const SUPABASE_KEY="sb_publishable_bGCdOoq05alXNTOtouIQcQ_HX9jpKnv";
 
 type Warning={code?:string;severity?:string;message?:string};
-type IndustrialHealth={ok:boolean;app:string;trustLevel:"green"|"amber"|"red";checkedAt:string;dataReady:boolean;bottlenecksReady:boolean;clientDashboardReady:boolean;warnings:Warning[];production?:Record<string,unknown>;ftp?:Record<string,unknown>};
+type IndustrialHealth={ok:boolean;app:string;trustLevel:"green"|"amber"|"red";checkedAt:string;dataReady:boolean;bottlenecksReady:boolean;clientDashboardReady:boolean;warnings:Warning[];production?:Record<string,unknown>;ftp?:Record<string,unknown>;feedContract?:Record<string,unknown>};
 type FinanceHealth={ready:boolean};
 
 const wait=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -14,8 +14,9 @@ async function rpc<T>(name:string):Promise<T>{let lastError:unknown;for(let atte
 
 export async function GET(){
   try{
-    // Contrat industriel v3 : l'absence de synchronisation FTP devient critique seulement au-delà d'une heure.
-    const [trust,financeHealth]=await Promise.all([rpc<IndustrialHealth>("kpi_industrial_health_v3_public"),rpc<FinanceHealth>("kpi_industrial_finance_health_public")]);
+    // Contrat industriel v4 : Factory-J+1 + EtatduParc sont attendus toutes les heures, 24h/24.
+    // Le bridge brasse à H:07/H:37 avec fast-lane Factory à H:05/H:35.
+    const [trust,financeHealth]=await Promise.all([rpc<IndustrialHealth>("kpi_industrial_health_v4_public"),rpc<FinanceHealth>("kpi_industrial_finance_health_public")]);
     const objectiveReady=Number(trust.production?.dailyExitTarget??0)>0;
     const platformOk=Boolean(trust.dataReady&&trust.bottlenecksReady&&trust.clientDashboardReady&&financeHealth.ready&&objectiveReady);
     const warnings=(trust.warnings??[]).slice(0,8).map(item=>({code:item.code??"source_watch",severity:item.severity??"warning",message:item.message??"Une source nécessite un contrôle."}));
@@ -30,6 +31,7 @@ export async function GET(){
       financeReady:financeHealth.ready,
       objectiveReady,
       warnings,
+      feedContract:trust.feedContract??null,
       ftp:{syncAgeMinutes:trust.ftp?.syncAgeMinutes??null},
       production:{sourceAgeMinutes:trust.production?.sourceAgeMinutes??null},
     },{status:platformOk?200:503,headers:{"Cache-Control":"no-store"}});
