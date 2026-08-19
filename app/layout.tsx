@@ -21,6 +21,7 @@ import TransphereAccessManager from "./transphere-access-manager";
 import WorktimeAnnualizationPanel from "./worktime-annualization-panel";
 import AtelierPublicScreen from "./atelier-public-screen";
 import FriendlyLoadingPatch from "./friendly-loading-patch";
+import NotificationCenter from "./notification-center";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -49,6 +50,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <HomeSideMenu />
     <DataTrustGuard />
     <AuthNav />
+    <NotificationCenter />
     <DailyAnimationOneClick />
     <EnvironmentSwitcher />
     <TransphereAccessManager />
