@@ -215,16 +215,18 @@ export async function createDailyAnimationPdf(summary: DailyAnimationPdfSummary)
 
   const colW = 382, gap = 18;
   const xs = [42, 42 + colW + gap, 42 + (colW + gap) * 2, 42 + (colW + gap) * 3];
+  const topGap = 18;
+  const topW = (1600 - topGap * 2) / 3;
+  const topXs = [42, 42 + topW + topGap, 42 + (topW + topGap) * 2];
   const dayExitRatio = summary.yesterday.exitTarget ? summary.yesterday.exits / summary.yesterday.exitTarget : null;
   const dayRevenueRatio = summary.yesterday.revenueTarget ? summary.yesterday.revenue / summary.yesterday.revenueTarget : null;
   const monthExitRatio = summary.month.exitTarget ? summary.month.exits / summary.month.exitTarget : null;
   const monthRevenueRatio = summary.month.revenueTargetAtDate ? summary.month.revenue / summary.month.revenueTargetAtDate : null;
   const caPct = summary.month.revenueMonthlyTarget ? summary.month.revenue / summary.month.revenueMonthlyTarget : null;
 
-  card(ctx, xs[0], 174, colW, 124, CYAN, "Entrées veille", `${fmt(summary.yesterday.entries)} VO`, "véhicules réceptionnés", null);
-  card(ctx, xs[1], 174, colW, 124, BLUE, "Sorties veille", `${fmt(summary.yesterday.exits)} VOP`, summary.yesterday.exitTarget == null ? "objectif journalier non configuré" : `objectif ${fmt(summary.yesterday.exitTarget)} · ${signed(summary.yesterday.exits - summary.yesterday.exitTarget, " VOP")}`, dayExitRatio);
-  card(ctx, xs[2], 174, colW, 124, TEAL, "CA veille", euro(summary.yesterday.revenue), summary.yesterday.revenueTarget == null ? `${fmt(summary.yesterday.invoices)} factures` : `cible ${euro(summary.yesterday.revenueTarget)} · ${signed(summary.yesterday.revenue - summary.yesterday.revenueTarget, " €")}`, dayRevenueRatio);
-  card(ctx, xs[3], 174, colW, 124, PURPLE, "Photos veille", summary.yesterday.photos == null ? "—" : `${fmt(summary.yesterday.photos)} VO`, "passages Photo · Factory FTP", null);
+  card(ctx, topXs[0], 174, topW, 124, CYAN, "Entrées veille", `${fmt(summary.yesterday.entries)} VO`, "véhicules réceptionnés", null);
+  card(ctx, topXs[1], 174, topW, 124, BLUE, "Sorties veille", `${fmt(summary.yesterday.exits)} VOP`, summary.yesterday.exitTarget == null ? "objectif journalier non configuré" : `objectif ${fmt(summary.yesterday.exitTarget)} · ${signed(summary.yesterday.exits - summary.yesterday.exitTarget, " VOP")}`, dayExitRatio);
+  card(ctx, topXs[2], 174, topW, 124, TEAL, "CA veille", euro(summary.yesterday.revenue), summary.yesterday.revenueTarget == null ? `${fmt(summary.yesterday.invoices)} factures` : `cible ${euro(summary.yesterday.revenueTarget)} · ${signed(summary.yesterday.revenue - summary.yesterday.revenueTarget, " €")}`, dayRevenueRatio);
 
   card(ctx, xs[0], 316, colW, 124, CYAN, "Entrées depuis le 1er", `${fmt(summary.month.entries)} VO`, "réceptions cumulées du mois", null);
   card(ctx, xs[1], 316, colW, 124, BLUE, "Sorties depuis le 1er", `${fmt(summary.month.exits)} VOP`, summary.month.exitTarget == null ? "objectif à date non configuré" : `attendus ${fmt(summary.month.exitTarget)} · ${signed(summary.month.exitDelta, " VOP")}`, monthExitRatio);
@@ -232,15 +234,19 @@ export async function createDailyAnimationPdf(summary: DailyAnimationPdfSummary)
   card(ctx, xs[3], 316, colW, 124, YELLOW, "Avancement CA mensuel", caPct == null ? "—" : `${fmt(caPct * 100)} %`, `objectif ${euro(summary.month.revenueMonthlyTarget)} · FRE ${summary.month.fre == null ? "—" : euro(summary.month.fre)}`, caPct);
 
   ctx.fillStyle = INK; ctx.font = '800 italic 25px "Exo", Arial, sans-serif'; ctx.fillText("PRODUCTION ATELIERS · VEILLE", 42, 483);
-  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText("Véhicules terminés par étape", 42, 506);
-  const prod = summary.yesterday.production.slice(0, 6);
-  const prodGap = 12, prodW = (1600 - prodGap * 5) / 6;
+  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText("Véhicules terminés par étape · passages Photo", 42, 506);
+  const prod: Array<{ key: string; label: string; value: number | null; color: string }> = [
+    ...summary.yesterday.production.slice(0, 6).map((item) => ({ ...item, value: item.value as number | null })),
+    { key: "photos", label: "Photos", value: summary.yesterday.photos ?? null, color: PURPLE },
+  ];
+  const prodGap = 10;
+  const prodW = (1600 - prodGap * (prod.length - 1)) / prod.length;
   prod.forEach((item, i) => {
     const x = 42 + i * (prodW + prodGap);
     rounded(ctx, x, 524, prodW, 84, 14); ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = item.color || BLUE; ctx.lineWidth = 2; ctx.stroke();
     ctx.fillStyle = item.color || BLUE; ctx.fillRect(x, 524, 5, 84);
-    ctx.fillStyle = INK; ctx.font = '800 italic 27px "Exo", Arial, sans-serif'; ctx.fillText(fmt(item.value), x + 22, 560);
-    ctx.fillStyle = MUTED; ctx.font = '700 12px "Exo", Arial, sans-serif'; ctx.fillText(item.label, x + 22, 585);
+    ctx.fillStyle = INK; ctx.font = '800 italic 27px "Exo", Arial, sans-serif'; ctx.fillText(item.value == null ? "—" : fmt(item.value), x + 18, 560);
+    ctx.fillStyle = MUTED; ctx.font = '700 11px "Exo", Arial, sans-serif'; ctx.fillText(item.label, x + 18, 585);
   });
 
   const lowerY = 632, lowerH = 292;
@@ -257,7 +263,7 @@ export async function createDailyAnimationPdf(summary: DailyAnimationPdfSummary)
   rounded(ctx, 595, lowerY, 1047, lowerH, 20); ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = LINE; ctx.stroke();
   ctx.fillStyle = INK; ctx.font = '800 italic 24px "Exo", Arial, sans-serif'; ctx.fillText("10 PLUS VIEUX DOSSIERS À SORTIR", 622, lowerY + 40);
   ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText("Parc usine actif · VOP EFF / VOP EXT · priorité vieillissement", 622, lowerY + 63);
-  const oldest = summary.pilotage.oldestToExit ?? [];
+  const oldest = (summary.pilotage.oldestToExit ?? []).filter((vehicle) => String(vehicle.registration ?? "").trim().toUpperCase() !== "GJ780RF");
   if (!oldest.length) {
     ctx.fillStyle = MUTED; ctx.font = '600 16px "Exo", Arial, sans-serif'; ctx.fillText("Liste des dossiers vieillissants indisponible.", 622, lowerY + 118);
   } else {
@@ -315,7 +321,7 @@ export async function createDailyAnimationPdf(summary: DailyAnimationPdfSummary)
   });
 
   ctx.fillStyle = MUTED; ctx.font = '600 10px "Exo", Arial, sans-serif';
-  ctx.fillText(`Sources certifiées KPI CRVO · Factory FTP · EtatduParc · Reporting factures · Objectifs KPI`, 44, 1166);
+  ctx.fillText("Sources certifiées KPI CRVO · Factory FTP · EtatduParc · Reporting factures · Objectifs KPI", 44, 1166);
   ctx.textAlign = "right"; ctx.fillText(`Généré ${new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date())}`, 1640, 1166); ctx.textAlign = "left";
 
   const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
