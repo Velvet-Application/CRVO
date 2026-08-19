@@ -101,16 +101,23 @@ function addresses(list?: MailRecipient[]) {
   return (list ?? []).map((item) => item.address).filter(Boolean);
 }
 
+function encodeMailto(value: string) {
+  return encodeURIComponent(value)
+    .replace(/%0A/g, "%0D%0A")
+    .replace(/'/g, "%27");
+}
+
 function mailtoUrl(summary: Summary) {
   const to = addresses(summary.outlook?.to).join(";");
   const cc = addresses(summary.outlook?.cc).join(";");
-  const query = new URLSearchParams();
-  if (cc) query.set("cc", cc);
-  query.set("subject", summary.mail.subject);
-  // Ne jamais injecter la signature générée dans le fallback : Outlook insère sa signature native
-  // après le corps du message, au bon format et au bon emplacement.
-  query.set("body", summary.mail.body);
-  return `mailto:${to}?${query.toString()}`;
+  const parameters = [
+    cc ? `cc=${encodeMailto(cc)}` : "",
+    `subject=${encodeMailto(summary.mail.subject)}`,
+    // Le corps mailto reste du texte brut par spécification Outlook, mais l'encodage RFC3986
+    // garde de vrais espaces (%20) et des retours CRLF au lieu des '+' générés par URLSearchParams.
+    `body=${encodeMailto(summary.mail.body)}`,
+  ].filter(Boolean).join("&");
+  return `mailto:${to}?${parameters}`;
 }
 
 export default function DailyAnimationOneClickV2() {
@@ -253,7 +260,7 @@ export default function DailyAnimationOneClickV2() {
       // avec les champs déterministes et télécharge le PDF à joindre.
       download(file);
       window.location.href = mailtoUrl(currentSummary);
-      setNotice(`Outlook ouvert avec ${toCount} destinataires, ${ccCount} CC et l'objet. Le PDF est téléchargé ; Outlook place sa signature native après le corps du mail.`);
+      setNotice(`Outlook ouvert avec ${toCount} destinataires, ${ccCount} CC et l'objet. Le PDF est téléchargé ; le texte est préchargé sans caractères '+' parasites.`);
       setState("ready");
     } catch (reason) {
       if (outlookTab && !outlookTab.closed) outlookTab.close();
@@ -271,7 +278,7 @@ export default function DailyAnimationOneClickV2() {
         <span className={styles.copy}>
           <small>ANIMATION ÉQUIPE · 1 CLIC</small>
           <strong>{state === "opening" ? "Ouverture d'Outlook…" : "Créer & ouvrir Outlook"}</strong>
-          <em>{summary ? `Résultats du ${displayDate(summary.reportDate)} · ${graphReady ? "brouillon complet + PDF" : "Outlook prérempli + PDF"}` : "PDF CRVO · mail personnalisé · CA"}</em>
+          <em>{summary ? `Résultats du ${displayDate(summary.reportDate)} · ${graphReady ? "brouillon HTML complet + PDF" : "Outlook prérempli + PDF"}` : "PDF CRVO · mail personnalisé · CA"}</em>
         </span>
         <span className={styles.status}><i />{statusLabel}</span>
       </button>
@@ -293,7 +300,7 @@ export default function DailyAnimationOneClickV2() {
       <div className={styles.readiness}>
         <span className={styles.ok}><i />Diffusion verrouillée : {toCount} destinataires · {ccCount} CC</span>
         <span className={styles.ok}><i />Signature : {summary?.outlook?.signature?.name ?? "Direction CRVO"}{summary?.outlook?.signature?.title ? ` · ${summary.outlook.signature.title}` : ""}</span>
-        <span className={graphReady ? styles.ok : styles.warn}><i />{graphReady ? "Microsoft 365 : À + CC + objet + HTML Aptos Display 10 pt + signature + PDF automatiques" : "Mode Outlook local : À + CC + objet + corps préchargés ; signature Outlook native ; PDF téléchargé à joindre"}</span>
+        <span className={graphReady ? styles.ok : styles.warn}><i />{graphReady ? "Microsoft 365 : À + CC + objet + HTML Aptos Display 10 pt bleu + signature + PDF automatiques" : "Outlook prérempli : texte brut propre ; le format Aptos Display 10 pt bleu nécessite le brouillon Microsoft 365"}</span>
         <span className={warnings.length ? styles.warn : styles.ok}><i />{warnings.length ? `Contrôle données : ${warnings.join(" · ")}` : "Données de la veille cohérentes pour diffusion"}</span>
         <span className={styles.ok}><i />PDF conforme à la charte CRVO</span>
       </div>
