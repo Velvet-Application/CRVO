@@ -40,6 +40,7 @@ export async function GET(request: Request) {
   const today = todayParis();
   const from = isoDate(url.searchParams.get("from"), today);
   const to = isoDate(url.searchParams.get("to"), from);
+  const focus = isoDate(url.searchParams.get("focus"), to);
   const forcedEntity = current.session.access_profile === "transphere_manager" ? "TRANSPHERE" : null;
   const entity = forcedEntity ?? (String(url.searchParams.get("entity") ?? "CRVO").toUpperCase() === "TRANSPHERE" ? "TRANSPHERE" : "CRVO");
   try {
@@ -65,7 +66,20 @@ export async function GET(request: Request) {
       console.error("worktime_capacity_reference_failed", impactError);
     }
 
-    return json({ ...payload, impactReference, currentUser: { name: current.session.display_name, profile: current.session.access_profile } });
+    let validation: Record<string, unknown> = { date: focus, people: [], scope: null, canConfirm: false };
+    if (entity === "CRVO") {
+      try {
+        validation = await authRpc<Record<string, unknown>>("kpi_worktime_validation_status", {
+          p_session_hash: current.tokenHash,
+          p_entity: entity,
+          p_date: focus,
+        });
+      } catch (validationError) {
+        console.error("worktime_validation_status_failed", validationError);
+      }
+    }
+
+    return json({ ...payload, impactReference, validation, currentUser: { name: current.session.display_name, profile: current.session.access_profile } });
   } catch (error) {
     console.error("worktime_dashboard_failed", error);
     return json({ error: error instanceof Error ? error.message.replace(/^Auth RPC [^:]+ failed with \d+:?\s*/, "") : "Suivi du temps indisponible." }, 500);
@@ -89,6 +103,16 @@ export async function POST(request: Request) {
         p_end: String(body.endDate ?? body.startDate ?? ""),
         p_event_time: body.eventTime ? String(body.eventTime) : null,
         p_comment: body.comment ? String(body.comment) : null,
+      });
+      return json(result);
+    }
+    if (action === "confirm-presence" || action === "confirm-team") {
+      const result = await authRpc<Record<string, unknown>>("kpi_worktime_confirm_presence", {
+        p_session_hash: current.tokenHash,
+        p_entity: String(body.entity ?? "CRVO"),
+        p_date: String(body.date ?? todayParis()),
+        p_employee_key: action === "confirm-presence" ? String(body.employeeKey ?? "") : null,
+        p_bulk: action === "confirm-team",
       });
       return json(result);
     }
@@ -154,6 +178,16 @@ export async function PATCH(request: Request) {
         p_event_time: body.eventTime ? String(body.eventTime) : null,
         p_comment: body.comment ? String(body.comment) : null,
         p_justification: body.justification ? String(body.justification) : null,
+      });
+      return json(result);
+    }
+    if (action === "reopen-presence") {
+      const result = await authRpc<Record<string, unknown>>("kpi_worktime_reopen_presence", {
+        p_session_hash: current.tokenHash,
+        p_entity: String(body.entity ?? "CRVO"),
+        p_date: String(body.date ?? todayParis()),
+        p_employee_key: String(body.employeeKey ?? ""),
+        p_reason: body.reason ? String(body.reason) : null,
       });
       return json(result);
     }
