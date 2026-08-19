@@ -12,7 +12,7 @@ function minuteLabel(value:unknown){const age=numericAge(value);if(age==null)ret
 
 export default function DataTrustGuard(){
   const pathname=usePathname();
-  const standalone=pathname==="/expertise-mobile"||pathname.startsWith("/expertise/client/");
+  const standalone=pathname==="/expertise-mobile"||pathname.startsWith("/expertise/client/")||pathname.startsWith("/transphere");
   const[state,setState]=useState<State>("checking");const[health,setHealth]=useState<HealthPayload|null>(null);
   useEffect(()=>{if(standalone){setState("green");return;}const requested=new URLSearchParams(window.location.search).get("nav");if(requested==="objectives"||requested==="sources"){setState("green");return;}let cancelled=false;async function check(){try{const response=await fetch(`/api/health?trust=${Date.now()}`,{cache:"no-store",headers:{"Cache-Control":"no-cache"}});const payload=await response.json() as HealthPayload;if(cancelled)return;setHealth(payload);const ftpAge=numericAge(payload.ftp?.syncAgeMinutes);if(!response.ok||payload.dataReady!==true||payload.trustLevel==="red"||payload.dataTrustOk===false){setState("red");return;}if(payload.trustLevel==="amber"){setState(ftpAge!=null&&ftpAge>120?"alert":"watch");return;}setState("green");}catch{if(!cancelled){setHealth(null);setState("red");}}}void check();const timer=window.setInterval(()=>void check(),60000);return()=>{cancelled=true;window.clearInterval(timer);};},[standalone]);
   const signalWarnings=useMemo(()=>{const all=(health?.warnings??[]).filter(w=>w?.message);const important=all.filter(w=>w.severity==="critical"||w.severity==="warning");return(important.length?important:all).slice(0,4);},[health]);
