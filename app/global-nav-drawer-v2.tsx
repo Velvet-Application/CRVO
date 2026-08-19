@@ -27,9 +27,9 @@ export default function GlobalNavDrawerV2(){
       {allowed("reporting")&&link(rootHref("today"),"Performance du jour")}
       {allowed("book")&&group("book","BOOK",<>{link(rootHref("yesterday"),"Dashboard")}{link(rootHref("bottlenecks"),"Goulot")}{link(rootHref("walking"),"Walking Dead")}{link(rootHref("finance"),"Chiffre d'affaire")}</>)}
       {animationVisible&&group("animation","Animation du centre",<>{allowed("data_rh")&&link("/animation-centre/rh","RH & Polycompétences")}{allowed("productivity")&&link("/performance/productivite","Productivité")}{allowed("monthly_animation")&&link("/animation-mensuelle","Variable")}{admin&&link("/animation-mensuelle/acces","Accès Workflow",true)}{admin&&link("/animation-mensuelle/payplan","Payplan",true)}</>)}
-      {allowed("worktime")&&topLink("/temps-travail","Temps de travail")}
       {cockpitVisible&&group("cockpit","Cockpit V2",<>{allowed("cockpit")&&link("/cockpit-v2?section=pilotage","Pilotage du jour")}{allowed("cockpit")&&link("/cockpit-v2?section=synthese","Synthèse manager")}{allowed("cockpit")&&link("/cockpit-v2?section=decision","Aide à la décision")}{allowed("cockpit")&&link("/cockpit-v2?section=prevision","Prévision fin de journée")}{allowed("bodyshop")&&link("/cockpit-v2/carrosserie","Focus carrosserie")}{allowed("intelligence")&&link("/intelligence","Analyse")}</>)}
       {clientVisible&&group("client","Dashboard client",<>{link("/dashboard-client?scope=reseau","Réseau EFF & EFB")}{link("/dashboard-client?scope=bmw-mini","BMW / MINI")}</>)}
+      {allowed("worktime")&&topLink("/temps-travail","Temps de travail")}
       {group("settings","Paramètre",<>{allowed("settings")&&link(rootHref("objectives"),"Objectif & seuil")}{allowed("settings")&&link("/sources","Source & Connexion")}{link("/account","Accès")}{allowed("data_rh")&&link("/data-rh","Data RH")}</>)}
       {admin&&<div className="gn2-admin">{link("/developpement","Développement",true)}{link("/atelier","Ecran ATELIER",true)}{link("/direction","Ecran DIRECTION",true)}{link("/capacitaire","Simulateur capacitaire",true)}</div>}
     </nav><footer><span>SESSION SÉCURISÉE</span><strong>{profile}</strong></footer></aside></>}
