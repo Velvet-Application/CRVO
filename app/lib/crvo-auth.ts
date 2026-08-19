@@ -6,7 +6,7 @@ export const CRVO_SESSION_SECONDS = 12 * 60 * 60;
 export const CRVO_SUPABASE_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co";
 export const CRVO_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_bGCdOoq05alXNTOtouIQcQ_HX9jpKnv";
 
-export type AccessProfile = "admin" | "service_manager" | "team_manager" | "custom" | "transphere";
+export type AccessProfile = "admin" | "service_manager" | "team_manager" | "custom" | "transphere" | "transphere_manager" | "hr";
 
 export type CrvoSession = {
   ok: boolean;
