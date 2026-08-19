@@ -4,6 +4,8 @@ import { authRpc, currentSession } from "../../../lib/crvo-auth";
 export const dynamic = "force-dynamic";
 
 const MAX_ROWS_PER_CHUNK = 2000;
+const MIN_ROWS_PER_COMMIT = 250;
+const MAX_ROWS_PER_COMMIT = 1000;
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 type SourceKey = "billed_time" | "finance" | "workload";
 type StartBody = { action: "start"; source?: SourceKey; filename?: string; sha256?: string; byteSize?: number; minDate?: string | null; maxDate?: string | null; totalRows?: number; headers?: string[] };
@@ -61,7 +63,10 @@ export async function POST(request: Request) {
       return reply(result);
     }
 
-    const limit = Math.max(500, Math.min(Number(body.limit ?? 5000) || 5000, 10000));
+    // Keep each database transaction short and predictable. The database RPC
+    // applies the same ceiling, so older cached clients are protected too.
+    const requested = Number(body.limit ?? MAX_ROWS_PER_COMMIT) || MAX_ROWS_PER_COMMIT;
+    const limit = Math.max(MIN_ROWS_PER_COMMIT, Math.min(requested, MAX_ROWS_PER_COMMIT));
     const result = await authRpc<Record<string, unknown>>("kpi_ops_batch_commit_step_admin", {
       p_session_hash: current.tokenHash,
       p_batch_id: batchId,
