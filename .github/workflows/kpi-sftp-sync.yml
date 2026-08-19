@@ -81,3 +81,5 @@ jobs:
           console.error('hourly industrial freshness contract failed',last);
           process.exit(1);
           NODE
+
+# Forced verification marker: 2026-08-19T16:08+02:00
