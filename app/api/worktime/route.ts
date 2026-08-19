@@ -43,13 +43,19 @@ export async function GET(request: Request) {
   const forcedEntity = current.session.access_profile === "transphere_manager" ? "TRANSPHERE" : null;
   const entity = forcedEntity ?? (String(url.searchParams.get("entity") ?? "CRVO").toUpperCase() === "TRANSPHERE" ? "TRANSPHERE" : "CRVO");
   try {
-    const payload = await authRpc<Record<string, unknown>>("kpi_worktime_dashboard", {
-      p_session_hash: current.tokenHash,
-      p_entity: entity,
-      p_from: from,
-      p_to: to,
-    });
-    return json({ ...payload, currentUser: { name: current.session.display_name, profile: current.session.access_profile } });
+    const [payload, impactReference] = await Promise.all([
+      authRpc<Record<string, unknown>>("kpi_worktime_dashboard", {
+        p_session_hash: current.tokenHash,
+        p_entity: entity,
+        p_from: from,
+        p_to: to,
+      }),
+      authRpc<Record<string, unknown>>("kpi_worktime_capacity_reference", {
+        p_session_hash: current.tokenHash,
+        p_entity: entity,
+      }),
+    ]);
+    return json({ ...payload, impactReference, currentUser: { name: current.session.display_name, profile: current.session.access_profile } });
   } catch (error) {
     console.error("worktime_dashboard_failed", error);
     return json({ error: error instanceof Error ? error.message.replace(/^Auth RPC [^:]+ failed with \d+:?\s*/, "") : "Suivi du temps indisponible." }, 500);
