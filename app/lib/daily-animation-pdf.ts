@@ -189,6 +189,14 @@ function focusItems(summary: DailyAnimationPdfSummary) {
   return rows.slice(0, 5);
 }
 
+function metricTile(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, accent: string, label: string, value: string, detail: string) {
+  rounded(ctx, x, y, w, h, 13); ctx.fillStyle = "#f9fcfe"; ctx.fill(); ctx.strokeStyle = LINE; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = accent; ctx.fillRect(x, y, 5, h);
+  ctx.fillStyle = MUTED; ctx.font = '800 10px "Exo", Arial, sans-serif'; ctx.fillText(label.toUpperCase(), x + 18, y + 24);
+  ctx.fillStyle = INK; ctx.font = '800 italic 27px "Exo", Arial, sans-serif'; ctx.fillText(value, x + 18, y + 58);
+  ctx.fillStyle = MUTED; ctx.font = '600 10px "Exo", Arial, sans-serif'; wrap(ctx, detail, x + 18, y + 78, w - 36, 13, 2);
+}
+
 export async function createDailyAnimationPdf(summary: DailyAnimationPdfSummary) {
   if (document.fonts?.ready) await document.fonts.ready;
   const canvas = document.createElement("canvas");
@@ -211,7 +219,7 @@ export async function createDailyAnimationPdf(summary: DailyAnimationPdfSummary)
   ctx.fillStyle = INK; ctx.font = '800 italic 38px "Exo", Arial, sans-serif'; ctx.fillText("ANIMATION QUOTIDIENNE", 360, 88);
   ctx.fillStyle = MUTED; ctx.font = '600 18px "Exo", Arial, sans-serif'; ctx.fillText(`CRVO ${summary.centre} · Résultats du ${displayDate(summary.reportDate)}`, 362, 119);
   ctx.textAlign = "right"; ctx.fillStyle = BLUE; ctx.font = '800 15px "Exo", Arial, sans-serif'; ctx.fillText("SYNTHÈSE OPÉRATIONNELLE", 1608, 88);
-  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText("Veille · mois · parc · dossiers prioritaires", 1608, 114); ctx.textAlign = "left";
+  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText("Veille · mois · production · priorités", 1608, 114); ctx.textAlign = "left";
 
   const colW = 382, gap = 18;
   const xs = [42, 42 + colW + gap, 42 + (colW + gap) * 2, 42 + (colW + gap) * 3];
@@ -249,76 +257,41 @@ export async function createDailyAnimationPdf(summary: DailyAnimationPdfSummary)
     ctx.fillStyle = MUTED; ctx.font = '700 11px "Exo", Arial, sans-serif'; ctx.fillText(item.label, x + 18, 585);
   });
 
-  const lowerY = 632, lowerH = 292;
-  rounded(ctx, 42, lowerY, 535, lowerH, 20); ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = LINE; ctx.lineWidth = 1; ctx.stroke();
+  const lowerY = 632, lowerH = 480;
+  const focusW = 982;
+  rounded(ctx, 42, lowerY, focusW, lowerH, 20); ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = LINE; ctx.lineWidth = 1; ctx.stroke();
   ctx.fillStyle = BLUE; ctx.fillRect(42, lowerY, 7, lowerH);
-  ctx.fillStyle = INK; ctx.font = '800 italic 24px "Exo", Arial, sans-serif'; ctx.fillText("FOCUS DU JOUR", 72, lowerY + 40);
-  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText("Priorités opérationnelles issues du KPI", 72, lowerY + 63);
+  ctx.fillStyle = INK; ctx.font = '800 italic 25px "Exo", Arial, sans-serif'; ctx.fillText("FOCUS DU JOUR", 72, lowerY + 43);
+  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText("Priorités opérationnelles à traiter dans la journée", 72, lowerY + 67);
+
   focusItems(summary).forEach((item, index) => {
-    const y = lowerY + 102 + index * 39;
-    ctx.beginPath(); ctx.arc(82, y - 5, 5, 0, Math.PI * 2); ctx.fillStyle = item.color; ctx.fill();
-    ctx.fillStyle = INK; ctx.font = '700 15px "Exo", Arial, sans-serif'; wrap(ctx, item.text, 100, y, 440, 18, 2);
+    const y = lowerY + 94 + index * 68;
+    rounded(ctx, 70, y, 924, 54, 12); ctx.fillStyle = "#f9fcfe"; ctx.fill(); ctx.strokeStyle = LINE; ctx.stroke();
+    rounded(ctx, 70, y, 6, 54, 3); ctx.fillStyle = item.color; ctx.fill();
+    ctx.beginPath(); ctx.arc(97, y + 27, 7, 0, Math.PI * 2); ctx.fillStyle = item.color; ctx.fill();
+    ctx.fillStyle = INK; ctx.font = '800 16px "Exo", Arial, sans-serif'; wrap(ctx, item.text, 118, y + 32, 842, 18, 2);
   });
 
-  rounded(ctx, 595, lowerY, 1047, lowerH, 20); ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = LINE; ctx.stroke();
-  ctx.fillStyle = INK; ctx.font = '800 italic 24px "Exo", Arial, sans-serif'; ctx.fillText("10 PLUS VIEUX DOSSIERS À SORTIR", 622, lowerY + 40);
-  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText("Parc usine actif · VOP EFF / VOP EXT · priorité vieillissement", 622, lowerY + 63);
-  const oldest = (summary.pilotage.oldestToExit ?? []).filter((vehicle) => String(vehicle.registration ?? "").trim().toUpperCase() !== "GJ780RF");
-  if (!oldest.length) {
-    ctx.fillStyle = MUTED; ctx.font = '600 16px "Exo", Arial, sans-serif'; ctx.fillText("Liste des dossiers vieillissants indisponible.", 622, lowerY + 118);
-  } else {
-    oldest.slice(0, 10).forEach((vehicle, index) => {
-      const col = index < 5 ? 0 : 1;
-      const row = index % 5;
-      const x = 622 + col * 500;
-      const y = lowerY + 91 + row * 38;
-      const urgent = String(vehicle.urgency ?? "").toLowerCase().includes("oui") || String(vehicle.alert ?? "").toLowerCase().includes("urgence");
-      ctx.beginPath(); ctx.arc(x + 10, y + 4, 11, 0, Math.PI * 2); ctx.fillStyle = urgent ? RED : BLUE; ctx.fill();
-      ctx.fillStyle = "#fff"; ctx.font = '800 10px "Exo", Arial, sans-serif'; ctx.textAlign = "center"; ctx.fillText(String(index + 1), x + 10, y + 8); ctx.textAlign = "left";
-      ctx.fillStyle = INK; ctx.font = '800 13px "Exo", Arial, sans-serif'; ctx.fillText(`${vehicle.registration || "—"} · OR ${vehicle.workOrder || "—"}`, x + 31, y + 2);
-      ctx.fillStyle = urgent ? RED : ORANGE; ctx.font = '800 13px "Exo", Arial, sans-serif'; ctx.textAlign = "right"; ctx.fillText(`J+${fmt(vehicle.ageDays)}`, x + 474, y + 2); ctx.textAlign = "left";
-      ctx.fillStyle = MUTED; ctx.font = '600 10px "Exo", Arial, sans-serif';
-      const status = `${vehicle.status || "Statut non renseigné"}${vehicle.model ? ` · ${vehicle.model}` : ""}`;
-      wrap(ctx, status, x + 31, y + 18, 420, 13, 1);
-    });
-  }
+  const metricsX = 1042, metricsW = 600;
+  rounded(ctx, metricsX, lowerY, metricsW, lowerH, 20); ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = LINE; ctx.stroke();
+  ctx.fillStyle = TEAL; ctx.fillRect(metricsX, lowerY, 7, lowerH);
+  ctx.fillStyle = INK; ctx.font = '800 italic 25px "Exo", Arial, sans-serif'; ctx.fillText("REPÈRES DE PILOTAGE", metricsX + 30, lowerY + 43);
+  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText("Indicateurs utiles pour l'animation du centre", metricsX + 30, lowerY + 67);
 
-  const stock = Math.max(0, num(summary.pilotage.currentStock ?? summary.yesterday.stock));
-  const over15 = Math.max(0, num(summary.pilotage.currentOver15 ?? summary.yesterday.over15));
-  const over20 = Math.max(0, num(summary.pilotage.currentOver20 ?? summary.yesterday.over20));
-  const age21 = Math.min(stock, over20);
-  const age16 = Math.max(0, Math.min(stock - age21, over15 - over20));
-  const age0 = Math.max(0, stock - age16 - age21);
-  const agingY = 946;
-  rounded(ctx, 42, agingY, 1600, 184, 20); ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = LINE; ctx.stroke();
-  ctx.fillStyle = INK; ctx.font = '800 italic 23px "Exo", Arial, sans-serif'; ctx.fillText("POIDS DU PARC EN VIEILLISSEMENT", 70, agingY + 38);
-  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText(`Stock usine actif : ${fmt(stock)} véhicules`, 70, agingY + 60);
-
-  const barX = 70, barY = agingY + 78, barW = 1544, barH = 42;
-  rounded(ctx, barX, barY, barW, barH, 12); ctx.fillStyle = "#e8f0f4"; ctx.fill();
-  let cursor = barX;
-  const segments = [
-    { label: "0–15 jours", value: age0, color: TEAL },
-    { label: "16–20 jours", value: age16, color: YELLOW },
-    { label: "21 jours et +", value: age21, color: RED },
-  ];
-  segments.forEach((segment) => {
-    if (!stock || segment.value <= 0) return;
-    const width = barW * segment.value / stock;
-    ctx.fillStyle = segment.color; ctx.fillRect(cursor, barY, width, barH);
-    if (width > 100) {
-      ctx.fillStyle = segment.color === YELLOW ? "#624b00" : "#fff";
-      ctx.font = '800 14px "Exo", Arial, sans-serif'; ctx.textAlign = "center"; ctx.fillText(`${fmt(segment.value)} · ${fmt(segment.value / stock * 100)}%`, cursor + width / 2, barY + 26); ctx.textAlign = "left";
-    }
-    cursor += width;
-  });
-
-  segments.forEach((segment, index) => {
-    const x = 72 + index * 510;
-    ctx.beginPath(); ctx.arc(x + 5, agingY + 151, 6, 0, Math.PI * 2); ctx.fillStyle = segment.color; ctx.fill();
-    ctx.fillStyle = INK; ctx.font = '800 13px "Exo", Arial, sans-serif'; ctx.fillText(segment.label, x + 20, agingY + 156);
-    ctx.fillStyle = MUTED; ctx.font = '700 12px "Exo", Arial, sans-serif'; ctx.fillText(`${fmt(segment.value)} VO · ${stock ? fmt(segment.value / stock * 100) : "0"}% du parc`, x + 160, agingY + 156);
-  });
+  const metricGap = 12;
+  const metricW = (metricsW - 60 - metricGap) / 2;
+  const metricH = 112;
+  const metricX1 = metricsX + 30;
+  const metricX2 = metricX1 + metricW + metricGap;
+  const metricY1 = lowerY + 94;
+  const metricY2 = metricY1 + metricH + 12;
+  const metricY3 = metricY2 + metricH + 12;
+  metricTile(ctx, metricX1, metricY1, metricW, metricH, BLUE, "Stock usine", `${fmt(summary.pilotage.currentStock ?? summary.yesterday.stock)} VO`, "parc actif au dernier rafraîchissement");
+  metricTile(ctx, metricX2, metricY1, metricW, metricH, RED, "Urgents", fmt(summary.pilotage.urgents), "dossiers à sécuriser en priorité");
+  metricTile(ctx, metricX1, metricY2, metricW, metricH, YELLOW, "FRE", summary.month.fre == null ? "—" : euro(summary.month.fre), "factures restant à émettre");
+  metricTile(ctx, metricX2, metricY2, metricW, metricH, CYAN, "Alertes NC", fmt(summary.pilotage.qualityAlerts), "non-conformités à traiter");
+  metricTile(ctx, metricX1, metricY3, metricW, metricH, PURPLE, "Heures / VOP", summary.month.hoursPerExit == null ? "—" : `${fmt(summary.month.hoursPerExit, 2)} h`, "heures facturées par sortie depuis le 1er");
+  metricTile(ctx, metricX2, metricY3, metricW, metricH, TEAL, "CA main-d'œuvre", euro(summary.month.laborRevenue), "cumul main-d'œuvre du mois");
 
   ctx.fillStyle = MUTED; ctx.font = '600 10px "Exo", Arial, sans-serif';
   ctx.fillText("Sources certifiées KPI CRVO · Factory FTP · EtatduParc · Reporting factures · Objectifs KPI", 44, 1166);
