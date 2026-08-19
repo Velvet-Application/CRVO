@@ -18,6 +18,7 @@ import PwaRegister from "./pwa-register";
 import DailyAnimationOneClick from "./daily-animation-one-click-v2";
 import EnvironmentSwitcher from "./environment-switcher";
 import TransphereAccessManager from "./transphere-access-manager";
+import AtelierPublicScreen from "./atelier-public-screen";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <DailyAnimationOneClick />
     <EnvironmentSwitcher />
     <TransphereAccessManager />
+    <AtelierPublicScreen />
     {children}
   </body></html>;
 }
