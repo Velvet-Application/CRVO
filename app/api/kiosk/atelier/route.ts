@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseRestHeaders } from "../../../supabase-rest";
 import { loadKioskDashboard, loadKioskSystemStatus } from "../kiosk-data";
-import { currentSession } from "../../../lib/crvo-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -11,15 +10,12 @@ async function loadVerifiedMetrics(){const config=env();if(!config)return[];cons
 async function loadKioskObjectivesRpc(month:string|null){const value=month&&/^20\d{2}-\d{2}$/.test(month)?`${month}-01`:null;return rpc("kpi_kiosk_objectives",{p_month:value});}
 
 export async function GET(request:Request){
-  const current=await currentSession();
-  if(!current)return NextResponse.json({connected:false,error:"Session CRVO requise."},{status:401,headers:{"Cache-Control":"no-store"}});
-  if(current.session.role!=="admin")return NextResponse.json({connected:false,error:"Accès administrateur requis."},{status:403,headers:{"Cache-Control":"no-store"}});
   const url=new URL(request.url);const resource=url.searchParams.get("resource")??"dashboard";
   try{
-    if(resource==="objectives")return NextResponse.json(await loadKioskObjectivesRpc(url.searchParams.get("month")),{headers:{"Cache-Control":"private, no-store"}});
-    if(resource==="system-status")return NextResponse.json(await loadKioskSystemStatus(),{headers:{"Cache-Control":"private, no-store"}});
-    if(resource==="verified-metrics")return NextResponse.json({rows:await loadVerifiedMetrics()},{headers:{"Cache-Control":"private, no-store"}});
+    if(resource==="objectives")return NextResponse.json(await loadKioskObjectivesRpc(url.searchParams.get("month")),{headers:{"Cache-Control":"public, no-store"}});
+    if(resource==="system-status")return NextResponse.json(await loadKioskSystemStatus(),{headers:{"Cache-Control":"public, no-store"}});
+    if(resource==="verified-metrics")return NextResponse.json({rows:await loadVerifiedMetrics()},{headers:{"Cache-Control":"public, no-store"}});
     const requestedDate=url.searchParams.get("date")?.match(/^\d{4}-\d{2}-\d{2}$/)?.[0]??null;
-    return NextResponse.json(await loadKioskDashboard(url.searchParams.get("history")==="1",requestedDate),{headers:{"Cache-Control":"private, no-store"}});
+    return NextResponse.json(await loadKioskDashboard(url.searchParams.get("history")==="1",requestedDate),{headers:{"Cache-Control":"public, no-store"}});
   }catch(error){return NextResponse.json({connected:false,error:error instanceof Error?error.message:"Écran atelier indisponible."},{status:503,headers:{"Cache-Control":"no-store"}});}
 }
