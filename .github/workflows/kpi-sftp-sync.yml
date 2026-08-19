@@ -15,10 +15,11 @@ on:
       - "bridge/package-lock.json"
       - ".github/workflows/kpi-sftp-sync.yml"
   schedule:
-    # Synchronisation complète toutes les 5 minutes, volontairement décalée du début d'heure.
-    # Le fast-lane Factory est intercalé 2 minutes plus tard dans un workflow indépendant.
-    # Cible opérationnelle : heartbeat < 15 min. UI : vigilance > 60 min, critique > 180 min.
-    - cron: "1,6,11,16,21,26,31,36,41,46,51,56 * * * *"
+    # 3DSoft confirme Factory-J+1 + EtatduParc une fois par heure, 24h/24.
+    # Les dépôts observés arrivent autour de H:00 (Factory) puis H:03 (parc).
+    # Passage principal à H:07 + filet de sécurité à H:37.
+    # Le fast-lane Factory passe deux minutes avant chacun de ces brassages complets.
+    - cron: "7,37 * * * *"
 
 permissions:
   contents: read
@@ -59,7 +60,7 @@ jobs:
         run: node src/vehicle-location-sync.mjs
       - name: Refresh live Factory and certify previous day
         run: node src/factory-live-sync.mjs
-      - name: Verify industrial freshness contract
+      - name: Verify hourly industrial freshness contract
         working-directory: .
         run: |
           node <<'NODE'
@@ -69,15 +70,14 @@ jobs:
             try{
               const response=await fetch('https://kpi-crvo.cyril-gay.workers.dev/api/health?_='+Date.now(),{headers:{'Cache-Control':'no-cache'}});
               const health=await response.json().catch(()=>({}));
-              const age=Number(health?.ftp?.syncAgeMinutes ?? 99999);
-              last={status:response.status,trust:health?.trustLevel,age,sourceAge:health?.production?.sourceAgeMinutes,dataReady:health?.dataReady};
-              console.log(`freshness attempt=${attempt}/4 health=${response.status} trust=${health?.trustLevel} ftpSyncAge=${age}m sourceAge=${health?.production?.sourceAgeMinutes}m`);
-              if(response.ok && health?.dataReady===true && Number.isFinite(age) && age<=15)process.exit(0);
+              const syncAge=Number(health?.ftp?.syncAgeMinutes ?? 99999);
+              const sourceAge=Number(health?.production?.sourceAgeMinutes ?? 99999);
+              last={status:response.status,trust:health?.trustLevel,syncAge,sourceAge,dataReady:health?.dataReady};
+              console.log(`freshness attempt=${attempt}/4 health=${response.status} trust=${health?.trustLevel} ftpSyncAge=${syncAge}m sourceAge=${sourceAge}m`);
+              if(response.ok && health?.dataReady===true && Number.isFinite(syncAge) && syncAge<=50 && Number.isFinite(sourceAge) && sourceAge<=85)process.exit(0);
             }catch(error){last={error:error instanceof Error?error.message:'unknown'};console.log(`freshness attempt=${attempt}/4 failed: ${last.error}`);}
             if(attempt<4)await wait(5000);
           }
-          console.error('industrial freshness contract failed',last);
+          console.error('hourly industrial freshness contract failed',last);
           process.exit(1);
           NODE
-
-# Manual refresh marker: 2026-08-18T12:30+02:00
