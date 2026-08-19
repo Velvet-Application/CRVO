@@ -12,10 +12,9 @@ on:
       - "bridge/package-lock.json"
       - ".github/workflows/kpi-ftp-fast-lane.yml"
   schedule:
-    # Fast lane indépendante, intercalée 2 minutes après la synchronisation complète.
-    # Objectif : capter un nouveau Factory dans les minutes suivant son dépôt,
-    # tout en évitant les déclenchements au début de l'heure où GitHub peut être plus chargé.
-    - cron: "3,8,13,18,23,28,33,38,43,48,53,58 * * * *"
+    # Factory est désormais déposé une fois par heure, 24h/24.
+    # Capture à H:05 puis secours à H:35, juste avant le brassage complet H:07/H:37.
+    - cron: "5,35 * * * *"
 
 permissions:
   contents: read
@@ -52,5 +51,3 @@ jobs:
         run: node --check src/factory-live-sync.mjs && node --check src/ftp-factory-production.mjs
       - name: Refresh Factory hot path
         run: node src/factory-live-sync.mjs
-
-# Manual refresh marker: 2026-08-18T09:57+02:00
