@@ -1,0 +1,11 @@
+import { NextResponse } from "next/server";
+import { authRpc, currentSession, hasPageAccess } from "../../../lib/crvo-auth";
+
+export const dynamic="force-dynamic";
+function json(body:unknown,status=200){return NextResponse.json(body,{status,headers:{"Cache-Control":"no-store"}})}
+function iso(value:unknown,fallback:string){const s=String(value??"");return /^20\d{2}-\d{2}-\d{2}$/.test(s)?s:fallback}
+function today(){return new Intl.DateTimeFormat("fr-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
+async function current(){const c=await currentSession();if(!c||!hasPageAccess(c.session,"worktime"))return null;return c}
+export async function GET(request:Request){const c=await current();if(!c)return json({error:"Accès Temps de travail requis."},403);const u=new URL(request.url),d=today(),from=iso(u.searchParams.get("from"),d),to=iso(u.searchParams.get("to"),from);const entity=c.session.access_profile==="transphere_manager"?"TRANSPHERE":String(u.searchParams.get("entity")??"CRVO").toUpperCase()==="TRANSPHERE"?"TRANSPHERE":"CRVO";try{return json(await authRpc("kpi_worktime_annualization_list",{p_session_hash:c.tokenHash,p_entity:entity,p_from:from,p_to:to}))}catch(e){return json({error:e instanceof Error?e.message:"Annualisation indisponible."},500)}}
+export async function POST(request:Request){const c=await current();if(!c)return json({error:"Accès Temps de travail requis."},403);const b=await request.json().catch(()=>({})) as Record<string,unknown>;try{return json(await authRpc("kpi_worktime_add_annualization",{p_session_hash:c.tokenHash,p_entity:String(b.entity??"CRVO"),p_employee_key:String(b.employeeKey??""),p_work_date:String(b.workDate??today()),p_hours:Number(b.hours??0),p_comment:b.comment?String(b.comment):null}))}catch(e){return json({error:e instanceof Error?e.message:"Annualisation impossible."},400)}}
+export async function PATCH(request:Request){const c=await current();if(!c)return json({error:"Accès Temps de travail requis."},403);const b=await request.json().catch(()=>({})) as Record<string,unknown>;try{return json(await authRpc("kpi_worktime_annualization_status",{p_session_hash:c.tokenHash,p_id:String(b.id??""),p_action:String(b.action??"")}))}catch(e){return json({error:e instanceof Error?e.message:"Modification impossible."},400)}}
