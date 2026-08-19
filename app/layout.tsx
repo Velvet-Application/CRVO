@@ -10,6 +10,7 @@ import "./production-fixes.css";
 import "./expertise-workspace-fixes.css";
 import GlobalNavDrawer from "./global-nav-drawer-v2";
 import HomeSideMenu from "./home-side-menu-v2";
+import EnvironmentSwitcher from "./environment-switcher";
 import DataTrustGuard from "./data-trust-guard";
 import ActivityColorBinder from "./activity-color-binder";
 import KioskFetchBridge from "./kiosk-fetch-bridge";
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <FriendlyLoadingPatch />
     <GlobalNavDrawer />
     <HomeSideMenu />
+    <EnvironmentSwitcher />
     <DataTrustGuard />
     <NotificationCenter />
     <DailyAnimationOneClick />
