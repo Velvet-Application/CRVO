@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authRpc, currentSession } from "../../../lib/crvo-auth";
+import { authRpc, currentSession, hasPageAccess } from "../../../lib/crvo-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +21,8 @@ function json(body: unknown, status = 200) {
 
 export async function GET(request: Request) {
   const current = await currentSession();
-  if (!current) return json({ error: "Session CRVO requise." }, 401);
-  if (current.session.role !== "admin") return json({ error: "Accès administrateur requis." }, 403);
+  if (!current) return json({ error: "Session requise." }, 401);
+  if (!hasPageAccess(current.session, "transphere")) return json({ error: "Accès Transphère requis." }, 403);
 
   const url = new URL(request.url);
   const rawDate = url.searchParams.get("date");
@@ -34,7 +34,12 @@ export async function GET(request: Request) {
       p_report_date: reportDate,
     });
     if (payload.connected === false) return json(payload, 503);
-    return json({ ...payload, generatedBy: current.session.display_name, username: current.session.username });
+    return json({
+      ...payload,
+      generatedBy: current.session.display_name,
+      username: current.session.username,
+      canImport: current.session.role === "admin",
+    });
   } catch (error) {
     console.error("transphere_dashboard_failed", error);
     return json({ error: "Dashboard Transphère temporairement indisponible." }, 503);
