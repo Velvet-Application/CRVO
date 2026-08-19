@@ -107,7 +107,20 @@ const toneColors: Record<string, string> = {
 };
 
 function parisToday() {
-  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const parts = new Intl.DateTimeFormat("fr-CA", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  const civilDate = `${part("year")}-${part("month")}-${part("day")}`;
+  if (Number(part("hour")) >= 5) return civilDate;
+  const cursor = new Date(`${civilDate}T12:00:00Z`);
+  cursor.setUTCDate(cursor.getUTCDate() - 1);
+  return cursor.toISOString().slice(0, 10);
 }
 
 function isBusinessDay(value: string) {
@@ -263,9 +276,9 @@ export default function AtelierScreen() {
   const liveExitPercent = liveSnapshot ? percent(liveSnapshot.exits, liveContext.exitTarget) : 0;
   const closedExitPercent = closedSnapshot ? percent(closedSnapshot.exits, closedContext.exitTarget) : 0;
   const liveRemaining = liveSnapshot ? Math.max(liveContext.exitTarget - liveSnapshot.exits, 0) : liveContext.exitTarget;
-  const ftpStale = Boolean(liveSnapshot) && staleMinutes(ftpLastRefreshAt) > 25;
+  const ftpStale = Boolean(liveSnapshot) && staleMinutes(ftpLastRefreshAt) > 85;
   const closedVerified = Boolean(closedSnapshot?.verifiedMetrics?.some((key) => key === "exits_vop" || key === "production_factory_exit"));
-  const liveStatus = !liveSnapshot ? "EN ATTENTE DU JOUR" : ftpStale ? "FTP EN RETARD" : "EN DIRECT";
+  const liveStatus = !liveSnapshot ? "EN ATTENTE DU JOUR" : ftpStale ? "DÉPÔT EN RETARD" : "FLUX HORAIRE";
 
   return <main className={styles.screen}>
     <header className={styles.header}>
@@ -352,7 +365,7 @@ export default function AtelierScreen() {
     <footer className={styles.footer}>
       <div className={styles.legendItem}><i className={styles.todayDot}/><span>CHIFFRES DU JOUR</span><strong>évolutifs</strong></div>
       <div className={styles.legendItem}><i className={styles.closedDot}/><span>CHIFFRES CLÔTURÉS</span><strong>définitifs</strong></div>
-      <div className={styles.sync}><i className={!ftpStale && connected ? styles.syncOk : styles.syncFallback}/><span>{ftpStale ? "FTP EN RETARD · DONNÉE HORODATÉE" : connected ? "FTP LIVE CONNECTÉ" : "DERNIÈRE DONNÉE DISPONIBLE"}</span><small>écran {lastRefresh || now} · production {ftpClock(ftpLastRefreshAt)} · parc {ftpClock(ftpLastDepositAt)}</small></div>
+      <div className={styles.sync}><i className={!ftpStale && connected ? styles.syncOk : styles.syncFallback}/><span>{ftpStale ? "DÉPÔT FTP EN RETARD · DONNÉE HORODATÉE" : connected ? "FTP HORAIRE CONNECTÉ" : "DERNIÈRE DONNÉE DISPONIBLE"}</span><small>écran {lastRefresh || now} · production {ftpClock(ftpLastRefreshAt)} · parc {ftpClock(ftpLastDepositAt)}</small></div>
     </footer>
 
     {error && <div className={styles.error}>{error}</div>}
