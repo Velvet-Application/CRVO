@@ -13,6 +13,13 @@ type Summary = DailyAnimationPdfSummary & {
   error?: string;
 };
 
+type Enrichment = {
+  connected?: boolean;
+  photosYesterday?: number | null;
+  currentAging?: { stock?: number | null; over15?: number | null; over20?: number | null } | null;
+  oldestToExit?: DailyAnimationPdfSummary["pilotage"]["oldestToExit"];
+};
+
 type MePayload = { user?: { role?: string } };
 type ReadyState = "idle" | "warming" | "ready" | "opening" | "error";
 type ShareNavigator = Navigator & { canShare?: (data?: ShareData) => boolean; share?: (data?: ShareData) => Promise<void> };
@@ -130,11 +137,33 @@ export default function DailyAnimationOneClick() {
       const response = await fetch(`/api/daily-animation?_=${Date.now()}`, { cache: "no-store", headers: { "Cache-Control": "no-cache" } });
       const payload = await response.json().catch(() => ({})) as Summary;
       if (!response.ok || !payload.connected) throw new Error(payload.error || "Synthèse quotidienne indisponible.");
-      const file = await createDailyAnimationPdf(payload);
-      setSummary(payload);
+
+      let enrichment: Enrichment | null = null;
+      try {
+        const extraResponse = await fetch(`/api/daily-animation-enrichment?date=${encodeURIComponent(payload.reportDate)}&_=${Date.now()}`, { cache: "no-store", headers: { "Cache-Control": "no-cache" } });
+        if (extraResponse.ok) enrichment = await extraResponse.json() as Enrichment;
+      } catch {}
+
+      const enriched: Summary = {
+        ...payload,
+        yesterday: {
+          ...payload.yesterday,
+          photos: enrichment?.photosYesterday ?? payload.yesterday.photos ?? null,
+        },
+        pilotage: {
+          ...payload.pilotage,
+          currentStock: enrichment?.currentAging?.stock ?? payload.pilotage.currentStock ?? null,
+          currentOver15: enrichment?.currentAging?.over15 ?? payload.pilotage.currentOver15 ?? null,
+          currentOver20: enrichment?.currentAging?.over20 ?? payload.pilotage.currentOver20 ?? null,
+          oldestToExit: enrichment?.oldestToExit ?? payload.pilotage.oldestToExit ?? [],
+        },
+      };
+
+      const file = await createDailyAnimationPdf(enriched);
+      setSummary(enriched);
       setPdf(file);
       setState("ready");
-      return { summary: payload, pdf: file };
+      return { summary: enriched, pdf: file };
     })().catch((reason) => {
       setState("error");
       const message = reason instanceof Error ? reason.message : "Préparation impossible.";
