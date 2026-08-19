@@ -61,10 +61,117 @@ type AnimationSummary = {
 type OutlookBody = {
   subject?: string;
   bodyText?: string;
-  recipients?: string[];
   pdfBase64?: string;
   filename?: string;
 };
+
+type MailRecipient = { name: string; address: string };
+type SignatureProfile = {
+  key: "cyril" | "celine" | "direction";
+  name: string;
+  title: string;
+  company: string;
+  mobile?: string;
+  email?: string;
+};
+
+const MAIL_FONT = '"Aptos Display","Aptos Display_EmbeddedFont","Aptos Display_MSFontService","Calibri Light","Helvetica Light",sans-serif';
+const MAIL_COLOR = "#002451";
+
+const TO_RECIPIENTS: MailRecipient[] = [
+  { name: "Emeline BOULONNE", address: "emeline.boulonne@crvo.fr" },
+  { name: "Cyril GAY", address: "cyril.gay@crvo.fr" },
+  { name: "Benjamin BALINGON", address: "benjamin.balingon@crvo.fr" },
+  { name: "Jean Francois PIASECKI", address: "jean-francois.piasecki@crvo.fr" },
+  { name: "Laurence LAUDES", address: "laurence.laudes@crvo.fr" },
+  { name: "Valérie GRONIER", address: "valerie.gronier@crvo.fr" },
+  { name: "Vanessa COUVERT", address: "vanessa.couvert@crvo.fr" },
+  { name: "Yves Marie THERON", address: "yves-marie.theron@crvo.fr" },
+  { name: "Yohan VELLE", address: "yohan.velle@crvo.fr" },
+  { name: "Audrey ATMANIA", address: "audrey.atmania@crvo.fr" },
+  { name: "Christopher LEMORT", address: "christopher.lemort@crvo.fr" },
+  { name: "Romuald LAURENT", address: "romuald.laurent@crvo.fr" },
+  { name: "Johnny TRANAIN", address: "johnny.tranain@crvo.fr" },
+  { name: "Frederic BARTCZAK", address: "frederic.bartczak@crvo.fr" },
+  { name: "Geremy VELLE", address: "geremy.velle@crvo.fr" },
+  { name: "Ludovic DUMONT", address: "ludovic.dumont@crvo.fr" },
+  { name: "Anthony MARMUSE", address: "anthony.marmuse@crvo.fr" },
+  { name: "Jeffrey COILLOT", address: "jeffrey.coillot@crvo.fr" },
+  { name: "Jean Francois COLAERT", address: "jean-francois.colaert@crvo.fr" },
+  { name: "Vincent DYNOWSKI", address: "vincent.dynowski@crvo.fr" },
+  { name: "Lucie DEGARDIN", address: "lucie.degardin@crvo.fr" },
+  { name: "Stacy MUSIOL", address: "stacy.musiol@crvo.fr" },
+  { name: "Vanessa LEGRAND", address: "vanessa.legrand@crvo.fr" },
+  { name: "Guillaume GOUILLIART", address: "guillaume.gouilliart@crvo.fr" },
+  { name: "Morgane LOPES", address: "morgane.lopes@crvo.fr" },
+  { name: "Alexandre FOURNIER", address: "alexandre.fournier@crvo.fr" },
+  { name: "Giovanny CAVROIS", address: "giovanny.cavrois@crvo.fr" },
+  { name: "Julien LEMAIRE", address: "julien.lemaire1@crvo.fr" },
+  { name: "Sarah OLIVIER", address: "sarah.olivier@crvo.fr" },
+  { name: "Geoffrey CAMBIEN", address: "geoffrey.cambien@crvo.fr" },
+  { name: "Allan BONNAILLIE", address: "allan.bonnaillie@crvo.fr" },
+  { name: "Quentin PEYRARD", address: "quentin.peyrard@crvo.fr" },
+  { name: "Tifany LHOMME", address: "tifany.lhomme@crvo.fr" },
+  { name: "Steven DESTUNDER", address: "steven.destunder@crvo.fr" },
+  { name: "Thomas GESTIN", address: "thomas.gestin@crvo.fr" },
+  { name: "Anthony SPREUX", address: "anthony.spreux@crvo.fr" },
+  { name: "Mandy DUJARDIN", address: "mandy.dujardin@crvo.fr" },
+  { name: "Jordan CLABAUT", address: "jordan.clabaut@crvo.fr" },
+  { name: "Julie BECQUAERT", address: "julie.becquaert@crvo.fr" },
+  { name: "Baptiste CORBEAU", address: "baptiste.corbeau@crvo.fr" },
+  { name: "Corentin ARZU", address: "corentin.arzu@crvo.fr" },
+  { name: "Karine HOURDE", address: "karine.hourde@crvo.fr" },
+  { name: "Sarah PIETSZYKOWSKI", address: "sarah.pietszykowski@crvo.fr" },
+  { name: "Leslie DANEL", address: "leslie.danel@crvo.fr" },
+  { name: "Baptiste CADART", address: "baptiste.cadart@crvo.fr" },
+  { name: "Séverine VERITE", address: "severine.verite@crvo.fr" },
+  { name: "Dan DURAND", address: "dan.durand@crvo.fr" },
+  { name: "Jessy LECOINTE", address: "jessy.lecointe@crvo.fr" },
+  { name: "Inès MORTREUX", address: "ines.mortreux@crvo.fr" },
+  { name: "Fabien GRONUS", address: "fabien.gronus@crvo.fr" },
+  { name: "Jean Marc DEGARDIN", address: "jean-marc.degardin@crvo.fr" },
+  { name: "Maxence CHATELET", address: "maxence.chatelet@crvo.fr" },
+];
+
+const CC_RECIPIENTS: MailRecipient[] = [
+  { name: "Benoit PECQUEUR", address: "benoit.pecqueur@crvo.fr" },
+  { name: "Jaouad OUARIBA", address: "jaouad.ouariba@emilfrey.fr" },
+  { name: "Vincent GORCE", address: "vincent.gorce@emilfrey.fr" },
+  { name: "Damien PAILLET", address: "damien.paillet@emilfrey.fr" },
+  { name: "Ali MELLOUL", address: "ali.melloul@crvo.fr" },
+  { name: "Daniel PELLETIER", address: "daniel.pelletier@autosphere.fr" },
+  { name: "Jean-Baptiste ALLEAU", address: "jean-baptiste.alleau@crvo.fr" },
+];
+
+const CYRIL_SIGNATURE: SignatureProfile = {
+  key: "cyril",
+  name: "Cyril GAY",
+  title: "Directeur",
+  company: "CRVO Lens & Emil Frey Transphère",
+  mobile: "07.64.70.76.83",
+  email: "cyril.gay@crvo.fr",
+};
+
+const CELINE_SIGNATURE: SignatureProfile = {
+  key: "celine",
+  name: "Céline MANIEZ",
+  title: "Cheffe de groupe administratif",
+  company: "CRVO Lens",
+};
+
+const DIRECTION_SIGNATURE: SignatureProfile = {
+  key: "direction",
+  name: "Direction CRVO",
+  title: "CRVO Lens",
+  company: "CRVO Lens",
+};
+
+function signatureFor(username?: string | null): SignatureProfile {
+  const key = String(username ?? "").trim().toLowerCase();
+  if (key === "cyril") return CYRIL_SIGNATURE;
+  if (key === "celine.maniez") return CELINE_SIGNATURE;
+  return DIRECTION_SIGNATURE;
+}
 
 function json(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } });
@@ -94,7 +201,21 @@ function displayDate(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }).format(date);
 }
 
-function buildMail(summary: AnimationSummary) {
+function signaturePlain(signature: SignatureProfile) {
+  const rows = [
+    "Cordialement",
+    "",
+    signature.name,
+    signature.title,
+    signature.company,
+  ];
+  if (signature.mobile) rows.push(`Mob. ${signature.mobile}`);
+  if (signature.email) rows.push(signature.email);
+  rows.push("", "CRVO Lens", "Rue Alexis Halette", "62300 Lens", "www.crvo.fr");
+  return rows.join("\n");
+}
+
+function buildMail(summary: AnimationSummary, signature: SignatureProfile) {
   const centre = summary.centre || "Lens";
   const reportDate = displayDate(summary.reportDate);
   const day = summary.yesterday ?? {};
@@ -162,13 +283,15 @@ function buildMail(summary: AnimationSummary) {
   if (pilotage.tone === "ahead") lines.push("La dynamique est bonne : on garde le rythme, on protège l'avance et on continue à pousser ! 💪");
   else if (pilotage.tone === "alert") lines.push("Nous avons les leviers pour reprendre la trajectoire : priorité aux dossiers qui peuvent être débloqués et transformés aujourd'hui. On reste concentrés et on pousse ! 💪");
   else lines.push("Nous sommes au contact de la trajectoire : chaque dossier débloqué compte. On reste concentrés et on continue à pousser ! 💪");
-  lines.push("", "Bonne journée à tous,", "", summary.generatedBy || "Direction CRVO");
+  lines.push("", "Bonne journée à tous,");
 
+  const animationBody = lines.join("\n");
   const deltaPart = exitDelta == null ? "" : ` · ${signed(exitDelta, " VOP")}`;
   const caPart = revenueDelta == null ? "" : ` · CA ${signed(Math.round(revenueDelta / 1000), " k€")}`;
   return {
     subject: `[CRVO ${centre}] Animation ${reportDate}${deltaPart}${caPart}`,
-    body: lines.join("\n"),
+    body: animationBody,
+    plainBody: `${animationBody}\n\n${signaturePlain(signature)}`,
   };
 }
 
@@ -185,8 +308,33 @@ function escapeHtml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function emailHtml(text: string) {
-  return text.split(/\n{2,}/).map((paragraph) => `<p style="font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#17324d;margin:0 0 14px">${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`).join("");
+function signatureHtml(signature: SignatureProfile) {
+  const optional = [
+    signature.mobile ? `<div>Mob. ${escapeHtml(signature.mobile)}</div>` : "",
+    signature.email ? `<div><a href="mailto:${escapeHtml(signature.email)}" style="color:${MAIL_COLOR};text-decoration:none">${escapeHtml(signature.email)}</a></div>` : "",
+  ].join("");
+  return `<div style="font-family:${MAIL_FONT};font-size:10pt;line-height:1.35;color:${MAIL_COLOR};margin-top:16px">
+    <div>Cordialement</div>
+    <div style="height:10px"></div>
+    <div style="font-weight:700">${escapeHtml(signature.name)}</div>
+    <div>${escapeHtml(signature.title)}</div>
+    <div>${escapeHtml(signature.company)}</div>
+    ${optional}
+    <div style="height:10px"></div>
+    <div>CRVO Lens</div>
+    <div>Rue Alexis Halette</div>
+    <div>62300 Lens</div>
+    <div><a href="https://www.crvo.fr" style="color:${MAIL_COLOR};text-decoration:none">www.crvo.fr</a></div>
+  </div>`;
+}
+
+function emailHtml(text: string, signature: SignatureProfile) {
+  const paragraphs = text.split(/\n{2,}/).map((paragraph) => `<p style="font-family:${MAIL_FONT};font-size:10pt;line-height:1.35;color:${MAIL_COLOR};margin:0 0 10pt 0">${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`).join("");
+  return `<div style="font-family:${MAIL_FONT};font-size:10pt;line-height:1.35;color:${MAIL_COLOR}">${paragraphs}${signatureHtml(signature)}</div>`;
+}
+
+function graphRecipient(recipient: MailRecipient) {
+  return { emailAddress: { name: recipient.name, address: recipient.address } };
 }
 
 async function graphToken(config: NonNullable<ReturnType<typeof graphConfig>>) {
@@ -222,13 +370,19 @@ export async function GET(request: Request) {
       p_report_date: reportDate,
     });
     if (!summary?.connected) return json(summary || { connected: false, error: "Synthèse indisponible." }, 503);
-    const mail = buildMail(summary);
+    const signature = signatureFor(current.session.username);
+    const mail = buildMail(summary, signature);
     return json({
       ...summary,
+      generatedBy: signature.name,
       mail,
       outlook: {
         graphConfigured: Boolean(graphConfig()),
         nativeShareAvailable: true,
+        to: TO_RECIPIENTS,
+        cc: CC_RECIPIENTS,
+        distribution: { toCount: TO_RECIPIENTS.length, ccCount: CC_RECIPIENTS.length },
+        signature: { key: signature.key, name: signature.name, title: signature.title },
       },
     });
   } catch (error) {
@@ -255,15 +409,12 @@ export async function POST(request: Request) {
   const bodyText = String(body?.bodyText ?? "").trim().slice(0, 20000);
   const filename = String(body?.filename ?? "Animation_CRVO.pdf").replace(/[^a-zA-Z0-9._ -]/g, "_").slice(0, 120);
   const pdfBase64 = String(body?.pdfBase64 ?? "").replace(/^data:application\/pdf;base64,/, "");
-  const recipients = (Array.isArray(body?.recipients) ? body?.recipients : [])
-    .map((value) => String(value).trim())
-    .filter((value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
-    .slice(0, 100);
 
   if (!subject || !bodyText || !pdfBase64) return json({ error: "Objet, corps de mail ou PDF manquant." }, 400);
   if (pdfBase64.length > 4_000_000) return json({ error: "Le PDF est trop volumineux pour une pièce jointe directe Outlook." }, 413);
 
   try {
+    const signature = signatureFor(current.session.username);
     const token = await graphToken(config);
     const createResponse = await fetch(`https://graph.microsoft.com/v1.0/users/${encodeURIComponent(config.mailbox)}/messages`, {
       method: "POST",
@@ -274,8 +425,9 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         subject,
-        body: { contentType: "HTML", content: emailHtml(bodyText) },
-        toRecipients: recipients.map((address) => ({ emailAddress: { address } })),
+        body: { contentType: "HTML", content: emailHtml(bodyText, signature) },
+        toRecipients: TO_RECIPIENTS.map(graphRecipient),
+        ccRecipients: CC_RECIPIENTS.map(graphRecipient),
         attachments: [{
           "@odata.type": "#microsoft.graph.fileAttachment",
           name: filename,
@@ -298,7 +450,14 @@ export async function POST(request: Request) {
       webLink = message.webLink;
     }
 
-    return json({ ok: true, draftId: created.id, webLink: webLink || null, mailbox: config.mailbox });
+    return json({
+      ok: true,
+      draftId: created.id,
+      webLink: webLink || null,
+      mailbox: config.mailbox,
+      distribution: { toCount: TO_RECIPIENTS.length, ccCount: CC_RECIPIENTS.length },
+      signature: { key: signature.key, name: signature.name },
+    });
   } catch (error) {
     console.error("crvo_outlook_draft_failed", error);
     return json({ error: error instanceof Error ? error.message : "Création du brouillon Outlook impossible." }, 502);
