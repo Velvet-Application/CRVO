@@ -17,6 +17,7 @@ import KioskFetchBridge from "./kiosk-fetch-bridge";
 import PwaRegister from "./pwa-register";
 import DailyAnimationOneClick from "./daily-animation-one-click-v2";
 import EnvironmentSwitcher from "./environment-switcher";
+import TransphereAccessManager from "./transphere-access-manager";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <AuthNav />
     <DailyAnimationOneClick />
     <EnvironmentSwitcher />
+    <TransphereAccessManager />
     {children}
   </body></html>;
 }
