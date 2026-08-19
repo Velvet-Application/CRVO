@@ -113,8 +113,6 @@ function mailtoUrl(summary: Summary) {
   const parameters = [
     cc ? `cc=${encodeMailto(cc)}` : "",
     `subject=${encodeMailto(summary.mail.subject)}`,
-    // Le corps mailto reste du texte brut par spécification Outlook, mais l'encodage RFC3986
-    // garde de vrais espaces (%20) et des retours CRLF au lieu des '+' générés par URLSearchParams.
     `body=${encodeMailto(summary.mail.body)}`,
   ].filter(Boolean).join("&");
   return `mailto:${to}?${parameters}`;
@@ -145,9 +143,19 @@ export default function DailyAnimationOneClickV2() {
         if (!stopped) setVisible(false);
       }
     }
+    const refresh = () => {
+      if (document.visibilityState === "visible") void checkVisibility();
+    };
     void checkVisibility();
-    const timer = window.setInterval(() => void checkVisibility(), 2000);
-    return () => { stopped = true; window.clearInterval(timer); };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("popstate", refresh);
+    return () => {
+      stopped = true;
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("popstate", refresh);
+    };
   }, []);
 
   async function warmup(force = false) {
@@ -203,9 +211,16 @@ export default function DailyAnimationOneClickV2() {
 
   useEffect(() => {
     if (!visible || !performanceRoute()) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible" && performanceRoute()) void warmup(true).catch(() => undefined);
+    };
     void warmup().catch(() => undefined);
-    const refresh = window.setInterval(() => void warmup(true).catch(() => undefined), 5 * 60 * 1000);
-    return () => window.clearInterval(refresh);
+    const timer = window.setInterval(refresh, 5 * 60 * 1000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [visible]);
 
   const warnings = useMemo(() => summary ? quality(summary) : [], [summary]);
@@ -255,9 +270,6 @@ export default function DailyAnimationOneClickV2() {
         return;
       }
 
-      // Le partage natif Windows est volontairement supprimé : il perd les destinataires/CC/objet
-      // et place la signature Outlook avant le texte partagé. Le fallback ouvre désormais Outlook
-      // avec les champs déterministes et télécharge le PDF à joindre.
       download(file);
       window.location.href = mailtoUrl(currentSummary);
       setNotice(`Outlook ouvert avec ${toCount} destinataires, ${ccCount} CC et l'objet. Le PDF est téléchargé ; le texte est préchargé sans caractères '+' parasites.`);
