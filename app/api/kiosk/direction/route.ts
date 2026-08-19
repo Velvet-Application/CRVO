@@ -5,7 +5,13 @@ import { supabaseRestHeaders } from "../../../supabase-rest";
 
 export const dynamic = "force-dynamic";
 
+const DIRECTION_KIOSK_COOKIE="crvo_direction_kiosk";
+const DIRECTION_KIOSK_TOKEN_HASH="cfec2c633ed2bfc5ac54785f9681b21bb6170667e5bf979bd28421673ecb7582";
+
 function env(){const supabaseUrl=process.env.SUPABASE_URL;const secretKey=process.env.SUPABASE_SECRET_KEY;return supabaseUrl&&secretKey?{supabaseUrl,secretKey}:null;}
+async function sha256Hex(value:string){const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,"0")).join("");}
+function cookieValue(request:Request,name:string){const raw=request.headers.get("cookie")??"";for(const part of raw.split(";")){const [key,...rest]=part.trim().split("=");if(key===name)return decodeURIComponent(rest.join("="));}return null;}
+async function kioskAuthorized(request:Request){const token=cookieValue(request,DIRECTION_KIOSK_COOKIE);return Boolean(token)&&(await sha256Hex(token!))===DIRECTION_KIOSK_TOKEN_HASH;}
 async function rpc(name:string,body:Record<string,unknown>){
   const config=env();if(!config)throw new Error("Base CRVO non configurée.");
   const response=await fetch(`${config.supabaseUrl}/rest/v1/rpc/${name}`,{method:"POST",headers:supabaseRestHeaders(config.secretKey,{"Content-Type":"application/json",Accept:"application/json"}),body:JSON.stringify(body),cache:"no-store"});
@@ -16,9 +22,12 @@ async function loadDirectionFinance(history:boolean){return rpc("kpi_kiosk_direc
 async function loadDirectionObjectives(month:string|null){const value=month&&/^20\d{2}-\d{2}$/.test(month)?`${month}-01`:null;return rpc("kpi_kiosk_objectives",{p_month:value});}
 
 export async function GET(request:Request){
-  const current=await currentSession();
-  if(!current)return NextResponse.json({connected:false,error:"Session CRVO requise."},{status:401,headers:{"Cache-Control":"no-store"}});
-  if(current.session.role!=="admin")return NextResponse.json({connected:false,error:"Accès administrateur requis."},{status:403,headers:{"Cache-Control":"no-store"}});
+  const kiosk=await kioskAuthorized(request);
+  if(!kiosk){
+    const current=await currentSession();
+    if(!current)return NextResponse.json({connected:false,error:"Session CRVO ou accès écran Direction requis."},{status:401,headers:{"Cache-Control":"no-store"}});
+    if(current.session.role!=="admin")return NextResponse.json({connected:false,error:"Accès administrateur requis."},{status:403,headers:{"Cache-Control":"no-store"}});
+  }
   const url=new URL(request.url);const resource=url.searchParams.get("resource")??"dashboard";
   try{
     if(resource==="finance")return NextResponse.json(await loadDirectionFinance(url.searchParams.get("history")==="1"),{headers:{"Cache-Control":"private, no-store"}});
