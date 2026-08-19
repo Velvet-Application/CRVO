@@ -276,7 +276,7 @@ export default function AtelierScreen() {
   const liveExitPercent = liveSnapshot ? percent(liveSnapshot.exits, liveContext.exitTarget) : 0;
   const closedExitPercent = closedSnapshot ? percent(closedSnapshot.exits, closedContext.exitTarget) : 0;
   const liveRemaining = liveSnapshot ? Math.max(liveContext.exitTarget - liveSnapshot.exits, 0) : liveContext.exitTarget;
-  const ftpStale = Boolean(liveSnapshot) && staleMinutes(ftpLastRefreshAt) > 85;
+  const ftpStale = Boolean(liveSnapshot) && Math.max(staleMinutes(ftpLastRefreshAt), staleMinutes(ftpLastDepositAt)) > 85;
   const closedVerified = Boolean(closedSnapshot?.verifiedMetrics?.some((key) => key === "exits_vop" || key === "production_factory_exit"));
   const liveStatus = !liveSnapshot ? "EN ATTENTE DU JOUR" : ftpStale ? "DÉPÔT EN RETARD" : "FLUX HORAIRE";
 
