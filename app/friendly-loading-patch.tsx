@@ -86,7 +86,7 @@ export default function FriendlyLoadingPatch() {
     .crvo-slot-a{transform:rotate(0deg)}
     .crvo-slot-b{transform:rotate(120deg)}
     .crvo-slot-c{transform:rotate(240deg)}
-    .crvo-car{position:absolute;left:65px;top:3px;width:44px;height:26px;transform:rotate(90deg);transform-origin:50% 50%;filter:drop-shadow(0 5px 5px rgba(0,55,106,.16));will-change:transform}
+    .crvo-car{position:absolute;left:65px;top:3px;width:44px;height:26px;transform:rotate(0deg);transform-origin:50% 50%;filter:drop-shadow(0 5px 5px rgba(0,55,106,.16));will-change:transform}
     .crvo-car svg{display:block;width:100%;height:100%;overflow:visible}
     .crvo-car-a{color:#004f9f}
     .crvo-car-b{color:#009edb}
