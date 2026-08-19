@@ -16,6 +16,7 @@ import ActivityColorBinder from "./activity-color-binder";
 import KioskFetchBridge from "./kiosk-fetch-bridge";
 import PwaRegister from "./pwa-register";
 import DailyAnimationOneClick from "./daily-animation-one-click-v2";
+import EnvironmentSwitcher from "./environment-switcher";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
@@ -44,6 +45,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <DataTrustGuard />
     <AuthNav />
     <DailyAnimationOneClick />
+    <EnvironmentSwitcher />
     {children}
   </body></html>;
 }
