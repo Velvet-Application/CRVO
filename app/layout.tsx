@@ -15,7 +15,7 @@ import AuthNav from "./auth-nav";
 import ActivityColorBinder from "./activity-color-binder";
 import KioskFetchBridge from "./kiosk-fetch-bridge";
 import PwaRegister from "./pwa-register";
-import DailyAnimationOneClick from "./daily-animation-one-click";
+import DailyAnimationOneClick from "./daily-animation-one-click-v2";
 
 export const metadata: Metadata = {
   title: "KPI CRVO",
