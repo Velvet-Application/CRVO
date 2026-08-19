@@ -19,6 +19,7 @@ import DailyAnimationOneClick from "./daily-animation-one-click-v2";
 import EnvironmentSwitcher from "./environment-switcher";
 import TransphereAccessManager from "./transphere-access-manager";
 import WorktimeAccessManager from "./worktime-access-manager";
+import WorktimeNavTab from "./worktime-nav-tab";
 import AtelierPublicScreen from "./atelier-public-screen";
 
 export const metadata: Metadata = {
@@ -51,6 +52,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <EnvironmentSwitcher />
     <TransphereAccessManager />
     <WorktimeAccessManager />
+    <WorktimeNavTab />
     <AtelierPublicScreen />
     {children}
   </body></html>;
