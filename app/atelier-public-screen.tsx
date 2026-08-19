@@ -42,7 +42,7 @@ export default function AtelierPublicScreen() {
       background: #e8f0f5 !important;
     }
 
-    body.atelier-public-kiosk main[class*="atelier_screen"] {
+    body.atelier-public-kiosk > main {
       box-sizing: border-box !important;
       position: fixed !important;
       left: 50% !important;
@@ -69,7 +69,7 @@ export default function AtelierPublicScreen() {
     }
 
     @media (min-width: 2560px) and (min-height: 1400px) {
-      body.atelier-public-kiosk main[class*="atelier_screen"] {
+      body.atelier-public-kiosk > main {
         image-rendering: auto;
         text-rendering: geometricPrecision;
       }
