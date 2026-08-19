@@ -6,7 +6,7 @@ export const CRVO_SESSION_SECONDS = 12 * 60 * 60;
 export const CRVO_SUPABASE_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co";
 export const CRVO_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_bGCdOoq05alXNTOtouIQcQ_HX9jpKnv";
 
-export type AccessProfile = "admin" | "service_manager" | "team_manager" | "custom";
+export type AccessProfile = "admin" | "service_manager" | "team_manager" | "custom" | "transphere";
 
 export type CrvoSession = {
   ok: boolean;
@@ -22,6 +22,12 @@ export type CrvoSession = {
   team_scopes: string[];
   can_manage_bonus_workflow: boolean;
 };
+
+export function hasPageAccess(session: CrvoSession, key: string) {
+  return session.role === "admin"
+    || session.page_permissions?.includes("*")
+    || session.page_permissions?.includes(key);
+}
 
 export async function sha256Hex(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
