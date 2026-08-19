@@ -18,6 +18,7 @@ import PwaRegister from "./pwa-register";
 import DailyAnimationOneClick from "./daily-animation-one-click-v2";
 import EnvironmentSwitcher from "./environment-switcher";
 import TransphereAccessManager from "./transphere-access-manager";
+import WorktimeAnnualizationPanel from "./worktime-annualization-panel";
 import AtelierPublicScreen from "./atelier-public-screen";
 
 export const metadata: Metadata = {
@@ -49,6 +50,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <DailyAnimationOneClick />
     <EnvironmentSwitcher />
     <TransphereAccessManager />
+    <WorktimeAnnualizationPanel />
     <AtelierPublicScreen />
     {children}
   </body></html>;
