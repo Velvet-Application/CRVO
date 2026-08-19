@@ -69,7 +69,7 @@ jobs:
           if(!healthResponse.ok||health.ok!==true||health.dataReady!==true||health.bottlenecksReady!==true||health.clientDashboardReady!==true||health.financeReady!==true||health.objectiveReady!==true)process.exit(1);
           if(health.dataTrustOk===false||health.trustLevel==="red")process.exit(9);
           if(protectedResponse.status!==401)process.exit(2);
-          if(directionFinanceResponse.status!==401||directionObjectivesResponse.status!==401||atelierResponse.status!==401)process.exit(10);
+          if(directionFinanceResponse.status!==401||directionObjectivesResponse.status!==401||!atelierResponse.ok)process.exit(10);
           if("financeHealth" in health||"revenue" in health||"budget" in health)process.exit(11);
           if(!manifestResponse.ok||manifest.name!=="KPI CRVO Lens"||manifest.display!=="standalone"||manifest.start_url!=="/"||!Array.isArray(manifest.icons)||manifest.icons.length<1)process.exit(6);
           if(!workerResponse.ok||!workerText.includes("serviceWorker")&&!workerText.includes("addEventListener"))process.exit(7);
