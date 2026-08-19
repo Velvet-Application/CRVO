@@ -181,7 +181,7 @@ export default function DirectionPage() {
 
   async function loadLive() {
     try {
-      const response = await fetch(`/api/dashboard?history=1&_=${Date.now()}`, { cache:"no-store" });
+      const response = await fetch(`/api/kiosk/direction?resource=dashboard&history=1&_=${Date.now()}`, { cache:"no-store", headers:{"Cache-Control":"no-cache"} });
       if (!response.ok) throw new Error("Production live indisponible");
       const payload = await response.json() as DashboardPayload;
       const rows = payload.snapshots?.length ? payload.snapshots : payload.snapshot ? [payload.snapshot] : [];
@@ -190,18 +190,12 @@ export default function DirectionPage() {
       const months = [...new Set([latest?.date.slice(0,7), previous?.date.slice(0,7)].filter(Boolean) as string[])];
       const objectivePairs = await Promise.all(months.map(async (month) => {
         try {
-          const objectiveResponse = await fetch(`/api/objectives?month=${month}&_=${Date.now()}`, { cache:"no-store", headers:{"Cache-Control":"no-cache"} });
+          const objectiveResponse = await fetch(`/api/kiosk/direction?resource=objectives&month=${month}&_=${Date.now()}`, { cache:"no-store", headers:{"Cache-Control":"no-cache"} });
           if (!objectiveResponse.ok) throw new Error(`Objectifs ${objectiveResponse.status}`);
           const objectivePayload = await objectiveResponse.json() as ObjectivesPayload;
           return [month, objectivePayload] as const;
         } catch {
-          try {
-            const fallbackResponse = await fetch(`/api/kiosk/direction?resource=objectives&month=${month}&_=${Date.now()}`, { cache:"no-store", headers:{"Cache-Control":"no-cache"} });
-            if (!fallbackResponse.ok) throw new Error(`Kiosk objectifs ${fallbackResponse.status}`);
-            return [month, await fallbackResponse.json() as ObjectivesPayload] as const;
-          } catch {
-            return [month, {}] as const;
-          }
+          return [month, {}] as const;
         }
       }));
       setDashboard(payload);
@@ -212,7 +206,7 @@ export default function DirectionPage() {
   }
   async function loadFinance() {
     try {
-      const response = await fetch(`/api/finance?history=1&_=${Date.now()}`, { cache:"no-store" });
+      const response = await fetch(`/api/kiosk/direction?resource=finance&history=1&_=${Date.now()}`, { cache:"no-store", headers:{"Cache-Control":"no-cache"} });
       if (!response.ok) return;
       setFinance(await response.json() as FinancePayload);
     } catch {}
