@@ -43,18 +43,28 @@ export async function GET(request: Request) {
   const forcedEntity = current.session.access_profile === "transphere_manager" ? "TRANSPHERE" : null;
   const entity = forcedEntity ?? (String(url.searchParams.get("entity") ?? "CRVO").toUpperCase() === "TRANSPHERE" ? "TRANSPHERE" : "CRVO");
   try {
-    const [payload, impactReference] = await Promise.all([
-      authRpc<Record<string, unknown>>("kpi_worktime_dashboard", {
+    const payload = await authRpc<Record<string, unknown>>("kpi_worktime_dashboard", {
+      p_session_hash: current.tokenHash,
+      p_entity: entity,
+      p_from: from,
+      p_to: to,
+    });
+
+    let impactReference: Record<string, unknown> = {
+      connected: false,
+      entity,
+      error: "Référence capacitaire temporairement indisponible.",
+      sectors: [],
+    };
+    try {
+      impactReference = await authRpc<Record<string, unknown>>("kpi_worktime_capacity_reference", {
         p_session_hash: current.tokenHash,
         p_entity: entity,
-        p_from: from,
-        p_to: to,
-      }),
-      authRpc<Record<string, unknown>>("kpi_worktime_capacity_reference", {
-        p_session_hash: current.tokenHash,
-        p_entity: entity,
-      }),
-    ]);
+      });
+    } catch (impactError) {
+      console.error("worktime_capacity_reference_failed", impactError);
+    }
+
     return json({ ...payload, impactReference, currentUser: { name: current.session.display_name, profile: current.session.access_profile } });
   } catch (error) {
     console.error("worktime_dashboard_failed", error);
