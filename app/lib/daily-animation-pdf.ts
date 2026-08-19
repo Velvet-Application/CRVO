@@ -15,6 +15,7 @@ export type DailyAnimationPdfSummary = {
     revenueTarget: number | null;
     invoices: number;
     laborHours: number;
+    photos?: number | null;
     production: Array<{ key: string; label: string; value: number; color: string }>;
   };
   month: {
@@ -39,8 +40,18 @@ export type DailyAnimationPdfSummary = {
     urgents: number;
     qualityAlerts: number;
     currentStock: number | null;
+    currentOver15?: number | null;
     currentOver20: number | null;
     criticalBottleneck: { key?: string; label?: string; actual?: number; max?: number | null; over?: number | null } | null;
+    oldestToExit?: Array<{
+      registration?: string | null;
+      workOrder?: string | null;
+      model?: string | null;
+      status?: string | null;
+      ageDays?: number | null;
+      urgency?: string | null;
+      alert?: string | null;
+    }>;
   };
   sources?: { financeAsOfDate?: string | null };
 };
@@ -50,39 +61,36 @@ const CYAN = "#009edb";
 const YELLOW = "#fec82f";
 const RED = "#eb5b56";
 const TEAL = "#47b9b4";
+const PURPLE = "#9254c8";
+const ORANGE = "#d87900";
 const INK = "#0a3157";
 const MUTED = "#68849b";
 const PALE = "#f5f9fc";
 const LINE = "#d9e6ee";
 
+function num(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
 function fmt(value: unknown, digits = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? new Intl.NumberFormat("fr-FR", { maximumFractionDigits: digits }).format(n) : "—";
 }
-
 function euro(value: unknown) {
   const n = Number(value);
   return Number.isFinite(n) ? new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n) : "—";
 }
-
 function signed(value: unknown, suffix = "") {
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
   return `${n > 0 ? "+" : ""}${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(n)}${suffix}`;
 }
-
-function pct(value: unknown) {
-  const n = Number(value);
-  return Number.isFinite(n) ? `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(n)}%` : "—";
-}
-
 function displayDate(value?: string | null) {
   if (!value) return "—";
   const date = new Date(`${value}T12:00:00Z`);
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" }).format(date);
 }
-
-function rounded(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius = 22) {
+function rounded(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius = 20) {
   const r = Math.min(radius, width / 2, height / 2);
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -92,29 +100,26 @@ function rounded(ctx: CanvasRenderingContext2D, x: number, y: number, width: num
   ctx.arcTo(x, y, x + width, y, r);
   ctx.closePath();
 }
-
-function wrap(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number, maxLines = 4) {
+function wrap(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number, maxLines = 2) {
   const words = text.split(/\s+/).filter(Boolean);
   let line = "";
-  let index = 0;
-  for (let i = 0; i < words.length; i++) {
+  let row = 0;
+  for (let i = 0; i < words.length; i += 1) {
     const test = line ? `${line} ${words[i]}` : words[i];
-    if (ctx.measureText(test).width > maxWidth && line) {
-      ctx.fillText(line, x, y + index * lineHeight);
-      index++;
+    if (line && ctx.measureText(test).width > maxWidth) {
+      ctx.fillText(line, x, y + row * lineHeight);
+      row += 1;
       line = words[i];
-      if (index >= maxLines - 1) {
-        const rest = [line, ...words.slice(i + 1)].join(" ");
-        let clipped = rest;
-        while (clipped.length > 2 && ctx.measureText(`${clipped}…`).width > maxWidth) clipped = clipped.slice(0, -1);
-        ctx.fillText(`${clipped}…`, x, y + index * lineHeight);
+      if (row >= maxLines - 1) {
+        let rest = [line, ...words.slice(i + 1)].join(" ");
+        while (rest.length > 3 && ctx.measureText(`${rest}…`).width > maxWidth) rest = rest.slice(0, -1);
+        ctx.fillText(`${rest}…`, x, y + row * lineHeight);
         return;
       }
     } else line = test;
   }
-  if (line && index < maxLines) ctx.fillText(line, x, y + index * lineHeight);
+  if (line && row < maxLines) ctx.fillText(line, x, y + row * lineHeight);
 }
-
 function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
@@ -123,18 +128,13 @@ function loadImage(src: string) {
     image.src = src;
   });
 }
-
 function concat(parts: Uint8Array[]) {
   const length = parts.reduce((sum, part) => sum + part.length, 0);
   const out = new Uint8Array(length);
   let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
-  }
+  for (const part of parts) { out.set(part, offset); offset += part.length; }
   return out;
 }
-
 function jpegPdf(jpeg: Uint8Array, width: number, height: number) {
   const enc = new TextEncoder();
   const pageW = 841.89;
@@ -145,84 +145,48 @@ function jpegPdf(jpeg: Uint8Array, width: number, height: number) {
     enc.encode("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"),
     enc.encode("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"),
     enc.encode(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`),
-    concat([
-      enc.encode(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`),
-      jpeg,
-      enc.encode("\nendstream\nendobj\n"),
-    ]),
+    concat([enc.encode(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`), jpeg, enc.encode("\nendstream\nendobj\n")]),
     enc.encode(`5 0 obj\n<< /Length ${enc.encode(stream).length} >>\nstream\n${stream}endstream\nendobj\n`),
   ];
   const header = enc.encode("%PDF-1.4\n%CRVO\n");
   const offsets = [0];
   let cursor = header.length;
-  for (let i = 1; i < objects.length; i++) {
-    offsets[i] = cursor;
-    cursor += objects[i].length;
-  }
+  for (let i = 1; i < objects.length; i += 1) { offsets[i] = cursor; cursor += objects[i].length; }
   const xrefStart = cursor;
   let xref = `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
-  for (let i = 1; i < objects.length; i++) xref += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  for (let i = 1; i < objects.length; i += 1) xref += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
   const trailer = `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`;
   return new Blob([concat([header, ...objects.slice(1), enc.encode(xref), enc.encode(trailer)])], { type: "application/pdf" });
 }
 
-function status(summary: DailyAnimationPdfSummary) {
-  if (summary.pilotage.tone === "ahead") return { label: "DYNAMIQUE POSITIVE", color: TEAL, text: "Protéger l'avance et maintenir le rythme." };
-  if (summary.pilotage.tone === "alert") return { label: "PLAN D'ACTION", color: RED, text: "Reprendre la trajectoire avec des priorités claires." };
-  return { label: "TRAJECTOIRE À SÉCURISER", color: YELLOW, text: "Rester au contact et convertir chaque dossier terminable." };
-}
-
-function kpiCard(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  accent: string,
-  eyebrow: string,
-  value: string,
-  detail: string,
-  ratio: number | null,
-) {
+function card(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, accent: string, label: string, value: string, detail: string, ratio?: number | null) {
   ctx.save();
-  ctx.shadowColor = "rgba(0,46,84,.07)";
-  ctx.shadowBlur = 20;
-  ctx.shadowOffsetY = 7;
-  rounded(ctx, x, y, width, height, 22);
-  ctx.fillStyle = "#fff";
-  ctx.fill();
+  ctx.shadowColor = "rgba(0,49,86,.07)";
+  ctx.shadowBlur = 16;
+  ctx.shadowOffsetY = 6;
+  rounded(ctx, x, y, w, h, 18); ctx.fillStyle = "#fff"; ctx.fill();
   ctx.shadowColor = "transparent";
-  ctx.fillStyle = accent;
-  rounded(ctx, x, y, 9, height, 5);
-  ctx.fill();
-  ctx.fillStyle = MUTED;
-  ctx.font = '700 17px "Exo", Arial, sans-serif';
-  ctx.fillText(eyebrow.toUpperCase(), x + 32, y + 36);
-  ctx.fillStyle = INK;
-  ctx.font = '800 italic 42px "Exo", Arial, sans-serif';
-  ctx.fillText(value, x + 32, y + 86);
-  ctx.fillStyle = MUTED;
-  ctx.font = '600 16px "Exo", Arial, sans-serif';
-  wrap(ctx, detail, x + 32, y + 116, width - 64, 21, 2);
+  rounded(ctx, x, y, 7, h, 4); ctx.fillStyle = accent; ctx.fill();
+  ctx.fillStyle = MUTED; ctx.font = '800 14px "Exo", Arial, sans-serif'; ctx.fillText(label.toUpperCase(), x + 25, y + 27);
+  ctx.fillStyle = INK; ctx.font = '800 italic 34px "Exo", Arial, sans-serif'; ctx.fillText(value, x + 25, y + 67);
+  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; wrap(ctx, detail, x + 25, y + 91, w - 50, 17, 2);
   if (ratio != null && Number.isFinite(ratio)) {
-    const r = Math.max(0, Math.min(ratio, 1.2));
-    rounded(ctx, x + 32, y + height - 27, width - 64, 8, 4);
-    ctx.fillStyle = "#e6eff4";
-    ctx.fill();
-    rounded(ctx, x + 32, y + height - 27, (width - 64) * Math.min(r, 1), 8, 4);
-    ctx.fillStyle = r >= 1 ? TEAL : r >= .95 ? YELLOW : RED;
-    ctx.fill();
+    const r = Math.max(0, Math.min(Number(ratio), 1));
+    rounded(ctx, x + 25, y + h - 18, w - 50, 6, 3); ctx.fillStyle = "#e7eff4"; ctx.fill();
+    rounded(ctx, x + 25, y + h - 18, (w - 50) * r, 6, 3); ctx.fillStyle = Number(ratio) >= 1 ? TEAL : Number(ratio) >= .95 ? YELLOW : RED; ctx.fill();
   }
   ctx.restore();
 }
 
-function focusText(summary: DailyAnimationPdfSummary) {
-  const volumeGood = summary.month.exitDelta == null || summary.month.exitDelta >= 0;
-  const caGood = summary.month.revenueDelta == null || summary.month.revenueDelta >= 0;
-  if (volumeGood && caGood) return "La trajectoire est positive. On protège l'avance, on traite les urgents et on empêche le parc de vieillir.";
-  if (volumeGood && !caGood) return "Le débit est là. La priorité est maintenant de convertir la production en facturation et en chiffre d'affaires.";
-  if (!volumeGood && caGood) return "La valeur est tenue. Il faut remettre du débit dans les secteurs aval et accélérer les sorties sans dégrader la facturation.";
-  return "Priorité flux : débloquer les dossiers terminables, alimenter les postes aval, sortir et facturer dans la journée.";
+function focusItems(summary: DailyAnimationPdfSummary) {
+  const rows: Array<{ text: string; color: string }> = [];
+  const b = summary.pilotage.criticalBottleneck;
+  if (b?.label && num(b.over) > 0) rows.push({ text: `${b.label} : ${fmt(b.actual)} dossiers / seuil ${fmt(b.max)}`, color: RED });
+  if (num(summary.pilotage.urgents) > 0) rows.push({ text: `${fmt(summary.pilotage.urgents)} urgents à sécuriser`, color: BLUE });
+  if (num(summary.pilotage.qualityAlerts) > 0) rows.push({ text: `${fmt(summary.pilotage.qualityAlerts)} alertes NC à traiter`, color: CYAN });
+  if (num(summary.pilotage.currentOver20) > 0) rows.push({ text: `${fmt(summary.pilotage.currentOver20)} véhicules à plus de 20 jours`, color: ORANGE });
+  if (!rows.length) rows.push({ text: "Flux sous contrôle : maintenir FIFO, urgents et qualité.", color: TEAL });
+  return rows.slice(0, 5);
 }
 
 export async function createDailyAnimationPdf(summary: DailyAnimationPdfSummary) {
@@ -233,149 +197,131 @@ export async function createDailyAnimationPdf(summary: DailyAnimationPdfSummary)
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Moteur PDF indisponible.");
 
-  ctx.fillStyle = PALE;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = BLUE;
-  ctx.fillRect(0, 0, canvas.width, 14);
-  ctx.fillStyle = CYAN;
-  ctx.fillRect(0, 14, canvas.width, 5);
+  ctx.fillStyle = PALE; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = BLUE; ctx.fillRect(0, 0, canvas.width, 13);
+  ctx.fillStyle = CYAN; ctx.fillRect(0, 13, canvas.width, 5);
 
-  rounded(ctx, 42, 42, 1600, 130, 28);
-  ctx.fillStyle = "#fff";
-  ctx.fill();
-
+  rounded(ctx, 42, 40, 1600, 112, 26); ctx.fillStyle = "#fff"; ctx.fill();
   try {
     const logo = await loadImage("/crvo-logo.png");
-    const ratio = logo.naturalWidth / logo.naturalHeight;
-    const h = 64;
-    ctx.drawImage(logo, 72, 72, h * ratio, h);
+    const h = 58; ctx.drawImage(logo, 68, 67, h * (logo.naturalWidth / logo.naturalHeight), h);
   } catch {
-    ctx.fillStyle = BLUE;
-    ctx.font = '800 italic 54px "Exo", Arial, sans-serif';
-    ctx.fillText("CRVO", 72, 112);
+    ctx.fillStyle = BLUE; ctx.font = '800 italic 48px "Exo", Arial, sans-serif'; ctx.fillText("CRVO", 68, 110);
   }
+  ctx.fillStyle = INK; ctx.font = '800 italic 38px "Exo", Arial, sans-serif'; ctx.fillText("ANIMATION QUOTIDIENNE", 360, 88);
+  ctx.fillStyle = MUTED; ctx.font = '600 18px "Exo", Arial, sans-serif'; ctx.fillText(`CRVO ${summary.centre} · Résultats du ${displayDate(summary.reportDate)}`, 362, 119);
+  ctx.textAlign = "right"; ctx.fillStyle = BLUE; ctx.font = '800 15px "Exo", Arial, sans-serif'; ctx.fillText("SYNTHÈSE OPÉRATIONNELLE", 1608, 88);
+  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText("Veille · mois · parc · dossiers prioritaires", 1608, 114); ctx.textAlign = "left";
 
-  ctx.fillStyle = INK;
-  ctx.font = '800 italic 42px "Exo", Arial, sans-serif';
-  ctx.fillText("ANIMATION QUOTIDIENNE", 365, 94);
-  ctx.fillStyle = MUTED;
-  ctx.font = '600 19px "Exo", Arial, sans-serif';
-  ctx.fillText(`CRVO ${summary.centre} · Résultats du ${displayDate(summary.reportDate)}`, 367, 128);
-
-  const st = status(summary);
-  ctx.font = '800 16px "Exo", Arial, sans-serif';
-  const badgeWidth = Math.max(260, ctx.measureText(st.label).width + 70);
-  rounded(ctx, 1606 - badgeWidth, 72, badgeWidth, 54, 27);
-  ctx.fillStyle = `${st.color}18`;
-  ctx.fill();
-  ctx.strokeStyle = st.color;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.fillStyle = st.color === YELLOW ? "#8b6700" : st.color;
-  ctx.fillText(st.label, 1636 - badgeWidth, 105);
-
+  const colW = 382, gap = 18;
+  const xs = [42, 42 + colW + gap, 42 + (colW + gap) * 2, 42 + (colW + gap) * 3];
   const dayExitRatio = summary.yesterday.exitTarget ? summary.yesterday.exits / summary.yesterday.exitTarget : null;
   const dayRevenueRatio = summary.yesterday.revenueTarget ? summary.yesterday.revenue / summary.yesterday.revenueTarget : null;
   const monthExitRatio = summary.month.exitTarget ? summary.month.exits / summary.month.exitTarget : null;
   const monthRevenueRatio = summary.month.revenueTargetAtDate ? summary.month.revenue / summary.month.revenueTargetAtDate : null;
-  const monthTargetPct = summary.month.revenueMonthlyTarget ? summary.month.revenue / summary.month.revenueMonthlyTarget * 100 : null;
+  const caPct = summary.month.revenueMonthlyTarget ? summary.month.revenue / summary.month.revenueMonthlyTarget : null;
 
-  kpiCard(ctx, 42, 198, 500, 168, CYAN, "Sorties veille", `${fmt(summary.yesterday.exits)} VOP`, summary.yesterday.exitTarget == null ? "Objectif journalier non configuré" : `Objectif ${fmt(summary.yesterday.exitTarget)} · ${signed(summary.yesterday.exits - summary.yesterday.exitTarget, " VOP")}`, dayExitRatio);
-  kpiCard(ctx, 568, 198, 500, 168, BLUE, "CA veille", euro(summary.yesterday.revenue), summary.yesterday.revenueTarget == null ? `${fmt(summary.yesterday.invoices)} factures` : `Cible ${euro(summary.yesterday.revenueTarget)} · ${signed(summary.yesterday.revenue - summary.yesterday.revenueTarget, " €")}`, dayRevenueRatio);
-  kpiCard(ctx, 1094, 198, 548, 168, TEAL, "Stock fin de journée", `${fmt(summary.yesterday.stock)} VO`, `${fmt(summary.yesterday.over15)} > 15 j · ${fmt(summary.yesterday.over20)} > 20 j`, null);
+  card(ctx, xs[0], 174, colW, 124, CYAN, "Entrées veille", `${fmt(summary.yesterday.entries)} VO`, "véhicules réceptionnés", null);
+  card(ctx, xs[1], 174, colW, 124, BLUE, "Sorties veille", `${fmt(summary.yesterday.exits)} VOP`, summary.yesterday.exitTarget == null ? "objectif journalier non configuré" : `objectif ${fmt(summary.yesterday.exitTarget)} · ${signed(summary.yesterday.exits - summary.yesterday.exitTarget, " VOP")}`, dayExitRatio);
+  card(ctx, xs[2], 174, colW, 124, TEAL, "CA veille", euro(summary.yesterday.revenue), summary.yesterday.revenueTarget == null ? `${fmt(summary.yesterday.invoices)} factures` : `cible ${euro(summary.yesterday.revenueTarget)} · ${signed(summary.yesterday.revenue - summary.yesterday.revenueTarget, " €")}`, dayRevenueRatio);
+  card(ctx, xs[3], 174, colW, 124, PURPLE, "Photos veille", summary.yesterday.photos == null ? "—" : `${fmt(summary.yesterday.photos)} VO`, "passages Photo · Factory FTP", null);
 
-  kpiCard(ctx, 42, 390, 500, 168, BLUE, "Sorties depuis le 1er", `${fmt(summary.month.exits)} VOP`, summary.month.exitTarget == null ? "Objectif à date non configuré" : `Attendus ${fmt(summary.month.exitTarget)} · ${signed(summary.month.exitDelta, " VOP")}`, monthExitRatio);
-  kpiCard(ctx, 568, 390, 500, 168, summary.month.revenueDelta != null && summary.month.revenueDelta >= 0 ? TEAL : RED, "CA depuis le 1er", euro(summary.month.revenue), summary.month.revenueTargetAtDate == null ? `${fmt(summary.month.invoices)} factures` : `Trajectoire ${euro(summary.month.revenueTargetAtDate)} · ${signed(summary.month.revenueDelta, " €")}`, monthRevenueRatio);
-  kpiCard(ctx, 1094, 390, 548, 168, YELLOW, "Avancement CA mensuel", monthTargetPct == null ? "—" : pct(monthTargetPct), summary.month.revenueMonthlyTarget == null ? `FRE ${summary.month.fre == null ? "—" : euro(summary.month.fre)}` : `Objectif mois ${euro(summary.month.revenueMonthlyTarget)} · FRE ${summary.month.fre == null ? "—" : euro(summary.month.fre)}`, monthTargetPct == null ? null : monthTargetPct / 100);
+  card(ctx, xs[0], 316, colW, 124, CYAN, "Entrées depuis le 1er", `${fmt(summary.month.entries)} VO`, "réceptions cumulées du mois", null);
+  card(ctx, xs[1], 316, colW, 124, BLUE, "Sorties depuis le 1er", `${fmt(summary.month.exits)} VOP`, summary.month.exitTarget == null ? "objectif à date non configuré" : `attendus ${fmt(summary.month.exitTarget)} · ${signed(summary.month.exitDelta, " VOP")}`, monthExitRatio);
+  card(ctx, xs[2], 316, colW, 124, RED, "CA depuis le 1er", euro(summary.month.revenue), summary.month.revenueTargetAtDate == null ? "trajectoire à date non configurée" : `trajectoire ${euro(summary.month.revenueTargetAtDate)} · ${signed(summary.month.revenueDelta, " €")}`, monthRevenueRatio);
+  card(ctx, xs[3], 316, colW, 124, YELLOW, "Avancement CA mensuel", caPct == null ? "—" : `${fmt(caPct * 100)} %`, `objectif ${euro(summary.month.revenueMonthlyTarget)} · FRE ${summary.month.fre == null ? "—" : euro(summary.month.fre)}`, caPct);
 
-  ctx.fillStyle = INK;
-  ctx.font = '800 italic 27px "Exo", Arial, sans-serif';
-  ctx.fillText("PRODUCTION ATELIERS - VEILLE", 42, 620);
-  ctx.fillStyle = MUTED;
-  ctx.font = '600 16px "Exo", Arial, sans-serif';
-  ctx.fillText("Véhicules terminés par étape", 42, 647);
-
-  const production = summary.yesterday.production.slice(0, 6);
-  const gap = 16;
-  const totalWidth = 1600;
-  const cellWidth = (totalWidth - gap * 5) / 6;
-  production.forEach((item, index) => {
-    const x = 42 + index * (cellWidth + gap);
-    rounded(ctx, x, 674, cellWidth, 126, 18);
-    ctx.fillStyle = "#fff";
-    ctx.fill();
-    ctx.strokeStyle = `${item.color || BLUE}5f`;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.fillStyle = item.color || BLUE;
-    ctx.fillRect(x, 674, 7, 126);
-    ctx.fillStyle = INK;
-    ctx.font = '800 italic 34px "Exo", Arial, sans-serif';
-    ctx.fillText(fmt(item.value), x + 26, 727);
-    ctx.fillStyle = MUTED;
-    ctx.font = '700 15px "Exo", Arial, sans-serif';
-    wrap(ctx, item.label, x + 26, 761, cellWidth - 46, 19, 2);
+  ctx.fillStyle = INK; ctx.font = '800 italic 25px "Exo", Arial, sans-serif'; ctx.fillText("PRODUCTION ATELIERS · VEILLE", 42, 483);
+  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText("Véhicules terminés par étape", 42, 506);
+  const prod = summary.yesterday.production.slice(0, 6);
+  const prodGap = 12, prodW = (1600 - prodGap * 5) / 6;
+  prod.forEach((item, i) => {
+    const x = 42 + i * (prodW + prodGap);
+    rounded(ctx, x, 524, prodW, 84, 14); ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = item.color || BLUE; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = item.color || BLUE; ctx.fillRect(x, 524, 5, 84);
+    ctx.fillStyle = INK; ctx.font = '800 italic 27px "Exo", Arial, sans-serif'; ctx.fillText(fmt(item.value), x + 22, 560);
+    ctx.fillStyle = MUTED; ctx.font = '700 12px "Exo", Arial, sans-serif'; ctx.fillText(item.label, x + 22, 585);
   });
 
-  const panelY = 836;
-  rounded(ctx, 42, panelY, 1600, 266, 24);
-  ctx.fillStyle = "#fff";
-  ctx.fill();
-  ctx.strokeStyle = LINE;
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.fillStyle = st.color;
-  ctx.fillRect(42, panelY, 10, 266);
-
-  ctx.fillStyle = INK;
-  ctx.font = '800 italic 27px "Exo", Arial, sans-serif';
-  ctx.fillText("FOCUS DU JOUR", 76, panelY + 43);
-  ctx.fillStyle = MUTED;
-  ctx.font = '600 15px "Exo", Arial, sans-serif';
-  ctx.fillText(st.text, 76, panelY + 70);
-
-  const bullets: string[] = [];
-  const bottleneck = summary.pilotage.criticalBottleneck;
-  if (bottleneck?.label && Number(bottleneck.over) > 0) bullets.push(`${bottleneck.label} : ${fmt(bottleneck.actual)} dossiers / seuil ${fmt(bottleneck.max)}`);
-  if (summary.pilotage.urgents > 0) bullets.push(`${fmt(summary.pilotage.urgents)} urgents à sécuriser`);
-  if (summary.pilotage.qualityAlerts > 0) bullets.push(`${fmt(summary.pilotage.qualityAlerts)} alertes NC à traiter`);
-  if (Number(summary.pilotage.currentOver20) > 0) bullets.push(`${fmt(summary.pilotage.currentOver20)} véhicules à plus de 20 jours`);
-  if (!bullets.length) bullets.push("Aucun signal critique majeur détecté sur le pilotage du jour.");
-
-  ctx.font = '700 18px "Exo", Arial, sans-serif';
-  bullets.slice(0, 4).forEach((line, index) => {
-    const yy = panelY + 112 + index * 34;
-    ctx.fillStyle = index === 0 && bottleneck?.label ? RED : BLUE;
-    ctx.beginPath();
-    ctx.arc(84, yy - 5, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = INK;
-    ctx.fillText(line, 103, yy);
+  const lowerY = 632, lowerH = 292;
+  rounded(ctx, 42, lowerY, 535, lowerH, 20); ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = LINE; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = BLUE; ctx.fillRect(42, lowerY, 7, lowerH);
+  ctx.fillStyle = INK; ctx.font = '800 italic 24px "Exo", Arial, sans-serif'; ctx.fillText("FOCUS DU JOUR", 72, lowerY + 40);
+  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText("Priorités opérationnelles issues du KPI", 72, lowerY + 63);
+  focusItems(summary).forEach((item, index) => {
+    const y = lowerY + 102 + index * 39;
+    ctx.beginPath(); ctx.arc(82, y - 5, 5, 0, Math.PI * 2); ctx.fillStyle = item.color; ctx.fill();
+    ctx.fillStyle = INK; ctx.font = '700 15px "Exo", Arial, sans-serif'; wrap(ctx, item.text, 100, y, 440, 18, 2);
   });
 
-  ctx.fillStyle = "#eef7fc";
-  rounded(ctx, 910, panelY + 92, 676, 126, 20);
-  ctx.fill();
-  ctx.fillStyle = CYAN;
-  ctx.fillRect(910, panelY + 92, 7, 126);
-  ctx.fillStyle = BLUE;
-  ctx.font = '800 italic 19px "Exo", Arial, sans-serif';
-  ctx.fillText("MESSAGE D'ANIMATION", 940, panelY + 124);
-  ctx.fillStyle = INK;
-  ctx.font = '700 18px "Exo", Arial, sans-serif';
-  wrap(ctx, focusText(summary), 940, panelY + 158, 610, 26, 3);
+  rounded(ctx, 595, lowerY, 1047, lowerH, 20); ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = LINE; ctx.stroke();
+  ctx.fillStyle = INK; ctx.font = '800 italic 24px "Exo", Arial, sans-serif'; ctx.fillText("10 PLUS VIEUX DOSSIERS À SORTIR", 622, lowerY + 40);
+  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText("Parc usine actif · VOP EFF / VOP EXT · priorité vieillissement", 622, lowerY + 63);
+  const oldest = summary.pilotage.oldestToExit ?? [];
+  if (!oldest.length) {
+    ctx.fillStyle = MUTED; ctx.font = '600 16px "Exo", Arial, sans-serif'; ctx.fillText("Liste des dossiers vieillissants indisponible.", 622, lowerY + 118);
+  } else {
+    oldest.slice(0, 10).forEach((vehicle, index) => {
+      const col = index < 5 ? 0 : 1;
+      const row = index % 5;
+      const x = 622 + col * 500;
+      const y = lowerY + 91 + row * 38;
+      const urgent = String(vehicle.urgency ?? "").toLowerCase().includes("oui") || String(vehicle.alert ?? "").toLowerCase().includes("urgence");
+      ctx.beginPath(); ctx.arc(x + 10, y + 4, 11, 0, Math.PI * 2); ctx.fillStyle = urgent ? RED : BLUE; ctx.fill();
+      ctx.fillStyle = "#fff"; ctx.font = '800 10px "Exo", Arial, sans-serif'; ctx.textAlign = "center"; ctx.fillText(String(index + 1), x + 10, y + 8); ctx.textAlign = "left";
+      ctx.fillStyle = INK; ctx.font = '800 13px "Exo", Arial, sans-serif'; ctx.fillText(`${vehicle.registration || "—"} · OR ${vehicle.workOrder || "—"}`, x + 31, y + 2);
+      ctx.fillStyle = urgent ? RED : ORANGE; ctx.font = '800 13px "Exo", Arial, sans-serif'; ctx.textAlign = "right"; ctx.fillText(`J+${fmt(vehicle.ageDays)}`, x + 474, y + 2); ctx.textAlign = "left";
+      ctx.fillStyle = MUTED; ctx.font = '600 10px "Exo", Arial, sans-serif';
+      const status = `${vehicle.status || "Statut non renseigné"}${vehicle.model ? ` · ${vehicle.model}` : ""}`;
+      wrap(ctx, status, x + 31, y + 18, 420, 13, 1);
+    });
+  }
 
-  ctx.fillStyle = MUTED;
-  ctx.font = '600 13px "Exo", Arial, sans-serif';
-  const financeDate = summary.sources?.financeAsOfDate ? `CA arrêté au ${displayDate(summary.sources.financeAsOfDate)} · ` : "";
-  ctx.fillText(`Sources certifiées : ${financeDate}FTP CRVO · EtatduParc · Reporting factures · Objectifs KPI`, 42, 1153);
-  ctx.textAlign = "right";
-  ctx.fillText(`Généré ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date())}`, 1642, 1153);
-  ctx.textAlign = "left";
+  const stock = Math.max(0, num(summary.pilotage.currentStock ?? summary.yesterday.stock));
+  const over15 = Math.max(0, num(summary.pilotage.currentOver15 ?? summary.yesterday.over15));
+  const over20 = Math.max(0, num(summary.pilotage.currentOver20 ?? summary.yesterday.over20));
+  const age21 = Math.min(stock, over20);
+  const age16 = Math.max(0, Math.min(stock - age21, over15 - over20));
+  const age0 = Math.max(0, stock - age16 - age21);
+  const agingY = 946;
+  rounded(ctx, 42, agingY, 1600, 184, 20); ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = LINE; ctx.stroke();
+  ctx.fillStyle = INK; ctx.font = '800 italic 23px "Exo", Arial, sans-serif'; ctx.fillText("POIDS DU PARC EN VIEILLISSEMENT", 70, agingY + 38);
+  ctx.fillStyle = MUTED; ctx.font = '600 13px "Exo", Arial, sans-serif'; ctx.fillText(`Stock usine actif : ${fmt(stock)} véhicules`, 70, agingY + 60);
 
-  const jpegBlob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Rendu PDF impossible.")), "image/jpeg", .96));
-  const jpeg = new Uint8Array(await jpegBlob.arrayBuffer());
-  const pdf = jpegPdf(jpeg, canvas.width, canvas.height);
-  const filename = `CRVO_${summary.centre}_Animation_${summary.reportDate}.pdf`.replace(/[^a-zA-Z0-9._-]/g, "_");
-  return new File([pdf], filename, { type: "application/pdf" });
+  const barX = 70, barY = agingY + 78, barW = 1544, barH = 42;
+  rounded(ctx, barX, barY, barW, barH, 12); ctx.fillStyle = "#e8f0f4"; ctx.fill();
+  let cursor = barX;
+  const segments = [
+    { label: "0–15 jours", value: age0, color: TEAL },
+    { label: "16–20 jours", value: age16, color: YELLOW },
+    { label: "21 jours et +", value: age21, color: RED },
+  ];
+  segments.forEach((segment) => {
+    if (!stock || segment.value <= 0) return;
+    const width = barW * segment.value / stock;
+    ctx.fillStyle = segment.color; ctx.fillRect(cursor, barY, width, barH);
+    if (width > 100) {
+      ctx.fillStyle = segment.color === YELLOW ? "#624b00" : "#fff";
+      ctx.font = '800 14px "Exo", Arial, sans-serif'; ctx.textAlign = "center"; ctx.fillText(`${fmt(segment.value)} · ${fmt(segment.value / stock * 100)}%`, cursor + width / 2, barY + 26); ctx.textAlign = "left";
+    }
+    cursor += width;
+  });
+
+  segments.forEach((segment, index) => {
+    const x = 72 + index * 510;
+    ctx.beginPath(); ctx.arc(x + 5, agingY + 151, 6, 0, Math.PI * 2); ctx.fillStyle = segment.color; ctx.fill();
+    ctx.fillStyle = INK; ctx.font = '800 13px "Exo", Arial, sans-serif'; ctx.fillText(segment.label, x + 20, agingY + 156);
+    ctx.fillStyle = MUTED; ctx.font = '700 12px "Exo", Arial, sans-serif'; ctx.fillText(`${fmt(segment.value)} VO · ${stock ? fmt(segment.value / stock * 100) : "0"}% du parc`, x + 160, agingY + 156);
+  });
+
+  ctx.fillStyle = MUTED; ctx.font = '600 10px "Exo", Arial, sans-serif';
+  ctx.fillText(`Sources certifiées KPI CRVO · Factory FTP · EtatduParc · Reporting factures · Objectifs KPI`, 44, 1166);
+  ctx.textAlign = "right"; ctx.fillText(`Généré ${new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" }).format(new Date())}`, 1640, 1166); ctx.textAlign = "left";
+
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+  const raw = atob(dataUrl.split(",")[1]);
+  const jpeg = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) jpeg[i] = raw.charCodeAt(i);
+  const blob = jpegPdf(jpeg, canvas.width, canvas.height);
+  return new File([blob], `CRVO_${summary.centre.replace(/[^a-zA-Z0-9_-]+/g, "_")}_Animation_${summary.reportDate}.pdf`, { type: "application/pdf" });
 }
