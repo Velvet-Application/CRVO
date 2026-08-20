@@ -15,7 +15,7 @@ function fail(error: unknown, status = 400) {
   return json({ error: message }, forbidden ? 403 : status);
 }
 
-async function context(tokenHash: string, workflowId: string) {
+async function workflowContext(tokenHash: string, workflowId: string) {
   const [detail, rules] = await Promise.all([
     bonusRpc<BonusDetailForProration>("kpi_bonus_get_workflow", { p_session_hash: tokenHash, p_workflow_id: workflowId }),
     bonusRpc<ProrationRulesPayload>("kpi_bonus_proration_rules_read", { p_session_hash: tokenHash, p_workflow_id: workflowId }),
@@ -23,13 +23,27 @@ async function context(tokenHash: string, workflowId: string) {
   return buildProrationContext(detail, rules);
 }
 
+async function defaultContext(tokenHash: string) {
+  const rules = await bonusRpc<ProrationRulesPayload>("kpi_bonus_proration_defaults_read", { p_session_hash: tokenHash });
+  return {
+    ...rules,
+    calculatedAt: new Date().toISOString(),
+    workingDays: 0,
+    workingDaysSource: "Défini dans chaque workflow mensuel à son ouverture",
+    components: [],
+  };
+}
+
 export async function GET(request: Request) {
   const current = await currentSession();
   if (!current) return json({ error: "Session CRVO requise." }, 401);
-  const workflowId = new URL(request.url).searchParams.get("workflowId");
-  if (!workflowId) return json({ error: "Workflow manquant." }, 400);
+  const url = new URL(request.url);
+  const scope = url.searchParams.get("scope");
+  const workflowId = url.searchParams.get("workflowId");
   try {
-    return json(await context(current.tokenHash, workflowId));
+    if (scope === "defaults" || workflowId === "__defaults__") return json(await defaultContext(current.tokenHash));
+    if (!workflowId) return json({ error: "Workflow manquant." }, 400);
+    return json(await workflowContext(current.tokenHash, workflowId));
   } catch (error) {
     return fail(error);
   }
@@ -50,6 +64,17 @@ export async function POST(request: Request) {
   const collectiveThresholdDays = Number(body.collectiveThresholdDays ?? 0);
   if (!workflowId || !reasonCode) return json({ error: "Workflow ou événement manquant." }, 400);
   try {
+    if (workflowId === "__defaults__") {
+      await bonusRpc("kpi_bonus_proration_default_rule_update", {
+        p_session_hash: current.tokenHash,
+        p_reason_code: reasonCode,
+        p_individual_mode: individualMode,
+        p_individual_threshold_days: individualThresholdDays,
+        p_collective_mode: collectiveMode,
+        p_collective_threshold_days: collectiveThresholdDays,
+      });
+      return json(await defaultContext(current.tokenHash));
+    }
     await bonusRpc("kpi_bonus_proration_rule_update", {
       p_session_hash: current.tokenHash,
       p_workflow_id: workflowId,
@@ -59,7 +84,7 @@ export async function POST(request: Request) {
       p_collective_mode: collectiveMode,
       p_collective_threshold_days: collectiveThresholdDays,
     });
-    return json(await context(current.tokenHash, workflowId));
+    return json(await workflowContext(current.tokenHash, workflowId));
   } catch (error) {
     return fail(error);
   }
