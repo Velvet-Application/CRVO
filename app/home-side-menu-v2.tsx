@@ -11,11 +11,11 @@ function reportingHref(view:string){return `/pilotage/performance?nav=${encodeUR
 async function readMe(){const response=await fetch("/api/auth/me",{cache:"no-store",headers:{"Cache-Control":"no-cache"}});if(!response.ok)throw new Error(String(response.status));const payload=await response.json();return(payload?.user??null)as Me|null;}
 
 export default function HomeSideMenuV2(){
-  const pathname=usePathname();const search=useSearchParams();const[me,setMe]=useState<Me|null>(null);const[open,setOpen]=useState<Record<GroupKey,boolean>>(CLOSED);const requested=search.get("nav")??"today";
-  useEffect(()=>{let dead=false;let timer=0;let attempt=0;const run=async()=>{try{const value=await readMe();if(!dead&&value)setMe(value);}catch{attempt+=1;if(!dead&&attempt<4)timer=window.setTimeout(run,attempt*500);}};void run();return()=>{dead=true;window.clearTimeout(timer);};},[]);
+  const pathname=usePathname();const search=useSearchParams();const[me,setMe]=useState<Me|null>(null);const[open,setOpen]=useState<Record<GroupKey,boolean>>(CLOSED);const requested=search.get("nav")??"today";const activePage=pathname==="/pilotage/performance";
+  useEffect(()=>{if(!activePage)return;let dead=false;let timer=0;let attempt=0;const run=async()=>{try{const value=await readMe();if(!dead&&value)setMe(value);}catch{attempt+=1;if(!dead&&attempt<4)timer=window.setTimeout(run,attempt*500);}};void run();return()=>{dead=true;window.clearTimeout(timer);};},[activePage]);
   useEffect(()=>{if(["yesterday","bottlenecks","walking","finance"].includes(requested))setOpen({book:true,cockpit:false});},[requested]);
   const admin=me?.role==="admin";const allowed=(key:string)=>Boolean(me&&(admin||me.pagePermissions?.includes("*")||me.pagePermissions?.includes(key)));const cockpitVisible=allowed("cockpit")||allowed("bodyshop")||allowed("intelligence");const profile=useMemo(()=>admin?"ADMIN":me?.accessProfile==="service_manager"?"CHEF DE SERVICE":me?.accessProfile==="hr"?"RH":"ACCÈS MÉTIER",[admin,me]);
-  if(pathname!=="/pilotage/performance"||!me)return null;
+  if(!activePage||!me)return null;
   const toggle=(key:GroupKey)=>setOpen(current=>current[key]?{...CLOSED}:{...CLOSED,[key]:true});
   const direct=(href:string,label:string,active=false)=><a className={`hsm2-link${active?" active":""}`} href={href}><span className="hsm2-dot"/><span>{label}</span><i>›</i></a>;
   const primary=(href:string,label:string)=><a className="hsm2-primary-link" href={href}><span>{label}</span><i>›</i></a>;
