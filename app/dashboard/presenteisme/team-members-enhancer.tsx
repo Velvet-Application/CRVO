@@ -27,17 +27,6 @@ type TeamPayload = {
   error?: string;
 };
 
-const SECTOR_BY_LABEL: Record<string, string> = {
-  expertise: "expertise",
-  mecanique: "mecanique",
-  dsp: "dsp",
-  jantes: "jantes",
-  carrosserie: "carrosserie",
-  preparation: "preparation",
-  qualite: "qualite",
-  photo: "photo",
-};
-
 const STATUS_LABEL: Record<string, string> = {
   present: "Présent",
   leave: "CP / RTT",
@@ -48,6 +37,19 @@ const STATUS_LABEL: Record<string, string> = {
 
 function normalize(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
+
+function sectorFromLabel(value:string){
+  const label=normalize(value);
+  if(label.startsWith("expertise"))return"expertise";
+  if(label.startsWith("mecanique"))return"mecanique";
+  if(label.startsWith("dsp"))return"dsp";
+  if(label.startsWith("jantes"))return"jantes";
+  if(label.startsWith("carrosserie"))return"carrosserie";
+  if(label.startsWith("preparation"))return"preparation";
+  if(label.startsWith("qualite"))return"qualite";
+  if(label.startsWith("photo"))return"photo";
+  return null;
 }
 
 function parisToday() {
@@ -65,6 +67,7 @@ export default function TeamMembersEnhancer() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    let frame=0;
     const decorate = () => {
       document.querySelectorAll<HTMLElement>('[class*="teamCard"]').forEach((card) => {
         if (!/Équipe\s+[ABC]/i.test(card.textContent ?? "")) return;
@@ -74,11 +77,12 @@ export default function TeamMembersEnhancer() {
         card.setAttribute("title", "Voir les collaborateurs de cette équipe");
       });
     };
+    const scheduleDecorate=()=>{if(frame)return;frame=window.requestAnimationFrame(()=>{frame=0;decorate();});};
 
     const openCard = async (card: HTMLElement) => {
       const teamMatch = (card.textContent ?? "").match(/Équipe\s+([ABC])/i);
       const activity = card.closest("article")?.querySelector("h2")?.textContent?.trim() ?? "";
-      const sector = SECTOR_BY_LABEL[normalize(activity)];
+      const sector = sectorFromLabel(activity);
       if (!teamMatch || !sector) return;
       const team = teamMatch[1].toUpperCase();
       const dateInput = document.querySelector<HTMLInputElement>('main input[type="date"]');
@@ -89,7 +93,7 @@ export default function TeamMembersEnhancer() {
       setError("");
       setLoading(true);
       try {
-        const params = new URLSearchParams({ members: "1", date, sector, team, _: String(Date.now()) });
+        const params = new URLSearchParams({ members: "1", date, sector, team });
         const response = await fetch(`/api/site-presence-capacity?${params.toString()}`, { cache: "no-store" });
         const body = await response.json() as TeamPayload;
         if (!response.ok) throw new Error(body.error || "Composition de l'équipe indisponible.");
@@ -115,13 +119,14 @@ export default function TeamMembersEnhancer() {
       void openCard(card);
     };
 
-    const observer = new MutationObserver(decorate);
+    const observer = new MutationObserver(scheduleDecorate);
     observer.observe(document.body, { childList: true, subtree: true });
     document.addEventListener("click", onClick, true);
     document.addEventListener("keydown", onKey, true);
     decorate();
     return () => {
       observer.disconnect();
+      if(frame)window.cancelAnimationFrame(frame);
       document.removeEventListener("click", onClick, true);
       document.removeEventListener("keydown", onKey, true);
     };
