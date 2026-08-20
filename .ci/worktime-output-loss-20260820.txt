@@ -1,1 +1,1 @@
-Validate TypeScript and build for the worktime absenteeism output-loss update.
+Validate TypeScript and build for the corrected worktime absenteeism output-loss update.
