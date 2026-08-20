@@ -1,0 +1,125 @@
+/* ToolBox CRVO Lens · mobile full-screen Live indicator settings */
+@media (max-width:700px){
+  body:has(section[aria-label="Indicateurs Live CRVO"] > aside){
+    overflow:hidden!important;
+    overscroll-behavior:none;
+  }
+
+  section[aria-label="Indicateurs Live CRVO"] > button[aria-label="Fermer la configuration"]{
+    position:fixed!important;
+    inset:0!important;
+    z-index:1199!important;
+    background:rgba(8,35,54,.42)!important;
+    backdrop-filter:blur(5px)!important;
+  }
+
+  section[aria-label="Indicateurs Live CRVO"] > aside{
+    position:fixed!important;
+    inset:0!important;
+    z-index:1200!important;
+    width:100vw!important;
+    height:100dvh!important;
+    max-height:100dvh!important;
+    margin:0!important;
+    border:0!important;
+    border-radius:0!important;
+    background:linear-gradient(180deg,#f8fcfe 0%,#eef6fa 100%)!important;
+    box-shadow:none!important;
+    overflow:hidden!important;
+    display:flex!important;
+    flex-direction:column!important;
+  }
+
+  section[aria-label="Indicateurs Live CRVO"] > aside > header{
+    flex:0 0 auto!important;
+    position:relative!important;
+    z-index:2!important;
+    grid-template-columns:minmax(0,1fr) 44px!important;
+    gap:12px!important;
+    padding:calc(18px + env(safe-area-inset-top)) 18px 18px!important;
+    border-bottom:1px solid #dce8ee!important;
+    background:rgba(255,255,255,.98)!important;
+    box-shadow:0 8px 24px rgba(18,57,82,.06)!important;
+  }
+
+  section[aria-label="Indicateurs Live CRVO"] > aside > header h2{
+    margin-top:5px!important;
+    font-size:25px!important;
+    line-height:1.08!important;
+  }
+
+  section[aria-label="Indicateurs Live CRVO"] > aside > header p{
+    max-width:520px!important;
+    margin-top:9px!important;
+    font-size:10px!important;
+    line-height:1.5!important;
+  }
+
+  section[aria-label="Indicateurs Live CRVO"] > aside > header > button{
+    width:44px!important;
+    height:44px!important;
+    border-radius:14px!important;
+    font-size:22px!important;
+  }
+
+  section[aria-label="Indicateurs Live CRVO"] > aside > div{
+    flex:1 1 auto!important;
+    min-height:0!important;
+    overflow-y:auto!important;
+    overscroll-behavior:contain!important;
+    -webkit-overflow-scrolling:touch!important;
+    display:grid!important;
+    align-content:start!important;
+    gap:10px!important;
+    padding:14px 14px 24px!important;
+  }
+
+  section[aria-label="Indicateurs Live CRVO"] > aside > div > article{
+    min-height:82px!important;
+    padding:13px!important;
+    border-radius:16px!important;
+    box-shadow:0 8px 22px rgba(20,57,81,.06)!important;
+  }
+
+  section[aria-label="Indicateurs Live CRVO"] > aside > div > article > div strong{
+    font-size:11px!important;
+  }
+
+  section[aria-label="Indicateurs Live CRVO"] > aside > div > article > div p{
+    margin-top:4px!important;
+    font-size:8px!important;
+    line-height:1.4!important;
+  }
+
+  section[aria-label="Indicateurs Live CRVO"] > aside > footer{
+    flex:0 0 auto!important;
+    position:relative!important;
+    z-index:3!important;
+    display:grid!important;
+    grid-template-columns:1fr!important;
+    gap:10px!important;
+    padding:13px 16px calc(13px + env(safe-area-inset-bottom))!important;
+    border-top:1px solid #d9e6ed!important;
+    background:rgba(255,255,255,.98)!important;
+    box-shadow:0 -10px 28px rgba(18,57,82,.09)!important;
+  }
+
+  section[aria-label="Indicateurs Live CRVO"] > aside > footer > span{
+    font-size:9px!important;
+  }
+
+  section[aria-label="Indicateurs Live CRVO"] > aside > footer > button{
+    width:100%!important;
+    min-height:52px!important;
+    border-radius:15px!important;
+    font-size:10px!important;
+    letter-spacing:.01em!important;
+  }
+}
+
+@media (max-width:380px){
+  section[aria-label="Indicateurs Live CRVO"] > aside > header h2{font-size:22px!important}
+  section[aria-label="Indicateurs Live CRVO"] > aside > header{padding-left:14px!important;padding-right:14px!important}
+  section[aria-label="Indicateurs Live CRVO"] > aside > div{padding-left:10px!important;padding-right:10px!important}
+  section[aria-label="Indicateurs Live CRVO"] > aside > footer{padding-left:12px!important;padding-right:12px!important}
+}
