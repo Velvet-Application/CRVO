@@ -188,7 +188,7 @@ export function buildProrationContext(detail: BonusDetailForProration, payload: 
       ? "Data RH · (heures achetées + absences) / jours ouvrés du workflow"
       : "Référence de secours 7 h/j · base mensuelle insuffisante";
 
-    const grouped = new Map<string, { rule: ProrationRule; events: ProrationSourceEvent[]; hours: number; days: number; dates: Set<string>; sources: Set<string> }>();
+    const grouped = new Map<string, { rule: ProrationRule; events: ProrationSourceEvent[]; hours: number; days: number; dates: Set<string>; sources: Set<string>; kinds: Set<string> }>();
     for (const event of personEvents) {
       const rule = rules.get(event.reason) ?? ({
         reasonCode: event.reason,
@@ -200,14 +200,15 @@ export function buildProrationContext(detail: BonusDetailForProration, payload: 
         collectiveThresholdDays: 0,
         active: true,
       } satisfies ProrationRule);
-      const current = grouped.get(event.reason) ?? { rule, events: [], hours: 0, days: 0, dates: new Set<string>(), sources: new Set<string>() };
+      const current = grouped.get(event.reason) ?? { rule, events: [], hours: 0, days: 0, dates: new Set<string>(), sources: new Set<string>(), kinds: new Set<string>() };
       current.events.push(event);
       const hours = Math.max(0, safe(event.durationHours));
       const dates = datesForEvent(event, detail.workflow.month);
       dates.forEach(date => current.dates.add(date));
       current.hours += hours;
-      current.days += hours > 0 ? hours / referenceHoursPerDay : dates.length;
+      current.days += hours > 0 ? hours / referenceHoursPerDay : event.kind === "absence" ? dates.length : 0;
       current.sources.add(event.source ?? "data_rh");
+      current.kinds.add(event.kind ?? "absence");
       grouped.set(event.reason, current);
     }
 
@@ -225,7 +226,7 @@ export function buildProrationContext(detail: BonusDetailForProration, payload: 
       const collectiveTriggered = days > safe(group.rule.collectiveThresholdDays);
       const individualEffectiveMode: Exclude<ProrationMode, "inherit"> = group.rule.individualMode === "inherit" ? "ignore" : group.rule.individualMode;
       const collectiveEffectiveMode: Exclude<ProrationMode, "inherit"> = group.rule.collectiveMode === "inherit"
-        ? (granularCollective ? "prorate" : "ignore")
+        ? (granularCollective && group.kinds.has("absence") ? "prorate" : "ignore")
         : group.rule.collectiveMode;
       const individualImpactDays = individualTriggered && individualEffectiveMode === "prorate" ? days : 0;
       const collectiveImpactDays = collectiveTriggered && collectiveEffectiveMode === "prorate" ? days : 0;
