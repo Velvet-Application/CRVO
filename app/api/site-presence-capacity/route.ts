@@ -26,13 +26,13 @@ export async function GET(request: Request) {
   if (!current) return json({ error: "Session requise." }, 401);
 
   try {
-    const access = await authRpc<AccessPayload>("kpi_site_presence_capacity_access", {
-      p_session_hash: current.tokenHash,
-    });
-
     const url = new URL(request.url);
-    if (url.searchParams.get("access") === "1") return json(access);
-    if (!access.allowed) return json({ error: "Accès réservé aux superviseurs, chefs de service et administrateurs." }, 403);
+    if (url.searchParams.get("access") === "1") {
+      const access = await authRpc<AccessPayload>("kpi_site_presence_capacity_access", {
+        p_session_hash: current.tokenHash,
+      });
+      return json(access);
+    }
 
     const requestedDate = url.searchParams.get("date");
     const date = requestedDate ? isoDate(requestedDate) : null;
@@ -61,7 +61,7 @@ export async function GET(request: Request) {
     const message = error instanceof Error
       ? error.message.replace(/^Auth RPC [^:]+ failed with \d+:?\s*/, "")
       : "Présentéisme temporairement indisponible.";
-    const forbidden = /réservé|accès|interdit/i.test(message);
+    const forbidden = /réservé|accès|interdit|42501/i.test(message);
     return json({ error: message }, forbidden ? 403 : 500);
   }
 }
