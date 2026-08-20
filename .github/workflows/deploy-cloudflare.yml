@@ -1,4 +1,4 @@
-name: Deploy CRVO to Cloudflare
+name: Deploy ToolBox CRVO to Cloudflare
 
 on:
   workflow_dispatch:
@@ -71,7 +71,7 @@ jobs:
           if(protectedResponse.status!==401)process.exit(2);
           if(directionFinanceResponse.status!==401||directionObjectivesResponse.status!==401||!atelierResponse.ok)process.exit(10);
           if("financeHealth" in health||"revenue" in health||"budget" in health)process.exit(11);
-          if(!manifestResponse.ok||manifest.name!=="KPI CRVO Lens"||manifest.display!=="standalone"||manifest.start_url!=="/"||!Array.isArray(manifest.icons)||manifest.icons.length<1)process.exit(6);
+          if(!manifestResponse.ok||manifest.name!=="ToolBox CRVO Lens"||manifest.display!=="standalone"||manifest.start_url!=="/"||!Array.isArray(manifest.icons)||manifest.icons.length<1)process.exit(6);
           if(!workerResponse.ok||!workerText.includes("serviceWorker")&&!workerText.includes("addEventListener"))process.exit(7);
           if(!iconResponse.ok)process.exit(8);
           NODE
