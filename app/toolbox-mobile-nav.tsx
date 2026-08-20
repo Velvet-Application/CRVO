@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect,useMemo,useState} from "react";
+import {useEffect,useState} from "react";
 import styles from "./toolbox-mobile-nav.module.css";
 
 type MobileDomain={key:string;label:string;short:string;href:string;description:string};
@@ -11,12 +11,10 @@ function GridIcon(){return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="
 
 export default function ToolboxMobileNav({domains}:{domains:MobileDomain[]}){
   const[open,setOpen]=useState(false);
-  const primary=useMemo(()=>domains.find(domain=>domain.key==="pilotage")??domains[0]??null,[domains]);
   useEffect(()=>{if(!open)return;const onKey=(event:KeyboardEvent)=>{if(event.key==="Escape")setOpen(false);};document.addEventListener("keydown",onKey);return()=>document.removeEventListener("keydown",onKey);},[open]);
   return <>
     <nav className={styles.dock} aria-label="Navigation mobile ToolBox">
       <a className={styles.active} href="/" aria-current="page"><span className={styles.navIcon}><HomeIcon/></span><small>Accueil</small></a>
-      {primary?<a href={primary.href}><span className={styles.domainIcon}>{primary.short}</span><small>{primary.key==="pilotage"?"Piloter":primary.label}</small></a>:<a href="/notifications"><span className={styles.domainIcon}>!</span><small>Alertes</small></a>}
       <a className={styles.liveLink} href="#live-crvo"><span className={styles.navIcon}><PulseIcon/><i/></span><small>Live</small></a>
       <button type="button" onClick={()=>setOpen(true)} aria-expanded={open} aria-controls="toolbox-mobile-menu"><span className={styles.navIcon}><GridIcon/></span><small>Univers</small></button>
     </nav>
