@@ -9,6 +9,7 @@ import "./globals.css";
 import "./production-fixes.css";
 import "./expertise-workspace-fixes.css";
 import "./toolbox-navigation-overrides.css";
+import "./toolbox-arc-reactor.css";
 import ToolboxShell from "./toolbox-shell";
 import DataTrustGuard from "./data-trust-guard";
 import ActivityColorBinder from "./activity-color-binder";
