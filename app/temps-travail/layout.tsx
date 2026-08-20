@@ -7,13 +7,13 @@ import styles from "./temps-travail-layout.module.css";
 
 export default function WorktimeLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const leaveActive = pathname.startsWith("/temps-travail/conges");
+  const leaveActive = pathname.startsWith("/temps-travail/conges") || pathname.startsWith("/temps-travail/souhaits-cp");
   return (
     <div className={styles.shell}>
       <div className={styles.subnavWrap} aria-label="Navigation Temps de travail">
         <nav className={styles.subnav}>
           <Link className={styles.link} data-active={!leaveActive} href="/temps-travail">1 · Suivi du temps de présence</Link>
-          <Link className={styles.link} data-active={leaveActive} href="/temps-travail/conges">2 · Souhaits de CP</Link>
+          <Link className={styles.link} data-active={leaveActive} href="/temps-travail/souhaits-cp" prefetch={false}>2 · Souhaits de CP</Link>
         </nav>
       </div>
       {children}
