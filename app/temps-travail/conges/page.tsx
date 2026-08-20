@@ -10,12 +10,14 @@ type CalendarDay={date:string;weekend:boolean;total:number;unavailable:number;ap
 type ShiftDay={date:string;team:string;total:number;unavailable:number;pendingLeave:number;remaining:number;remainingIfAccepted:number;remainingIfAcceptedPct:number|null;risk:string};
 type Payload={connected:boolean;from:string;to:string;team?:string|null;sector?:string|null;people:Person[];requests:LeaveRequest[];calendar:CalendarDay[];shiftComparison:ShiftDay[];teamOptions:string[];sectorOptions:string[];summary:{pending:number;approved:number;refused:number};rules:{warningRemainingPct:number;criticalRemainingPct:number};volumeRisk?:{enabled:boolean;effectiveSector?:string|null;method?:string};access:{role:string;profile:string;level?:string|null;positionKey?:string|null;canRequest:boolean;canDecide:boolean;teams:string[];sectors:string[]};organization?:{positionKey:string;name:string;title:string;parent?:string|null;teams:string[];sectors:string[]}|null;error?:string};
 type DayPerson={employeeKey:string;name:string;matricule?:string|null;team?:string|null;service?:string|null;sector?:string|null;reason?:string|null};
-type DayDetail={connected:boolean;date:string;team?:string|null;sector?:string|null;present:DayPerson[];leave:DayPerson[];otherAbsences:DayPerson[];pendingLeave:DayPerson[];counts:{present:number;leave:number;otherAbsences:number;pendingLeave:number};error?:string};
+type DayRisk={enabled:boolean;productiveTotal?:number;productiveRemainingIfAccepted?:number;requiredVolume?:number|null;capacityVehicles?:number|null;capacityReferenceHours?:number|null;loadPct?:number|null;riskPct?:number|null;risk?:RiskLevel;riskBasis?:"activity"|"site"|"none";targetSource?:string|null;method?:string|null};
+type DayDetail={connected:boolean;date:string;team?:string|null;sector?:string|null;present:DayPerson[];leave:DayPerson[];otherAbsences:DayPerson[];pendingLeave:DayPerson[];counts:{present:number;leave:number;otherAbsences:number;pendingLeave:number};risk?:DayRisk;error?:string};
 type DraftCapacity={minRemaining:number;minPct:number;risk:Exclude<RiskLevel,"unknown">;riskPct:number|null;requiredVolume:number|null;capacityVehicles:number|null};
 type CompareSummary={team:string;total:number;minRemaining:number;minPct:number|null;risk:string};
 
 const SECTOR_LABEL:Record<string,string>={expertise:"Expertise",mecanique:"Mécanique",dsp:"DSP",carrosserie:"Carrosserie",preparation:"Préparation",qualite:"Qualité",jantes:"Jantes",photo:"Photo",diagnostic:"Diagnostic",lavage:"Lavage",jockey:"Jockey",magasin:"Magasin / MPR",admin:"Administratif",encadrement:"Encadrement",autre:"Autre"};
 const STATUS_LABEL:Record<string,string>={pending:"En attente",approved:"Accepté",refused:"Refusé",cancelled:"Annulé"};
+const REASON_LABEL:Record<string,string>={paid_leave:"CP",rtt_recovery:"RTT / récupération",sick_received:"Maladie",sick_pending:"Maladie à confirmer",long_absence:"Absence longue durée",work_accident:"Accident du travail",therapeutic_part_time:"Mi-temps thérapeutique",unpaid_leave:"Congé sans solde",parental_leave:"Congé parental"};
 const PROD_SECTORS=new Set(["expertise","mecanique","dsp","carrosserie","preparation","qualite","jantes","photo"]);
 
 function parisToday(){return new Intl.DateTimeFormat("fr-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());}
@@ -31,6 +33,7 @@ function pct(value:number|null|undefined){return value==null?"—":`${Math.round
 function fmt(value:number|null|undefined,digits=0){return value==null||!Number.isFinite(Number(value))?"—":Number(value).toLocaleString("fr-FR",{minimumFractionDigits:digits,maximumFractionDigits:digits});}
 function riskFromPct(value:number|null|undefined):Exclude<RiskLevel,"unknown">{if(value==null)return"ok";return value>=90?"critical":value>=70?"warning":"ok";}
 function scopeLabel(team:string,sector:string){const parts=[] as string[];if(team!=="*")parts.push(`Équipe ${team}`);if(sector!=="*")parts.push(SECTOR_LABEL[sector]??sector);return parts.length?parts.join(" · "):"Tout le périmètre autorisé";}
+function reasonLabel(value?:string|null){if(!value)return"";return value.split(",").map(item=>item.trim()).filter(Boolean).map(item=>REASON_LABEL[item]??item.replaceAll("_"," ")).join(" · ");}
 
 export default function LeavePlanningPage(){
   const today=parisToday();
@@ -92,6 +95,8 @@ export default function LeavePlanningPage(){
 
   const calendarMap=useMemo(()=>new Map((data?.calendar??[]).map(row=>[row.date,row])),[data]);
   const selectedDay=calendarMap.get(selectedDate)??null;
+  const selectedRisk=dayDetail?.date===selectedDate&&dayDetail.risk?.enabled?dayDetail.risk:null;
+  const selectedRiskLevel=selectedRisk?.risk??selectedDay?.risk??"unknown";
   const leading=useMemo(()=>{const d=new Date(`${bounds.from}T12:00:00Z`);return(d.getUTCDay()+6)%7;},[bounds.from]);
   const calendarCells=useMemo<(CalendarDay|null)[]>(()=>[...Array.from({length:leading},()=>null),...(data?.calendar??[])],[data,leading]);
   const draftRows=useMemo(()=>(data?.calendar??[]).filter(row=>startDate&&endDate&&row.date>=startDate&&row.date<=endDate&&!row.weekend),[data,startDate,endDate]);
@@ -195,7 +200,7 @@ export default function LeavePlanningPage(){
       <section className={styles.calendarCard}>
         <div className={styles.cardHead}><div><h2>Calendrier équipe</h2><p>Clique sur un jour pour voir les présents, les CP et les autres absences. Le risque intègre le volume théorique à traiter.</p></div><div className={styles.legend}><span data-risk="ok">Risque &lt; 70 %</span><span data-risk="warning">70–89 %</span><span data-risk="critical">≥ 90 %</span></div></div>
         <div className={styles.weekdays}>{["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].map(day=><span key={day}>{day}</span>)}</div>
-        <div className={styles.calendar}>{calendarCells.map((row,index)=>row===null?<div className={styles.blank} key={`blank-${index}`}/>:<button type="button" className={`${styles.day} ${selectedDate===row.date?styles.daySelected:""}`} data-risk={row.risk} data-weekend={row.weekend} key={row.date} onClick={()=>selectDay(row.date)}><header><strong>{dayLabel(row.date)}</strong><span>{row.remainingIfAccepted}/{row.total}</span></header><div className={styles.capacityBar}><i style={{width:`${Math.max(0,Math.min(100,row.remainingIfAcceptedPct??0))}%`}}/></div><p><b>{row.approvedLeave}</b> CP · <b>{row.pendingLeave}</b> souhait{row.pendingLeave>1?"s":""}</p><div className={styles.riskLine}><span>Risque</span><strong>{pct(row.riskPct)}</strong></div>{row.requiredVolume!=null&&<small>{fmt(row.requiredVolume,1)} VO à traiter · capacité {fmt(row.capacityVehicles,1)} VO</small>}</button>)}</div>
+        <div className={styles.calendar}>{calendarCells.map((row,index)=>row===null?<div className={styles.blank} key={`blank-${index}`}/>:<button type="button" className={`${styles.day} ${selectedDate===row.date?styles.daySelected:""}`} data-risk={selectedDate===row.date&&selectedRisk?.risk?selectedRisk.risk:row.risk} data-weekend={row.weekend} key={row.date} onClick={()=>selectDay(row.date)}><header><strong>{dayLabel(row.date)}</strong><span>{row.remainingIfAccepted}/{row.total}</span></header><div className={styles.capacityBar}><i style={{width:`${Math.max(0,Math.min(100,row.remainingIfAcceptedPct??0))}%`}}/></div><p><b>{row.approvedLeave}</b> CP · <b>{row.pendingLeave}</b> souhait{row.pendingLeave>1?"s":""}</p><div className={styles.riskLine}><span>Risque</span><strong>{pct(selectedDate===row.date&&selectedRisk?selectedRisk.riskPct:row.riskPct)}</strong></div>{(selectedDate===row.date&&selectedRisk?.requiredVolume!=null||row.requiredVolume!=null)&&<small>{fmt(selectedDate===row.date&&selectedRisk?selectedRisk.requiredVolume:row.requiredVolume,1)} VO à traiter · capacité {fmt(selectedDate===row.date&&selectedRisk?selectedRisk.capacityVehicles:row.capacityVehicles,1)} VO</small>}</button>)}</div>
       </section>
 
       <aside className={styles.side}>
@@ -212,8 +217,8 @@ export default function LeavePlanningPage(){
       </aside>
     </div>
 
-    <section className={styles.dayDetailCard} data-risk={selectedDay?.risk??"unknown"}>
-      <div className={styles.cardHead}><div><p className={styles.eyebrow}>DÉTAIL DU JOUR</p><h2>{displayLongDate(selectedDate)}</h2><p>{scopeLabel(team,sector)} · les listes suivent exactement les filtres actifs.</p></div>{selectedDay&&<div className={styles.dayRisk}><span>Risque capacitaire</span><strong>{pct(selectedDay.riskPct)}</strong><small>{fmt(selectedDay.requiredVolume,1)} VO à traiter · capacité {fmt(selectedDay.capacityVehicles,1)} VO</small></div>}</div>
+    <section className={styles.dayDetailCard} data-risk={selectedRiskLevel}>
+      <div className={styles.cardHead}><div><p className={styles.eyebrow}>DÉTAIL DU JOUR</p><h2>{displayLongDate(selectedDate)}</h2><p>{scopeLabel(team,sector)} · les listes suivent exactement les filtres actifs.</p></div>{(selectedRisk||selectedDay)&&<div className={styles.dayRisk}><span>Risque capacitaire</span><strong>{pct(selectedRisk?.riskPct??selectedDay?.riskPct)}</strong><small>{fmt(selectedRisk?.requiredVolume??selectedDay?.requiredVolume,1)} VO à traiter · capacité {fmt(selectedRisk?.capacityVehicles??selectedDay?.capacityVehicles,1)} VO</small></div>}</div>
       {detailLoading?<div className={styles.empty}>Chargement de l’équipe…</div>:dayDetail?<>
         <div className={styles.dayStats}><article><span>Présents</span><strong>{dayDetail.counts.present}</strong></article><article><span>CP / RTT</span><strong>{dayDetail.counts.leave}</strong></article><article><span>Autres absences</span><strong>{dayDetail.counts.otherAbsences}</strong></article><article><span>Souhaits en attente</span><strong>{dayDetail.counts.pendingLeave}</strong></article></div>
         <div className={styles.peopleGrid}>
@@ -222,7 +227,7 @@ export default function LeavePlanningPage(){
           {dayDetail.otherAbsences.length>0&&<PeopleList title="Autres absences" people={dayDetail.otherAbsences} tone="absence" empty=""/>}
           {dayDetail.pendingLeave.length>0&&<PeopleList title="Souhaits CP en attente" people={dayDetail.pendingLeave} tone="pending" empty=""/>}
         </div>
-        {selectedDay&&<div className={styles.riskExplanation}><strong>Lecture du risque</strong><span>{selectedDay.targetSource??"Volume théorique du jour"}. L’indice compare la charge à traiter à la capacité disponible après absences et CP. Ce pourcentage mesure une tension capacitaire, pas une probabilité statistique.</span></div>}
+        {(selectedRisk||selectedDay)&&<div className={styles.riskExplanation}><strong>Lecture du risque</strong><span>{selectedRisk?.targetSource??selectedDay?.targetSource??"Volume théorique du jour"}. L’indice compare la charge à traiter à la capacité disponible après absences et CP. Ce pourcentage mesure une tension capacitaire, pas une probabilité statistique.</span></div>}
       </>:<div className={styles.empty}>Détail indisponible.</div>}
     </section>
 
@@ -234,5 +239,5 @@ export default function LeavePlanningPage(){
 }
 
 function PeopleList({title,people,tone,empty}:{title:string;people:DayPerson[];tone:"present"|"leave"|"absence"|"pending";empty:string}){
-  return <section className={styles.peopleList} data-tone={tone}><header><h3>{title}</h3><strong>{people.length}</strong></header><div>{people.length===0?<span className={styles.listEmpty}>{empty}</span>:people.map(person=><article key={person.employeeKey}><div><strong>{person.name}</strong><small>{person.team?`Équipe ${person.team}`:"Sans équipe"}{person.sector?` · ${SECTOR_LABEL[person.sector]??person.sector}`:""}</small></div>{person.reason&&<em>{person.reason}</em>}</article>)}</div></section>;
+  return <section className={styles.peopleList} data-tone={tone}><header><h3>{title}</h3><strong>{people.length}</strong></header><div>{people.length===0?<span className={styles.listEmpty}>{empty}</span>:people.map(person=><article key={person.employeeKey}><div><strong>{person.name}</strong><small>{person.team?`Équipe ${person.team}`:"Sans équipe"}{person.sector?` · ${SECTOR_LABEL[person.sector]??person.sector}`:""}</small></div>{person.reason&&<em>{reasonLabel(person.reason)}</em>}</article>)}</div></section>;
 }
