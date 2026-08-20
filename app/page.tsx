@@ -35,10 +35,6 @@ export default async function Page({searchParams}:PageProps){
   ];
   const visible=domains.filter(domain=>domain.visible);
   return <main className={`${styles.page} toolboxHub`}>
-    <header className={styles.topbar}>
-      <div className={styles.brand}><span>CRVO · LENS</span><strong>ToolBox CRVO Lens</strong></div>
-      <div className={styles.session}><span>ESPACE SÉCURISÉ</span><strong>{session.display_name}</strong><small>{session.role==="admin"?"Administrateur":session.access_profile==="service_manager"?"Chef de service":session.access_profile==="hr"?"RH":session.access_profile==="trainer"?"Formateur":session.access_profile==="team_manager"?"Manager / Chef d’équipe":session.access_profile==="transphere_manager"?"Responsable Transphère":"Utilisateur autorisé"}</small></div>
-    </header>
     <section className={styles.workspace} aria-label="Univers métiers ToolBox CRVO Lens">
       <div className={styles.techArc} aria-hidden="true"/>
       <div className={styles.center}>
@@ -54,6 +50,5 @@ export default async function Page({searchParams}:PageProps){
       </a>)}
       {!visible.length&&<div className={styles.empty}>Aucun univers métier n’est encore autorisé pour ce compte. Contacte un administrateur pour ajuster les droits.</div>}
     </section>
-    <footer className={styles.footer}><span><strong>ToolBox CRVO Lens</strong> · Plateforme métiers du centre</span><a href="/account">Mon compte & accès</a></footer>
   </main>;
 }
