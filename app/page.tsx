@@ -4,8 +4,14 @@ import { currentSession, hasPageAccess } from "./lib/crvo-auth";
 import styles from "./toolbox-home.module.css";
 
 type Domain={key:"pilotage"|"client"|"rh"|"admin"|"transphere";label:string;short:string;href:string;description:string;visible:boolean};
+type PageProps={searchParams:Promise<Record<string,string|string[]|undefined>>};
+const LEGACY_VIEWS=new Set(["today","yesterday","bottlenecks","walking","finance","objectives","sources"]);
 
-export default async function Page(){
+export default async function Page({searchParams}:PageProps){
+  const params=await searchParams;
+  const rawNav=params.nav;
+  const legacyNav=Array.isArray(rawNav)?rawNav[0]:rawNav;
+  if(legacyNav&&LEGACY_VIEWS.has(legacyNav))redirect(`/pilotage/performance?nav=${encodeURIComponent(legacyNav)}`);
   const current=await currentSession();
   if(!current)redirect("/login");
   const{session}=current;
