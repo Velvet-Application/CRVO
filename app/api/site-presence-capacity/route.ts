@@ -38,7 +38,20 @@ export async function GET(request: Request) {
     const date = requestedDate ? isoDate(requestedDate) : null;
     if (requestedDate && !date) return json({ error: "Date invalide." }, 400);
 
-    const payload = await authRpc<Record<string, unknown>>("kpi_site_presence_capacity_v7", {
+    if (url.searchParams.get("members") === "1") {
+      const sector = String(url.searchParams.get("sector") ?? "").trim().toLowerCase();
+      const team = String(url.searchParams.get("team") ?? "").trim().toUpperCase();
+      if (!sector || !["A", "B", "C"].includes(team)) return json({ error: "Équipe ou activité invalide." }, 400);
+      const payload = await authRpc<Record<string, unknown>>("kpi_site_presence_team_members", {
+        p_session_hash: current.tokenHash,
+        p_date: date,
+        p_sector: sector,
+        p_team: team,
+      });
+      return json(payload);
+    }
+
+    const payload = await authRpc<Record<string, unknown>>("kpi_site_presence_capacity_v8", {
       p_session_hash: current.tokenHash,
       p_date: date,
     });
