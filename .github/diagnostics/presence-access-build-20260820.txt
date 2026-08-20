@@ -1,3 +1,4 @@
 Diagnostic build trigger for presence dashboard and leave-wishes routes.
 Validation after CP page syntax repair.
 Validation after global TypeScript blockers repair.
+Validation after inline dashboard navigation and authoritative productive roster.
