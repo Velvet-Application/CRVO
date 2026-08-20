@@ -8,10 +8,8 @@ import "@fontsource/exo/800-italic.css";
 import "./globals.css";
 import "./production-fixes.css";
 import "./expertise-workspace-fixes.css";
-import GlobalNavDrawer from "./global-nav-drawer-v2";
-import HomeSideMenu from "./home-side-menu-v2";
-import EnvironmentSwitcher from "./environment-switcher";
-import MobileNavigationFix from "./mobile-navigation-fix";
+import "./toolbox-navigation-overrides.css";
+import ToolboxShell from "./toolbox-shell";
 import DataTrustGuard from "./data-trust-guard";
 import ActivityColorBinder from "./activity-color-binder";
 import KioskFetchBridge from "./kiosk-fetch-bridge";
@@ -21,7 +19,6 @@ import TransphereAccessManager from "./transphere-access-manager";
 import WorktimeAnnualizationPanel from "./worktime-annualization-panel";
 import AtelierPublicScreen from "./atelier-public-screen";
 import FriendlyLoadingPatch from "./friendly-loading-patch";
-import NotificationCenter from "./notification-center";
 
 export const metadata: Metadata = {
   title: "ToolBox CRVO Lens",
@@ -46,16 +43,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <KioskFetchBridge />
     <ActivityColorBinder />
     <FriendlyLoadingPatch />
-    <GlobalNavDrawer />
-    <HomeSideMenu />
-    <EnvironmentSwitcher />
+    <ToolboxShell />
     <DataTrustGuard />
-    <NotificationCenter />
     <DailyAnimationOneClick />
     <TransphereAccessManager />
     <WorktimeAnnualizationPanel />
     <AtelierPublicScreen />
-    <MobileNavigationFix />
     {children}
   </body></html>;
 }

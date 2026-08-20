@@ -1,0 +1,6 @@
+/* Navigation ToolBox hiérarchique : les anciennes barres bleues ne pilotent plus les parcours. */
+.app-shell{grid-template-columns:minmax(0,1fr)!important}
+.app-shell>.sidebar,.sidebar-backdrop,.gn2-trigger,.gn2-drawer,.gn2-backdrop,.hsm2,.env-switcher,.crvo-auth-nav{display:none!important}
+.toolboxHub{min-height:calc(100vh - 86px)!important;padding:18px 28px 28px!important;display:block!important}
+@media(max-width:700px){.toolboxHub{padding:10px 8px 18px!important}}
+@media print{.toolboxHub{padding:0!important}}
