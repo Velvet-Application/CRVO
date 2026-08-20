@@ -5,9 +5,11 @@ import ToolboxDomainPage, { type ToolboxDomainItem } from "../../toolbox-domain-
 export default async function RhMetierPage(){
   const current=await currentSession();if(!current)redirect("/login");const{session}=current;
   const can=(key:string)=>hasPageAccess(session,key);
+  const canAnnual=session.role==="admin"||["hr","service_manager","team_manager"].includes(session.access_profile);
   const items:ToolboxDomainItem[]=[];
   if(can("worktime")){
     items.push({section:"Temps de travail",kicker:"PRÉSENCE",label:"Suivi du temps de travail",href:"/temps-travail",description:"Déclarations terrain, absences, retards, départs et validation quotidienne des équipes."});
+    if(canAnnual)items.push({section:"Temps de travail",kicker:"ANNUALISATION 2027",label:"Annualisation du centre",href:"/annualisation",description:"Préparer le moteur annuel, suivre les règles, la conformité et les garde-fous avant la mise en service du 01/01/2027."});
     items.push({section:"Temps de travail",kicker:"CONGÉS",label:"Souhaits de CP",href:"/temps-travail/conges",description:"Planifier les souhaits de congés, visualiser la capacité et instruire les validations."});
   }
   if(can("training"))items.push({section:"Développement des compétences",kicker:"FORMATION",label:"Formation & compétences",href:"/formation",description:"Identifier les besoins, planifier les formations et mesurer la progression avant / après."});
@@ -17,5 +19,5 @@ export default async function RhMetierPage(){
   if(can("reporting"))items.push({section:"Animation du centre",kicker:"EXPORT",label:"Export",href:"/animation-centre/export",description:"Produire les exports utiles à l’animation et aux restitutions du centre."});
   if(can("data_rh"))items.push({section:"Administration RH",kicker:"DATA RH",label:"Data RH",href:"/data-rh",description:"Gérer les imports et sources RH nécessaires aux modules de temps, compétences et animation."});
   if(!items.length)redirect("/");
-  return <ToolboxDomainPage eyebrow="UNIVERS MÉTIER · RH" title="RH" description="Présence, congés, formation, compétences et animation du centre réunis dans un même univers métier." code="RH" items={items} sessionLabel={session.display_name}/>;
+  return <ToolboxDomainPage eyebrow="UNIVERS MÉTIER · RH" title="RH" description="Présence, congés, annualisation, formation, compétences et animation du centre réunis dans un même univers métier." code="RH" items={items} sessionLabel={session.display_name}/>;
 }
