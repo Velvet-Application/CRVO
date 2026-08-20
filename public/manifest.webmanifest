@@ -1,7 +1,7 @@
 {
-  "name": "KPI CRVO Lens",
-  "short_name": "KPI CRVO",
-  "description": "Application de pilotage opérationnel du CRVO Lens.",
+  "name": "ToolBox CRVO Lens",
+  "short_name": "ToolBox CRVO",
+  "description": "Plateforme métiers du CRVO Lens : pilotage, relation client, RH, administration et Transphère.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -24,7 +24,8 @@
     }
   ],
   "shortcuts": [
-    { "name": "Tableau de bord", "short_name": "Dashboard", "url": "/" },
+    { "name": "Accueil ToolBox", "short_name": "ToolBox", "url": "/" },
+    { "name": "Pilotage", "short_name": "Pilotage", "url": "/metiers/pilotage" },
     { "name": "Écran Direction", "short_name": "Direction", "url": "/direction" },
     { "name": "Écran Atelier", "short_name": "Atelier", "url": "/atelier" }
   ]
