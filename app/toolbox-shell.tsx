@@ -29,6 +29,7 @@ function routeContext(pathname:string,params:URLSearchParams):RouteContext{
   if(pathname.startsWith("/intelligence"))return{domain:linkedDomain("Pilotage","/metiers/pilotage"),leaf:{label:"Analyse"},parentHref:"/metiers/pilotage"};
   if(pathname.startsWith("/dashboard-client")){const scope=params.get("scope");return{domain:linkedDomain("Relation Client","/metiers/relation-client"),leaf:{label:scope==="bmw-mini"?"BMW / MINI":"Réseau EFF & EFB"},parentHref:"/metiers/relation-client"};}
   if(pathname.startsWith("/clients"))return{domain:linkedDomain("Relation Client","/metiers/relation-client"),leaf:{label:"Clients"},parentHref:"/metiers/relation-client"};
+  if(pathname.startsWith("/annualisation"))return{domain:linkedDomain("RH","/metiers/rh"),leaf:{label:"Annualisation du centre"},parentHref:"/metiers/rh"};
   if(pathname.startsWith("/temps-travail/conges")||pathname.startsWith("/temps-travail/souhaits-cp"))return{domain:linkedDomain("RH","/metiers/rh"),leaf:{label:"Souhaits de CP"},parentHref:"/metiers/rh"};
   if(pathname.startsWith("/temps-travail"))return{domain:linkedDomain("RH","/metiers/rh"),leaf:{label:"Suivi du temps de travail"},parentHref:"/metiers/rh"};
   if(pathname.startsWith("/formation"))return{domain:linkedDomain("RH","/metiers/rh"),leaf:{label:"Formation & compétences"},parentHref:"/metiers/rh"};
