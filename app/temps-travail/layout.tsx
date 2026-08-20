@@ -1,10 +1,11 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import styles from "./temps-travail-layout.module.css";
 
-export default function WorktimeLayout({ children }: { children: React.ReactNode }) {
+export default function WorktimeLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const leaveActive = pathname.startsWith("/temps-travail/conges");
   return (
