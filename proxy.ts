@@ -15,6 +15,7 @@ function apiUnauthorized(status=401,message="Authentification requise."){return 
 function has(session:Session,key:string){return session.role==="admin"||session.page_permissions?.includes("*")||session.page_permissions?.includes(key);}
 function firstAllowed(session:Session){if(session.must_change_password)return"/account?change=1";return"/";}
 function requiredPermission(path:string):string|null{
+  if(path.startsWith("/formation/demande")||path.startsWith("/api/training/request"))return"worktime";
   if(path.startsWith("/formation")||path.startsWith("/api/training"))return"training";
   if(path.startsWith("/animation-centre/export")||path.startsWith("/api/animation-centre/export"))return"reporting";
   if(path.startsWith("/temps-travail")||path.startsWith("/api/worktime"))return"worktime";
@@ -30,8 +31,9 @@ function requiredPermission(path:string):string|null{
   return null;
 }
 function adminOnlyPath(path:string){return path.startsWith("/metiers/admin")||path.startsWith("/animation-mensuelle/payplan")||path.startsWith("/animation-mensuelle/acces")||path.startsWith("/api/payplan")||path.startsWith("/capacitaire")||path.startsWith("/api/capacity-simulator")||path.startsWith("/api/capacity-simple")||path.startsWith("/developpement")||path.startsWith("/api/development")||path.startsWith("/api/transphere/import-book")||path==="/expertise-mobile"||path==="/direction"||path.startsWith("/api/kiosk/direction");}
+function financeOnlyPath(path:string){return path.startsWith("/formation/parametres");}
 function transphereRestrictedAllowed(path:string){return path==="/"||path.startsWith("/transphere")||path.startsWith("/api/transphere/dashboard")||path.startsWith("/api/transphere/animation")||path.startsWith("/notifications")||path.startsWith("/api/notifications");}
-function teamManagerAllowed(path:string){return path==="/"||path.startsWith("/metiers/rh")||path==="/equipe"||path.startsWith("/api/team-dashboard")||path.startsWith("/temps-travail")||path.startsWith("/api/worktime")||path.startsWith("/dashboard/presenteisme")||path.startsWith("/api/site-presence-capacity")||path.startsWith("/notifications")||path.startsWith("/api/notifications");}
+function teamManagerAllowed(path:string){return path==="/"||path.startsWith("/metiers/rh")||path==="/equipe"||path.startsWith("/api/team-dashboard")||path.startsWith("/temps-travail")||path.startsWith("/api/worktime")||path.startsWith("/dashboard/presenteisme")||path.startsWith("/api/site-presence-capacity")||path.startsWith("/formation/demande")||path.startsWith("/api/training/request")||path.startsWith("/notifications")||path.startsWith("/api/notifications");}
 function trainerAllowed(path:string){return path==="/"||path.startsWith("/metiers/rh")||path.startsWith("/formation")||path.startsWith("/api/training")||path.startsWith("/notifications")||path.startsWith("/api/notifications");}
 
 export async function proxy(request:NextRequest){
@@ -64,6 +66,7 @@ export async function proxy(request:NextRequest){
     if(session.access_profile==="trainer"&&!trainerAllowed(path)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Compte limité au module Formation & compétences.");return NextResponse.redirect(new URL("/",request.url));}
     if((session.access_profile==="transphere"||session.access_profile==="transphere_manager")&&!transphereRestrictedAllowed(path)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Compte limité à l'environnement Transphère.");return NextResponse.redirect(new URL("/",request.url));}
     if(adminOnlyPath(path)&&session.role!=="admin"){if(path.startsWith("/api/"))return apiUnauthorized(403,"Accès administrateur requis.");return NextResponse.redirect(new URL("/",request.url));}
+    if(financeOnlyPath(path)&&!(session.role==="admin"||session.access_profile==="hr")){if(path.startsWith("/api/"))return apiUnauthorized(403,"Données financières formation réservées aux RH et administrateurs.");return NextResponse.redirect(new URL("/metiers/rh",request.url));}
     const permission=requiredPermission(path);if(permission&&!has(session,permission)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Cette donnée n'est pas autorisée pour ce compte.");return NextResponse.redirect(new URL("/",request.url));}
     return NextResponse.next();
   }catch(error){console.error("crvo_auth_proxy_failed",error);if(path.startsWith("/api/"))return apiUnauthorized(503,"Service d'authentification temporairement indisponible.");return new NextResponse("Service d'authentification temporairement indisponible.",{status:503,headers:{"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"}});}
