@@ -7,12 +7,28 @@ import styles from "./toolbox-shell.module.css";
 type Me={displayName:string;role:"admin"|"user";accessProfile:string};
 type NotificationRow={id:string;severity:"info"|"warning"|"critical";title:string;message:string;resolvedAt?:string|null;read:boolean};
 type NotificationsPayload={notifications:NotificationRow[];unread:number};
+type HealthWarning={code?:string;severity?:string;message?:string;count?:number;ageMinutes?:number};
+type HealthPayload={ok?:boolean;dataTrustOk?:boolean;trustLevel?:"green"|"amber"|"red";dataReady?:boolean;warnings?:HealthWarning[];production?:{snapshotDate?:string;sourceAgeMinutes?:number;sourceName?:string};ftp?:{syncAgeMinutes?:number;lastSuccessAt?:string}};
 type Crumb={label:string;href?:string};
 type RouteContext={domain?:Crumb;leaf?:Crumb;parentHref:string};
 
 const PERF_LABELS:Record<string,string>={today:"Performance du jour",yesterday:"BOOK · Dashboard",bottlenecks:"BOOK · Goulot",walking:"BOOK · Walking Dead",finance:"BOOK · Chiffre d’affaires",objectives:"Objectifs & seuils",sources:"Sources & connexion"};
 const COCKPIT_LABELS:Record<string,string>={pilotage:"Cockpit V2 · Pilotage du jour",synthese:"Cockpit V2 · Synthèse manager",decision:"Cockpit V2 · Aide à la décision",prevision:"Cockpit V2 · Prévision fin de journée"};
 function linkedDomain(label:string,href:string):Crumb{return{label,href};}
+function numericAge(value:unknown){const age=Number(value);return Number.isFinite(age)?Math.max(0,age):null;}
+function minuteLabel(value:unknown){const age=numericAge(value);if(age==null)return"durée inconnue";const rounded=Math.round(age);if(rounded<60)return`${rounded.toLocaleString("fr-FR")} min`;const hours=Math.floor(rounded/60);const minutes=rounded%60;return minutes?`${hours} h ${String(minutes).padStart(2,"0")}`:`${hours} h`;}
+function trustAlert(payload:HealthPayload):NotificationRow|null{
+  const ftpAge=numericAge(payload.ftp?.syncAgeMinutes);
+  const red=payload.dataReady!==true||payload.trustLevel==="red"||payload.dataTrustOk===false;
+  const amber=payload.trustLevel==="amber";
+  if(!red&&!amber)return null;
+  const all=(payload.warnings??[]).filter(item=>item?.message);
+  const important=all.filter(item=>item.severity==="critical"||item.severity==="warning");
+  const warningText=(important.length?important:all).slice(0,3).map(item=>item.message).filter(Boolean).join(" · ")||"Une source nécessite un contrôle de fraîcheur.";
+  const sourceAge=minuteLabel(payload.production?.sourceAgeMinutes);
+  const title=red?(ftpAge!=null&&ftpAge>180?"DONNÉES NON CERTIFIÉES":"DONNÉES À RECONTRÔLER"):ftpAge!=null&&ftpAge>120?"ALERTE FRAÎCHEUR":"VIGILANCE DONNÉES";
+  return{id:"data-trust",severity:red?"critical":"warning",title,message:`${warningText} · Dernière synchronisation FTP : il y a ${minuteLabel(payload.ftp?.syncAgeMinutes)} · Âge de la source métier : ${sourceAge}`,read:false};
+}
 function routeContext(pathname:string,params:URLSearchParams):RouteContext{
   if(pathname==="/")return{parentHref:"/"};
   if(pathname==="/metiers/pilotage")return{domain:{label:"Pilotage"},parentHref:"/"};
@@ -52,20 +68,20 @@ function profileLabel(me:Me){return me.role==="admin"?"Administrateur":me.access
 
 export default function ToolboxShell(){
   const pathname=usePathname();const searchParams=useSearchParams();
-  const[me,setMe]=useState<Me|null>(null);const[notifications,setNotifications]=useState<NotificationRow[]>([]);const[unread,setUnread]=useState(0);const[tickerIndex,setTickerIndex]=useState(0);
+  const[me,setMe]=useState<Me|null>(null);const[notifications,setNotifications]=useState<NotificationRow[]>([]);const[healthAlert,setHealthAlert]=useState<NotificationRow|null>(null);const[unread,setUnread]=useState(0);const[tickerIndex,setTickerIndex]=useState(0);
   const standalone=pathname==="/login"||pathname==="/expertise-mobile"||pathname.startsWith("/expertise/client/")||pathname==="/atelier"||pathname==="/direction";
   const context=useMemo(()=>routeContext(pathname,new URLSearchParams(searchParams.toString())),[pathname,searchParams]);
-  useEffect(()=>{if(standalone)return;let dead=false;async function load(){try{const[meResponse,notificationResponse]=await Promise.all([fetch("/api/auth/me",{cache:"no-store"}),fetch(`/api/notifications?limit=20&_=${Date.now()}`,{cache:"no-store"})]);if(meResponse.ok){const payload=await meResponse.json();if(!dead)setMe(payload?.user??null);}if(notificationResponse.ok){const payload=await notificationResponse.json()as NotificationsPayload;if(!dead){setNotifications((payload.notifications??[]).filter(item=>!item.resolvedAt));setUnread(payload.unread??0);}}}catch{}}void load();const timer=window.setInterval(load,120000);return()=>{dead=true;window.clearInterval(timer);};},[standalone]);
+  useEffect(()=>{if(standalone)return;let dead=false;async function load(){const[meResult,notificationResult,healthResult]=await Promise.allSettled([fetch("/api/auth/me",{cache:"no-store"}),fetch(`/api/notifications?limit=20&_=${Date.now()}`,{cache:"no-store"}),fetch(`/api/health?trust=${Date.now()}`,{cache:"no-store",headers:{"Cache-Control":"no-cache"}})]);if(dead)return;if(meResult.status==="fulfilled"&&meResult.value.ok){const payload=await meResult.value.json().catch(()=>null);if(!dead)setMe(payload?.user??null);}if(notificationResult.status==="fulfilled"&&notificationResult.value.ok){const payload=await notificationResult.value.json().catch(()=>null) as NotificationsPayload|null;if(!dead&&payload){setNotifications((payload.notifications??[]).filter(item=>!item.resolvedAt));setUnread(payload.unread??0);}}if(healthResult.status==="fulfilled"){if(healthResult.value.ok){const payload=await healthResult.value.json().catch(()=>null) as HealthPayload|null;if(!dead)setHealthAlert(payload?trustAlert(payload):{id:"data-trust-error",severity:"critical",title:"CONTRÔLE DES DONNÉES INDISPONIBLE",message:"La certification automatique des données n’a pas pu être lue.",read:false});}else if(!dead)setHealthAlert({id:"data-trust-error",severity:"critical",title:"CONTRÔLE DES DONNÉES INDISPONIBLE",message:"La certification automatique des données n’a pas répondu correctement.",read:false});}else if(!dead)setHealthAlert({id:"data-trust-error",severity:"critical",title:"CONTRÔLE DES DONNÉES INDISPONIBLE",message:"La certification automatique des données est momentanément inaccessible.",read:false});}void load();const timer=window.setInterval(load,120000);return()=>{dead=true;window.clearInterval(timer);};},[standalone]);
   const ticker=useMemo(()=>notifications.filter(item=>!item.read).slice(0,8),[notifications]);
-  useEffect(()=>{if(ticker.length<2)return;const timer=window.setInterval(()=>setTickerIndex(index=>(index+1)%ticker.length),6500);return()=>window.clearInterval(timer);},[ticker.length]);
+  useEffect(()=>{if(healthAlert||ticker.length<2)return;const timer=window.setInterval(()=>setTickerIndex(index=>(index+1)%ticker.length),6500);return()=>window.clearInterval(timer);},[healthAlert,ticker.length]);
   if(standalone||!me)return null;
-  const currentTicker=ticker[tickerIndex%Math.max(1,ticker.length)]??null;
+  const currentTicker=healthAlert??ticker[tickerIndex%Math.max(1,ticker.length)]??null;const tickerHref=healthAlert?"/sources":"/notifications";
   const crumbs:Crumb[]=[{label:"Accueil ToolBox",href:"/"}];if(context.domain)crumbs.push(context.domain);if(context.leaf)crumbs.push(context.leaf);
   async function logout(){await fetch("/api/auth/logout",{method:"POST"}).catch(()=>null);location.href="/login";}
   return <header className={styles.shell}>
     <div className={styles.mainRow}>
       <a className={styles.brand} href="/"><span>CRVO · LENS</span><strong>ToolBox CRVO Lens</strong></a>
-      <a className={`${styles.ticker} ${currentTicker?styles[currentTicker.severity]:""}`} href="/notifications" aria-label="Ouvrir les notifications">
+      <a className={`${styles.ticker} ${currentTicker?styles[currentTicker.severity]:""}`} href={tickerHref} aria-label={healthAlert?"Ouvrir le contrôle des sources":"Ouvrir les notifications"}>
         <span className={styles.tickerDot}/><div>{currentTicker?<><strong>{currentTicker.title}</strong><small>{currentTicker.message}</small></>:<><strong>ToolBox CRVO Lens</strong><small>Aucune notification prioritaire non lue.</small></>}</div><i>›</i>
       </a>
       <div className={styles.account}>
