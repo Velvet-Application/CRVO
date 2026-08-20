@@ -49,7 +49,6 @@ export default async function Page({searchParams}:PageProps){
           <span className={styles.centerText}>ToolBox CRVO Lens</span>
         </div>
       </div>
-      <div className="toolboxMobileUniverseHeading" aria-hidden="true"><span>MES UNIVERS</span><strong>Accès rapide</strong></div>
       {visible.map(domain=><a key={domain.key} href={domain.href} className={`${styles.satellite} toolboxMobileUniverse`} data-domain={domain.key}>
         <div className={styles.cardVisual}><span className={styles.domainGlyph}><DomainGlyph domain={domain.key}/></span><span className={styles.icon}>{domain.short}</span></div>
         <div className={styles.cardCopy}><h2>{domain.label}</h2><p>{domain.description}</p></div>
