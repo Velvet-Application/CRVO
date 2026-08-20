@@ -16,6 +16,23 @@ function isoDate(value: unknown, fallback: string) {
   return /^20\d{2}-\d{2}-\d{2}$/.test(text) ? text : fallback;
 }
 
+function cleanRpcError(error: unknown, fallback: string) {
+  if (!(error instanceof Error)) return fallback;
+  const raw = error.message.replace(/^Auth RPC [^:]+ failed with \d+:?\s*/, "").trim();
+  try {
+    const parsed = JSON.parse(raw) as { message?: string; code?: string };
+    if (parsed.code === "57014" || /statement timeout/i.test(parsed.message ?? "")) {
+      return "Le planning a mis trop de temps à se calculer. Actualise la page ; le moteur capacitaire optimisé est utilisé automatiquement.";
+    }
+    return parsed.message || fallback;
+  } catch {
+    if (/statement timeout|canceling statement/i.test(raw)) {
+      return "Le planning a mis trop de temps à se calculer. Actualise la page ; le moteur capacitaire optimisé est utilisé automatiquement.";
+    }
+    return raw || fallback;
+  }
+}
+
 async function access() {
   const current = await currentSession();
   if (!current || !hasPageAccess(current.session, "worktime")) return null;
@@ -46,7 +63,7 @@ export async function GET(request: Request) {
 
     const from = isoDate(url.searchParams.get("from"), today.slice(0, 8) + "01");
     const to = isoDate(url.searchParams.get("to"), from);
-    const payload = await authRpc<Record<string, unknown>>("kpi_worktime_leave_dashboard_v2", {
+    const payload = await authRpc<Record<string, unknown>>("kpi_worktime_leave_dashboard_v3", {
       p_session_hash: current.tokenHash,
       p_from: from,
       p_to: to,
@@ -56,7 +73,7 @@ export async function GET(request: Request) {
     return json(payload);
   } catch (error) {
     console.error("worktime_leave_dashboard_failed", error);
-    return json({ error: error instanceof Error ? error.message.replace(/^Auth RPC [^:]+ failed with \d+:?\s*/, "") : "Planning CP indisponible." }, 500);
+    return json({ error: cleanRpcError(error, "Planning CP indisponible.") }, 500);
   }
 }
 
@@ -88,6 +105,6 @@ export async function POST(request: Request) {
     return json({ error: "Action inconnue." }, 400);
   } catch (error) {
     console.error("worktime_leave_post_failed", error);
-    return json({ error: error instanceof Error ? error.message.replace(/^Auth RPC [^:]+ failed with \d+:?\s*/, "") : "Enregistrement impossible." }, 400);
+    return json({ error: cleanRpcError(error, "Enregistrement impossible.") }, 400);
   }
 }
