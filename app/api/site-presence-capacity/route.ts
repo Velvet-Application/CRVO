@@ -38,7 +38,7 @@ export async function GET(request: Request) {
     const date = requestedDate ? isoDate(requestedDate) : null;
     if (requestedDate && !date) return json({ error: "Date invalide." }, 400);
 
-    const payload = await authRpc<Record<string, unknown>>("kpi_site_presence_capacity", {
+    const payload = await authRpc<Record<string, unknown>>("kpi_site_presence_capacity_v2", {
       p_session_hash: current.tokenHash,
       p_date: date,
     });
