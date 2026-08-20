@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   const displayName = String(body.displayName ?? "").trim();
   const temporaryPassword = String(body.temporaryPassword ?? "");
   const accessProfile = String(body.accessProfile ?? "custom");
-  const rows = await authRpc<Array<{ ok: boolean; user_id: string | null; error_code: string | null }>>("crvo_auth_create_user_v3", {
+  const rows = await authRpc<Array<{ ok: boolean; user_id: string | null; error_code: string | null }>>("crvo_auth_create_user_v4", {
     p_token_hash: current.tokenHash,
     p_username: username,
     p_display_name: displayName,
@@ -77,7 +77,7 @@ export async function PATCH(request: Request) {
   }
 
   if (action === "update-access") {
-    const rows = await authRpc<Array<{ ok: boolean; error_code: string | null }>>("crvo_auth_update_user_access_v3", {
+    const rows = await authRpc<Array<{ ok: boolean; error_code: string | null }>>("crvo_auth_update_user_access_v4", {
       p_token_hash: current.tokenHash,
       p_user_id: userId,
       p_access_profile: String(body.accessProfile ?? "custom"),
