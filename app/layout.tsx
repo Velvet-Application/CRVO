@@ -24,13 +24,13 @@ import FriendlyLoadingPatch from "./friendly-loading-patch";
 import NotificationCenter from "./notification-center";
 
 export const metadata: Metadata = {
-  title: "KPI CRVO",
-  applicationName: "KPI CRVO Lens",
-  description: "Plateforme de pilotage opérationnel et de visualisation des données du CRVO.",
+  title: "ToolBox CRVO Lens",
+  applicationName: "ToolBox CRVO Lens",
+  description: "Plateforme métiers du CRVO Lens : pilotage, relation client, RH, administration et Transphère.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "KPI CRVO",
+    title: "ToolBox CRVO",
     statusBarStyle: "default",
   },
   other: {
