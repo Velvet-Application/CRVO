@@ -2,7 +2,9 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import { currentSession, hasPageAccess } from "./lib/crvo-auth";
 import ToolboxLiveWidgets from "./toolbox-live-widgets";
+import ToolboxMobileNav from "./toolbox-mobile-nav";
 import "./toolbox-live-home.css";
+import "./toolbox-mobile-home.css";
 import styles from "./toolbox-home.module.css";
 
 type DomainKey="pilotage"|"client"|"rh"|"admin"|"transphere";
@@ -36,22 +38,25 @@ export default async function Page({searchParams}:PageProps){
     {key:"transphere",label:"Transphère",short:"TR",href:"/transphere",description:"Accès à l’environnement et aux outils opérationnels Transphère.",visible:any(["transphere"])},
   ];
   const visible=domains.filter(domain=>domain.visible);
+  const mobileDomains=visible.map(({key,label,short,href,description})=>({key,label,short,href,description}));
   return <main className={`${styles.page} toolboxHub`}>
     <section className={`${styles.workspace} toolboxHubWorkspace`} aria-label="Univers métiers ToolBox CRVO Lens">
       <div className={styles.techArc} aria-hidden="true"/>
-      <div className={styles.center}>
+      <div className={`${styles.center} toolboxMobileCore`}>
         <div className={styles.centerPlate}>
           <Image src="/crvo-logo.png" alt="CRVO" width={280} height={86} priority unoptimized/>
           <span className={styles.centerText}>ToolBox CRVO Lens</span>
         </div>
       </div>
-      {visible.map(domain=><a key={domain.key} href={domain.href} className={styles.satellite} data-domain={domain.key}>
+      <div className="toolboxMobileUniverseHeading" aria-hidden="true"><span>MES UNIVERS</span><strong>Accès rapide</strong></div>
+      {visible.map(domain=><a key={domain.key} href={domain.href} className={`${styles.satellite} toolboxMobileUniverse`} data-domain={domain.key}>
         <div className={styles.cardVisual}><span className={styles.domainGlyph}><DomainGlyph domain={domain.key}/></span><span className={styles.icon}>{domain.short}</span></div>
         <div className={styles.cardCopy}><h2>{domain.label}</h2><p>{domain.description}</p></div>
         <footer><span>OUVRIR L’UNIVERS</span><i>›</i></footer>
       </a>)}
       {!visible.length&&<div className={styles.empty}>Aucun univers métier n’est encore autorisé pour ce compte. Contacte un administrateur pour ajuster les droits.</div>}
     </section>
-    <ToolboxLiveWidgets/>
+    <div id="live-crvo" className="toolboxLiveAnchor"><ToolboxLiveWidgets/></div>
+    <ToolboxMobileNav domains={mobileDomains}/>
   </main>;
 }
