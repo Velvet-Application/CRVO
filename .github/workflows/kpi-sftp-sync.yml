@@ -9,15 +9,12 @@ on:
       - "bridge/src/index.mjs"
       - "bridge/src/ftp-vehicle-state.mjs"
       - "bridge/src/vehicle-location-sync.mjs"
-      - "bridge/src/ftp-factory-production.mjs"
       - "bridge/src/factory-live-sync.mjs"
+      - "bridge/src/ftp-factory-production.mjs"
       - "bridge/package.json"
       - "bridge/package-lock.json"
       - ".github/workflows/kpi-sftp-sync.yml"
   schedule:
-    # Dépôts 3DSoft horaires : Factory autour de H:00, EtatduParc autour de H:03.
-    # Deux lectures indépendantes par heure. Le second passage ne doit jamais être
-    # bloqué par un premier run lent : chaque run possède son propre groupe de concurrence.
     - cron: "7,37 * * * *"
 
 permissions:
@@ -81,4 +78,4 @@ jobs:
           process.exit(1);
           NODE
 
-# Forced real sync marker: automation-run-2026-08-20-C
+# Forced real sync marker: automation-run-2026-08-20-D
