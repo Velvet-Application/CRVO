@@ -1,0 +1,4 @@
+-- Production refinement retained in migration history.
+-- The public API uses kpi_site_presence_capacity_v2 from the following migration,
+-- which recalculates the global site projection from the sector payload and is
+-- intentionally compatible with both the original and refined base function.
