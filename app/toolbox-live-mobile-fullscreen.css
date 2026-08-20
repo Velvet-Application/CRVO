@@ -5,6 +5,12 @@
     overscroll-behavior:none;
   }
 
+  body:has(section[aria-label="Indicateurs Live CRVO"] > aside) nav[aria-label="Navigation mobile ToolBox"]{
+    display:none!important;
+    visibility:hidden!important;
+    pointer-events:none!important;
+  }
+
   section[aria-label="Indicateurs Live CRVO"] > button[aria-label="Fermer la configuration"]{
     position:fixed!important;
     inset:0!important;
