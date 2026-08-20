@@ -54,16 +54,17 @@ export async function GET(request: Request) {
     let impactReference: Record<string, unknown> = {
       connected: false,
       entity,
-      error: "Référence capacitaire temporairement indisponible.",
-      sectors: [],
+      error: "Référence de débit site temporairement indisponible.",
+      productivePeople: [],
     };
     try {
-      impactReference = await authRpc<Record<string, unknown>>("kpi_worktime_capacity_reference", {
+      impactReference = await authRpc<Record<string, unknown>>("kpi_worktime_output_loss_reference", {
         p_session_hash: current.tokenHash,
         p_entity: entity,
+        p_date: focus,
       });
     } catch (impactError) {
-      console.error("worktime_capacity_reference_failed", impactError);
+      console.error("worktime_output_loss_reference_failed", impactError);
     }
 
     let validation: Record<string, unknown> = { date: focus, people: [], scope: null, canConfirm: false };
