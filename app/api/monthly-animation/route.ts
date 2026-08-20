@@ -11,6 +11,23 @@ function fail(error: unknown, status = 400) {
   return NextResponse.json({ error: message }, { status: forbidden ? 403 : status, headers: { "Cache-Control": "no-store" } });
 }
 
+function stableStringify(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (typeof value === "object") {
+    const object = value as Record<string, unknown>;
+    const keys = Object.keys(object).filter(key => object[key] !== undefined).sort();
+    return `{${keys.map(key => `${JSON.stringify(key)}:${stableStringify(object[key])}`).join(",")}}`;
+  }
+  if (typeof value === "number" && !Number.isFinite(value)) return "null";
+  return JSON.stringify(value) ?? "null";
+}
+
+async function sha256Text(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
 async function enrichProration(tokenHash:string,detail:Record<string,unknown>){
   try{
     const typed=detail as unknown as BonusDetailForProration;
@@ -108,7 +125,29 @@ export async function POST(request: Request) {
     } else if (action === "audit") {
       result = await bonusRpc("kpi_bonus_run_audit", { p_session_hash: current.tokenHash, p_workflow_id: String(body.workflowId ?? "") });
     } else if (action === "close") {
-      result = await bonusRpc("kpi_bonus_close_workflow", { p_session_hash: current.tokenHash, p_workflow_id: String(body.workflowId ?? "") });
+      const workflowId = String(body.workflowId ?? "");
+      if (!workflowId) throw new Error("Workflow manquant.");
+
+      // Closing is deliberately sequenced. Every stage is server-side and the DB closing
+      // function refuses a missing/stale/mismatched evidence freeze.
+      await bonusRpc("kpi_bonus_refresh_hours", { p_session_hash: current.tokenHash, p_workflow_id: workflowId });
+      await bonusRpc("kpi_bonus_recalculate_workflow", { p_session_hash: current.tokenHash, p_workflow_id: workflowId });
+      await bonusRpc("kpi_bonus_prepare_closure", { p_session_hash: current.tokenHash, p_workflow_id: workflowId });
+
+      const [detail, rules] = await Promise.all([
+        bonusRpc<BonusDetailForProration>("kpi_bonus_get_workflow", { p_session_hash: current.tokenHash, p_workflow_id: workflowId }),
+        bonusRpc<ProrationRulesPayload>("kpi_bonus_proration_rules_read", { p_session_hash: current.tokenHash, p_workflow_id: workflowId }),
+      ]);
+      const context = buildProrationContext(detail, rules);
+      const prorationHash = await sha256Text(stableStringify(context));
+
+      await bonusRpc("kpi_bonus_proration_freeze_workflow", {
+        p_session_hash: current.tokenHash,
+        p_workflow_id: workflowId,
+        p_context: context,
+        p_hash: prorationHash,
+      });
+      result = await bonusRpc("kpi_bonus_close_workflow", { p_session_hash: current.tokenHash, p_workflow_id: workflowId });
     } else if (action === "log-export") {
       const rawType = String(body.exportType ?? "");
       const exportType = rawType === "pdf" || rawType === "employee_pdf" ? "employee_pdf" : rawType === "xlsx" || rawType === "payroll_xlsx" ? "payroll_xlsx" : rawType;
