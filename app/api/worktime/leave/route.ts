@@ -52,6 +52,20 @@ export async function GET(request: Request) {
     if (detailDate) {
       const date = isoDate(detailDate, "");
       if (!date) return json({ error: "Date invalide." }, 400);
+      if (!sector) {
+        return json({
+          connected: true,
+          date,
+          team: team ?? "*",
+          sector: "*",
+          present: [],
+          leave: [],
+          otherAbsences: [],
+          pendingLeave: [],
+          summary: { present: 0, leave: 0, otherAbsences: 0, pendingLeave: 0 },
+          risk: { enabled: false, risk: "unknown" },
+        });
+      }
       const payload = await authRpc<Record<string, unknown>>("kpi_worktime_leave_day_detail_v2", {
         p_session_hash: current.tokenHash,
         p_date: date,
