@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { currentSession } from "../../lib/crvo-auth";
 import { bonusRpc } from "../../lib/bonus-rpc";
+import { buildProrationContext, type BonusDetailForProration, type ProrationRulesPayload } from "../../lib/bonus-proration";
 
 export const dynamic = "force-dynamic";
 
@@ -10,15 +11,53 @@ function fail(error: unknown, status = 400) {
   return NextResponse.json({ error: message }, { status: forbidden ? 403 : status, headers: { "Cache-Control": "no-store" } });
 }
 
+async function enrichProration(tokenHash:string,detail:Record<string,unknown>){
+  try{
+    const typed=detail as unknown as BonusDetailForProration;
+    const rules=await bonusRpc<ProrationRulesPayload>("kpi_bonus_proration_rules_read",{p_session_hash:tokenHash,p_workflow_id:typed.workflow.id});
+    const context=buildProrationContext(typed,rules);
+    const map=new Map(context.components.map(item=>[item.employeeKey,item]));
+    const sourceComponents=Array.isArray((detail as {components?:unknown[]}).components)?(detail as {components:Record<string,unknown>[]}).components:[];
+    const components=sourceComponents.map(component=>{
+      const employeeKey=typeof component.employeeKey==="string"?component.employeeKey:null;
+      const p=employeeKey?map.get(employeeKey):null;
+      if(!p)return component;
+      const sourcePayload=typeof component.sourcePayload==="object"&&component.sourcePayload?component.sourcePayload as Record<string,unknown>:{};
+      return {...component,
+        individualAmountEur:p.individualAfterEur,
+        collectiveProration:p.collectiveFactor,
+        totalAmountEur:p.totalAfterEur,
+        sourcePayload:{...sourcePayload,proration:{
+          source:p.sourceSummary,
+          individualFactor:p.individualFactor,
+          collectiveFactor:p.collectiveFactor,
+          individualAmountBeforeEur:p.individualBeforeEur,
+          collectiveAmountBeforeEur:p.collectiveBeforeEur,
+          totalAmountBeforeEur:p.totalBeforeEur,
+          totalImpactEur:p.totalImpactEur,
+          eventCount:p.events.length,
+          calculatedAt:context.calculatedAt,
+        }}
+      };
+    });
+    return {...detail,components,proration:{calculatedAt:context.calculatedAt,workingDays:context.workingDays,workingDaysSource:context.workingDaysSource,rulesCount:context.rules.length,source:context.sources?.calculation??"Moteur KPI CRVO"}};
+  }catch(error){
+    console.error("monthly_bonus_proration_enrichment_fallback",error);
+    return detail;
+  }
+}
+
 export async function GET(request: Request) {
   const current = await currentSession();
   if (!current) return NextResponse.json({ error: "Session CRVO requise." }, { status: 401 });
   try {
     const url = new URL(request.url);
     const workflowId = url.searchParams.get("workflowId");
-    const result = workflowId
-      ? await bonusRpc<Record<string, unknown>>("kpi_bonus_get_workflow", { p_session_hash: current.tokenHash, p_workflow_id: workflowId })
-      : await bonusRpc<Record<string, unknown>>("kpi_bonus_list_workflows", { p_session_hash: current.tokenHash });
+    if(workflowId){
+      const detail=await bonusRpc<Record<string, unknown>>("kpi_bonus_get_workflow", { p_session_hash: current.tokenHash, p_workflow_id: workflowId });
+      return NextResponse.json(await enrichProration(current.tokenHash,detail), { headers: { "Cache-Control": "no-store" } });
+    }
+    const result=await bonusRpc<Record<string, unknown>>("kpi_bonus_list_workflows", { p_session_hash: current.tokenHash });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return fail(error);
