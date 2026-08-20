@@ -15,17 +15,16 @@ on:
       - "bridge/package-lock.json"
       - ".github/workflows/kpi-sftp-sync.yml"
   schedule:
-    # 3DSoft confirme Factory-J+1 + EtatduParc une fois par heure, 24h/24.
-    # Les dépôts observés arrivent autour de H:00 (Factory) puis H:03 (parc).
-    # Passage principal à H:07 + filet de sécurité à H:37.
-    # Le fast-lane Factory passe deux minutes avant chacun de ces brassages complets.
+    # Dépôts 3DSoft horaires : Factory autour de H:00, EtatduParc autour de H:03.
+    # Deux lectures indépendantes par heure. Le second passage ne doit jamais être
+    # bloqué par un premier run lent : chaque run possède son propre groupe de concurrence.
     - cron: "7,37 * * * *"
 
 permissions:
   contents: read
 
 concurrency:
-  group: kpi-crvo-ftp-live
+  group: kpi-crvo-ftp-live-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -82,4 +81,4 @@ jobs:
           process.exit(1);
           NODE
 
-# Forced verification marker: 2026-08-20T06:55+02:00
+# Forced restart marker: 2026-08-20T11:39+02:00
