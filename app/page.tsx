@@ -1,6 +1,8 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import { currentSession, hasPageAccess } from "./lib/crvo-auth";
+import ToolboxLiveWidgets from "./toolbox-live-widgets";
+import "./toolbox-live-home.css";
 import styles from "./toolbox-home.module.css";
 
 type DomainKey="pilotage"|"client"|"rh"|"admin"|"transphere";
@@ -35,7 +37,7 @@ export default async function Page({searchParams}:PageProps){
   ];
   const visible=domains.filter(domain=>domain.visible);
   return <main className={`${styles.page} toolboxHub`}>
-    <section className={styles.workspace} aria-label="Univers métiers ToolBox CRVO Lens">
+    <section className={`${styles.workspace} toolboxHubWorkspace`} aria-label="Univers métiers ToolBox CRVO Lens">
       <div className={styles.techArc} aria-hidden="true"/>
       <div className={styles.center}>
         <div className={styles.centerPlate}>
@@ -50,5 +52,6 @@ export default async function Page({searchParams}:PageProps){
       </a>)}
       {!visible.length&&<div className={styles.empty}>Aucun univers métier n’est encore autorisé pour ce compte. Contacte un administrateur pour ajuster les droits.</div>}
     </section>
+    <ToolboxLiveWidgets/>
   </main>;
 }
