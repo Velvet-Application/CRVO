@@ -6,6 +6,7 @@ import ToolboxMobileNav from "./toolbox-mobile-nav";
 import "./toolbox-live-home.css";
 import "./toolbox-mobile-home.css";
 import "./toolbox-mobile-launcher.css";
+import "./toolbox-live-mobile-fullscreen.css";
 import styles from "./toolbox-home.module.css";
 
 type DomainKey="pilotage"|"client"|"rh"|"admin"|"transphere";
