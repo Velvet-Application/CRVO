@@ -62,8 +62,8 @@ export async function GET(request: Request) {
           leave: [],
           otherAbsences: [],
           pendingLeave: [],
-          summary: { present: 0, leave: 0, otherAbsences: 0, pendingLeave: 0 },
-          risk: { enabled: false, risk: "unknown" },
+          counts: { present: 0, leave: 0, otherAbsences: 0, pendingLeave: 0 },
+          risk: { enabled: false, risk: "unknown", riskBasis: "none" },
         });
       }
       const payload = await authRpc<Record<string, unknown>>("kpi_worktime_leave_day_detail_v2", {
