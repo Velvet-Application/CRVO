@@ -11,10 +11,10 @@ export default async function Page(){
   const{session}=current;
   const any=(keys:string[])=>session.role==="admin"||keys.some(key=>hasPageAccess(session,key));
   const domains:Domain[]=[
-    {key:"pilotage",label:"Pilotage",short:"PL",href:"/pilotage",description:"Performance du jour, BOOK, goulots, chiffre d’affaires et Cockpit V2.",visible:any(["reporting","book","cockpit","bodyshop","intelligence"])},
-    {key:"client",label:"Relation Client",short:"RC",href:"/relation-client",description:"Dashboards clients Réseau EFF & EFB et BMW / MINI.",visible:any(["client_dashboard"])},
-    {key:"rh",label:"RH",short:"RH",href:"/rh",description:"Temps de travail, formation, compétences, productivité et animation du centre.",visible:any(["worktime","training","data_rh","productivity","monthly_animation"])},
-    {key:"admin",label:"Admin",short:"AD",href:"/admin",description:"Paramètres, accès, écrans atelier/direction, capacitaire et développement.",visible:session.role==="admin"},
+    {key:"pilotage",label:"Pilotage",short:"PL",href:"/metiers/pilotage",description:"Performance du jour, BOOK, goulots, chiffre d’affaires et Cockpit V2.",visible:any(["reporting","book","cockpit","bodyshop","intelligence"])},
+    {key:"client",label:"Relation Client",short:"RC",href:"/metiers/relation-client",description:"Dashboards clients Réseau EFF & EFB et BMW / MINI.",visible:any(["client_dashboard"])},
+    {key:"rh",label:"RH",short:"RH",href:"/metiers/rh",description:"Temps de travail, formation, compétences, productivité et animation du centre.",visible:any(["worktime","training","data_rh","productivity","monthly_animation"])},
+    {key:"admin",label:"Admin",short:"AD",href:"/metiers/admin",description:"Paramètres, accès, écrans atelier/direction, capacitaire et développement.",visible:session.role==="admin"},
     {key:"transphere",label:"Transphère",short:"TR",href:"/transphere",description:"Accès à l’environnement et aux outils opérationnels Transphère.",visible:any(["transphere"])},
   ];
   const visible=domains.filter(domain=>domain.visible);
