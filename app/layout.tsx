@@ -11,7 +11,6 @@ import "./expertise-workspace-fixes.css";
 import "./toolbox-navigation-overrides.css";
 import "./toolbox-arc-reactor.css";
 import ToolboxShell from "./toolbox-shell";
-import DataTrustGuard from "./data-trust-guard";
 import ActivityColorBinder from "./activity-color-binder";
 import KioskFetchBridge from "./kiosk-fetch-bridge";
 import PwaRegister from "./pwa-register";
@@ -45,7 +44,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <ActivityColorBinder />
     <FriendlyLoadingPatch />
     <ToolboxShell />
-    <DataTrustGuard />
     <DailyAnimationOneClick />
     <TransphereAccessManager />
     <WorktimeAnnualizationPanel />
