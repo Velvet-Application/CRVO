@@ -8,8 +8,8 @@ type Shift={team:string;label:string;rotationMode?:"fixed"|"weekly_alternate";st
 type EventRow={id:string;entity:string;employeeKey:string;employeeName:string;team?:string|null;service?:string|null;sector?:string|null;kind:"absence"|"late"|"early_departure";reason:string;startDate:string;endDate:string;eventTime?:string|null;durationHours?:number|null;source?:"manual"|"data_rh"|string|null;justification:"received"|"pending"|"not_required";comment?:string|null;status:"open"|"closed";createdBy:string;createdAt:string;closedBy?:string|null;closedAt?:string|null};
 type Access={profile:string;role:string;teams:string[];sectors?:string[];canClose:boolean;canConfigure:boolean;canManagePeople:boolean;level?:string|null;positionKey?:string|null};
 type Organization={positionKey:string;name:string;title:string;level:string;parent?:string|null;teams:string[];sectors:string[];shiftGroup?:string|null};
-type ImpactSector={sectorKey:string;soldHours:number;observedVehicles:number;avgHoursPerVop:number|null};
-type ImpactReference={connected?:boolean;source?:string;period?:{start?:string;end?:string;importedAt?:string}|null;sectors?:ImpactSector[]};
+type ProductiveRef={employeeKey:string;sectorKey:string;team?:string|null};
+type ImpactReference={connected?:boolean;source?:string;period?:{start?:string;end?:string}|null;avgExitsPerDay?:number|null;avgAvailableEtp?:number|null;hoursPerSiteVop?:number|null;siteVopPerProductiveHour?:number|null;productivePeople?:ProductiveRef[];method?:string;error?:string};
 type ValidationState="data_rh"|"event"|"no_event"|"pending";
 type ValidationPerson={employeeKey:string;state:ValidationState;locked:boolean;source:string};
 type ValidationScope={positionKey:string;title:string;teams:string[];sectors:string[];total:number;validated:number;pending:number;complete:boolean};
@@ -19,14 +19,14 @@ type Kind=EventRow["kind"];
 type EventFilter="all"|"absence"|"late"|"early_departure"|"pending";
 
 type EffectiveShift={start:string;end:string;breakStart:string;breakEnd:string;pending:boolean};
-type ImpactRow={sector:string;label:string;events:number;people:number;lostHours:number;avgHoursPerVop:number|null;vopLost:number|null};
+type ImpactRow={sector:string;label:string;events:number;people:number;lostHours:number;siteVopLost:number|null};
 
 const REASONS=[
   ["paid_leave","CP / congé payé"],["rtt_recovery","RTT / récupération"],["sick_received","Arrêt maladie - justificatif reçu"],["sick_pending","Arrêt maladie - justificatif en attente"],["long_absence","Absence longue durée"],["parental_leave","Congé parental"],["unpaid_leave","Congé sans solde"],["authorized_unpaid","Absence justifiée non rémunérée"],["authorized_paid","Absence autorisée rémunérée"],["medical_visit","Visite médicale"],["therapeutic_part_time","Temps partiel thérapeutique"],["pending_qualification","Absence à qualifier"],["unjustified","Absence injustifiée"],["authorized","Absence autorisée"],["training","Formation"],["work_accident","Accident travail / trajet"],["family_leave","Événement familial"],["late","Retard"],["late_night","Retard nuit"],["early_departure_night","Départ anticipé nuit"],["other","Autre"],
 ] as const;
 const LABELS:Record<string,string>=Object.fromEntries(REASONS);
 const KIND_LABEL:Record<Kind,string>={absence:"Absence",late:"Retard",early_departure:"Départ anticipé"};
-const SECTOR_LABEL:Record<string,string>={expertise:"Expertise",mecanique:"Mécanique",dsp:"DSP",carrosserie:"Carrosserie",preparation:"Préparation",qualite:"Qualité",magasin:"Magasin / MPR",admin:"Administratif",jantes:"Jantes",jockey:"Jockey",encadrement:"Encadrement",autre:"Autre",transphere:"Transphère"};
+const SECTOR_LABEL:Record<string,string>={expertise:"Expertise",mecanique:"Mécanique",dsp:"DSP",carrosserie:"Carrosserie",preparation:"Préparation",qualite:"Qualité",photo:"Photo",magasin:"Magasin / MPR",admin:"Administratif",jantes:"Jantes",jockey:"Jockey",encadrement:"Encadrement",autre:"Autre",transphere:"Transphère"};
 
 function parisToday(){return new Intl.DateTimeFormat("fr-CA",{timeZone:"Europe/Paris",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());}
 function displayDate(value:string){return new Intl.DateTimeFormat("fr-FR",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric",timeZone:"Europe/Paris"}).format(new Date(`${value}T12:00:00Z`));}
@@ -85,14 +85,25 @@ export default function WorktimePage(){
     pending:scopedEvents.filter(item=>item.status==="open"&&item.justification==="pending").length,
   }),[focusEvents,scopedEvents]);
 
-  const avgMap=useMemo(()=>new Map((data?.impactReference?.sectors??[]).map(item=>[item.sectorKey,item.avgHoursPerVop])),[data]);
+  const productiveMap=useMemo(()=>new Map((data?.impactReference?.productivePeople??[]).map(item=>[item.employeeKey,item])),[data?.impactReference?.productivePeople]);
   const impactRows=useMemo<ImpactRow[]>(()=>{
-    const map=new Map<string,{events:number;people:Set<string>;minutes:number}>();
-    for(const item of focusEvents){const person=(data?.people??[]).find(p=>p.employeeKey===item.employeeKey);if(!person)continue;const sector=item.sector??person.sector??"autre";const key=person.sector==="admin"||person.sector==="magasin"?"J":person.team??"";const minutes=lostMinutes(item,effectiveShift(shiftMap.get(key),focusDate),focusDate);if(minutes<=0)continue;const current=map.get(sector)??{events:0,people:new Set<string>(),minutes:0};current.events+=1;current.people.add(item.employeeKey);current.minutes+=minutes;map.set(sector,current);}
-    return Array.from(map.entries()).map(([sector,value])=>{const lostHours=value.minutes/60;const avg=avgMap.get(sector)??null;return{sector,label:SECTOR_LABEL[sector]??sector,events:value.events,people:value.people.size,lostHours,avgHoursPerVop:avg,vopLost:avg&&avg>0?lostHours/avg:null};}).sort((a,b)=>(b.vopLost??0)-(a.vopLost??0)||b.lostHours-a.lostHours);
-  },[focusEvents,data,shiftMap,focusDate,avgMap]);
+    const byPerson=new Map<string,{sector:string;minutes:number;events:number;fullMinutes:number}>();
+    for(const item of focusEvents){
+      const productive=productiveMap.get(item.employeeKey);if(!productive)continue;
+      const person=(data?.people??[]).find(p=>p.employeeKey===item.employeeKey);if(!person)continue;
+      const shift=effectiveShift(shiftMap.get(person.team??productive.team??""),focusDate);const t=timeline(shift);if(!t)continue;
+      const minutes=lostMinutes(item,shift,focusDate);if(minutes<=0)continue;
+      const fullMinutes=workMinutesBetween(shift,t.start,t.end);if(fullMinutes<=0)continue;
+      const current=byPerson.get(item.employeeKey)??{sector:productive.sectorKey,minutes:0,events:0,fullMinutes};
+      current.minutes=Math.min(current.fullMinutes,current.minutes+minutes);current.events+=1;byPerson.set(item.employeeKey,current);
+    }
+    const bySector=new Map<string,{events:number;people:number;minutes:number}>();
+    for(const item of byPerson.values()){const current=bySector.get(item.sector)??{events:0,people:0,minutes:0};current.events+=item.events;current.people+=1;current.minutes+=item.minutes;bySector.set(item.sector,current);}
+    const hoursPerSiteVop=Number(data?.impactReference?.hoursPerSiteVop);
+    return Array.from(bySector.entries()).map(([sector,value])=>{const lostHours=value.minutes/60;return{sector,label:SECTOR_LABEL[sector]??sector,events:value.events,people:value.people,lostHours,siteVopLost:Number.isFinite(hoursPerSiteVop)&&hoursPerSiteVop>0?lostHours/hoursPerSiteVop:null};}).sort((a,b)=>(b.siteVopLost??0)-(a.siteVopLost??0)||b.lostHours-a.lostHours);
+  },[focusEvents,data?.people,data?.impactReference?.hoursPerSiteVop,shiftMap,focusDate,productiveMap]);
   const totalLostHours=impactRows.reduce((sum,row)=>sum+row.lostHours,0);
-  const vopAtRisk=Math.max(0,...impactRows.map(row=>row.vopLost??0));
+  const siteVopLost=impactRows.reduce((sum,row)=>sum+(row.siteVopLost??0),0);
 
   function toggleEventFilter(next:EventFilter){setEventFilter(current=>current===next?"all":next);}
   function openEvent(person:Person,nextKind:Kind){const validation=validationMap.get(person.employeeKey);if(validation?.locked){setError(validation.state==="data_rh"?"Journée verrouillée par Data RH.":"Présence déjà validée RAS. Une réouverture RH est nécessaire.");return;}const shift=personShift(person);setSelected(person);setKind(nextKind);setStartDate(focusDate);setEndDate(focusDate);setReason(nextKind==="absence"?"paid_leave":"other");setComment("");setEventTime(nextKind==="late"?shift.start:nextKind==="early_departure"?shift.end:"");}
@@ -106,7 +117,7 @@ export default function WorktimePage(){
 
   async function exportXlsx(){if(!data)return;const XLSX=await import("@e965/xlsx");const rows:Array<Record<string,unknown>>=[];for(const item of historyEvents){let cursor=new Date(`${item.startDate}T12:00:00Z`);const end=new Date(`${item.endDate}T12:00:00Z`);while(cursor<=end){rows.push({Entité:data.entity,Date:cursor.toISOString().slice(0,10),Matricule:data.people.find(p=>p.employeeKey===item.employeeKey)?.matricule??"",Collaborateur:item.employeeName,Équipe:item.team??"",Secteur:SECTOR_LABEL[item.sector??""]??item.sector??"",Service:item.service??"",Événement:KIND_LABEL[item.kind],Motif:LABELS[item.reason]??item.reason,"Durée h":item.durationHours??"",Heure:item.eventTime??"",Source:item.source==="data_rh"?"Data RH":"Saisie Temps de travail",Justificatif:item.justification==="received"?"Reçu":item.justification==="pending"?"En attente":"Non requis",Statut:item.status==="closed"?"Clôturé":"Ouvert",Commentaire:item.comment??"",Déclaré_par:item.createdBy,Déclaré_le:item.createdAt,Clôturé_par:item.closedBy??"",Clôturé_le:item.closedAt??""});cursor.setUTCDate(cursor.getUTCDate()+1);}}
     const sheet=XLSX.utils.json_to_sheet(rows);sheet["!cols"]=[12,12,14,28,10,18,12,18,32,12,10,18,14,12,36,20,20,20,20].map(w=>({wch:w}));const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,"Temps de travail");
-    const impactSheet=XLSX.utils.json_to_sheet(impactRows.map(row=>({Date:focusDate,Secteur:row.label,"Collaborateurs impactés":row.people,"Heures perdues":Number(row.lostHours.toFixed(2)),"Temps moyen h/VOP":row.avgHoursPerVop,"VOP capacité impactée":row.vopLost==null?null:Number(row.vopLost.toFixed(2))})));XLSX.utils.book_append_sheet(book,impactSheet,"Impact capacité");
+    const impactSheet=XLSX.utils.json_to_sheet(impactRows.map(row=>({Date:focusDate,Secteur:row.label,"Productifs impactés":row.people,"Heures productives perdues":Number(row.lostHours.toFixed(2)),"Référence h productives / VO site":data.impactReference?.hoursPerSiteVop??null,"VO site perdues estimées":row.siteVopLost==null?null:Number(row.siteVopLost.toFixed(2))})));XLSX.utils.book_append_sheet(book,impactSheet,"Impact capacité");
     XLSX.writeFile(book,`Suivi_temps_${data.entity}_${safeFileDate(from)}_${safeFileDate(to)}.xlsx`);
   }
 
@@ -140,12 +151,12 @@ export default function WorktimePage(){
     </section>
 
     <section className={styles.impactHero}>
-      <div className={styles.impactMain}><span>IMPACT CAPACITAIRE · {displayDate(focusDate).toUpperCase()}</span><div><strong>{num(totalLostHours,1)} h</strong><small>de capacité opérationnelle perdue</small></div></div>
-      <div className={styles.vopRisk}><span>VOP À RISQUE USINE</span><strong>≈ {num(vopAtRisk,1)}</strong><small>impact du secteur le plus contraint · sans double comptage inter-secteurs</small></div>
-      <div className={styles.reference}><span>RÉFÉRENCE TEMPS MOYEN</span><strong>{data.impactReference?.source??"Non disponible"}</strong><small>{data.impactReference?.period?.start&&data.impactReference?.period?.end?`${data.impactReference.period.start} → ${data.impactReference.period.end}`:"Transphère : référence VOP à paramétrer"}</small></div>
+      <div className={styles.impactMain}><span>HEURES PRODUCTIVES PERDUES · {displayDate(focusDate).toUpperCase()}</span><div><strong>{num(totalLostHours,1)} h</strong><small>productifs directs / Fixline uniquement</small></div></div>
+      <div className={styles.vopRisk}><span>VO DE PRODUCTION PERDUES (EST.)</span><strong>≈ {num(siteVopLost,1)}</strong><small>baisse de capacité estimée liée à l’absentéisme du jour</small></div>
+      <div className={styles.reference}><span>RÉFÉRENCE DÉBIT SITE</span><strong>{data.impactReference?.source??"Non disponible"}</strong><small>{data.impactReference?.connected&&data.impactReference?.hoursPerSiteVop?`${num(Number(data.impactReference.avgExitsPerDay??0),1)} sorties/j · ${num(Number(data.impactReference.avgAvailableEtp??0),1)} ETP · ${num(Number(data.impactReference.hoursPerSiteVop),2)} h productives / VO`:(data.impactReference?.error??"Référence de production indisponible")}</small></div>
     </section>
 
-    {impactRows.length>0&&<section className={styles.impactGrid}>{impactRows.map(row=><article key={row.sector}><span>{row.label.toUpperCase()}</span><strong>{num(row.lostHours,1)} h perdues</strong><p>{row.people} collaborateur{row.people>1?"s":""} impacté{row.people>1?"s":""}</p><div><b>{row.avgHoursPerVop?`${num(row.avgHoursPerVop,2)} h/VOP`:`Temps/VOP indisponible`}</b><em>{row.vopLost==null?"VOP —":`≈ ${num(row.vopLost,1)} VOP`}</em></div></article>)}</section>}
+    {impactRows.length>0&&<section className={styles.impactGrid}>{impactRows.map(row=><article key={row.sector}><span>{row.label.toUpperCase()}</span><strong>{num(row.lostHours,1)} h productives perdues</strong><p>{row.people} productif{row.people>1?"s":""} impacté{row.people>1?"s":""}</p><div><b>{data.impactReference?.hoursPerSiteVop?`${num(Number(data.impactReference.hoursPerSiteVop),2)} h/VO site`:`Référence site indisponible`}</b><em>{row.siteVopLost==null?"VO —":`≈ ${num(row.siteVopLost,1)} VO site`}</em></div></article>)}</section>}
 
     <section className={styles.controls}>
       <div className={styles.period}><label>DU<input type="date" value={from} max={to} onChange={e=>changePeriod(e.target.value,to)}/></label><label>AU<input type="date" value={to} min={from} onChange={e=>changePeriod(from,e.target.value)}/></label></div>
@@ -187,7 +198,7 @@ export default function WorktimePage(){
 
     {selected&&<div className={styles.modalBackdrop} onMouseDown={e=>{if(e.target===e.currentTarget)closeModal();}}><form className={styles.modal} onSubmit={submitEvent}><div className={styles.modalHead}><div><span>DÉCLARER · {KIND_LABEL[kind].toUpperCase()}</span><h2>{selected.name}</h2><p>{selected.team?`Équipe ${selected.team}`:"Journée"} · {SECTOR_LABEL[selected.sector??""]??selected.service??"—"} · {selectedShift?.start?`poste ${selectedShift.start} → ${selectedShift.end}`:"horaire de poste non disponible"}</p></div><button type="button" onClick={closeModal}>×</button></div><div className={styles.kindTabs}>{(["absence","late","early_departure"] as Kind[]).map(value=><button type="button" className={kind===value?styles.active:""} onClick={()=>{setKind(value);const shift=selectedShift;if(value==="late")setEventTime(shift?.start??"");else if(value==="early_departure")setEventTime(shift?.end??"");else setEventTime("");}} key={value}>{KIND_LABEL[value]}</button>)}</div><label>MOTIF<select value={reason} onChange={e=>setReason(e.target.value)}>{REASONS.map(([value,label])=><option value={value} key={value}>{label}</option>)}</select></label><div className={styles.modalDates}><label>DU<input type="date" value={startDate} onChange={e=>{setStartDate(e.target.value);if(kind!=="absence")setEndDate(e.target.value);}}/></label>{kind==="absence"&&<label>AU<input type="date" min={startDate} value={endDate} onChange={e=>setEndDate(e.target.value)}/></label>}{kind!=="absence"&&<label>HEURE RÉELLE<input type="time" value={eventTime} onChange={e=>setEventTime(e.target.value)} required/></label>}</div><label>COMMENTAIRE<textarea value={comment} onChange={e=>setComment(e.target.value)} placeholder="Information utile pour RH…" rows={3}/></label><div className={styles.modalFoot}><button type="button" className={styles.secondary} onClick={closeModal}>ANNULER</button><button disabled={saving}>{saving?"ENREGISTREMENT…":"VALIDER LA DÉCLARATION"}</button></div></form></div>}
 
-    {settings&&<div className={styles.modalBackdrop} onMouseDown={e=>{if(e.target===e.currentTarget)setSettings(false);}}><section className={styles.modal}><div className={styles.modalHead}><div><span>PARAMÉTRAGE RH</span><h2>Horaires & rotation</h2><p>Cette semaine est actuellement calculée automatiquement depuis l’ancre A/B.</p></div><button onClick={()=>setSettings(false)}>×</button></div><div className={styles.rotationBox}><strong>Rotation A / B</strong><p>Choisir l’équipe du matin pour la semaine en cours. Les semaines suivantes alternent automatiquement.</p><div><button onClick={()=>void setRotation(true)}>A MATIN CETTE SEMAINE</button><button onClick={()=>void setRotation(false)}>B MATIN CETTE SEMAINE</button></div></div><div className={styles.simpleList}>{data.shifts.map(shift=><div key={shift.team}><strong>{shift.label}</strong><span>{shiftText(shift)}</span></div>)}</div></section></div>}
+    {settings&&<div className={styles.modalBackdrop} onMouseDown={e=>{if(e.target===e.currentTarget)setSettings(false);}}><section className={styles.modal}><div className={styles.modalHead}><div><span>PARAMÉTRAGE RH</span><h2>Horaires & rotation</h2><p>Cette semaine est actuellement calculée automatiquement depuis l’ancre A/B.</p></div><button onClick={()=>setSettings(false)}>×</button></div><div className={styles.rotationBox}><strong>Rotation A / B</strong><p>Choisir l’équipe du matin pour la semaine en cours. Les semaines suivantes alternent automatiquement.</p><div><button onClick={()=>void setRotation(true)}>A MATIN CETTE SEMAINE</button><button onClick={()=>void setRotation(false)}>B MATIN CETTE SEMAINE</button></div></div><div className={styles.simpleList}>{data.shifts.map(shift=><div key={shift.team}><strong>{shift.label}</strong><span>{shiftText(shift)}</span></div>)}</section></div>}
 
     {personPanel&&<div className={styles.modalBackdrop} onMouseDown={e=>{if(e.target===e.currentTarget)setPersonPanel(false);}}><section className={styles.modal}><div className={styles.modalHead}><div><span>TRANSPHÈRE</span><h2>Référentiel collaborateurs</h2><p>Utilisé tant qu’aucune source RH Transphère n’est raccordée.</p></div><button onClick={()=>setPersonPanel(false)}>×</button></div><form className={styles.personForm} onSubmit={addTranspherePerson}><label>NOM<input name="name" required/></label><label>IDENTIFIANT / MATRICULE<input name="key" required/></label><label>ÉQUIPE<input name="team" defaultValue="TRANSPHERE" required/></label><label>SERVICE<input name="service"/></label><button>AJOUTER</button></form><div className={styles.simpleList}>{data.people.map(person=><div key={person.employeeKey}><strong>{person.name}</strong><span>{person.employeeKey} · {person.team}</span></div>)}</div></section></div>}
   </main>;
