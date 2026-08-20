@@ -43,5 +43,5 @@
     "wrangler": "^4.120.1"
   },
   "type": "module",
-  "displayName": "KPI CRVO"
+  "displayName": "ToolBox CRVO Lens"
 }
