@@ -51,6 +51,20 @@ export async function GET(request: Request) {
       p_to: to,
     });
 
+    if (entity === "CRVO") {
+      try {
+        const trainingEvents = await authRpc<unknown[]>("kpi_training_worktime_events", {
+          p_session_hash: current.tokenHash,
+          p_from: from,
+          p_to: to,
+        });
+        const currentEvents = Array.isArray(payload.events) ? payload.events : [];
+        payload.events = [...currentEvents, ...(Array.isArray(trainingEvents) ? trainingEvents : [])];
+      } catch (trainingError) {
+        console.error("worktime_training_bridge_failed", trainingError);
+      }
+    }
+
     let impactReference: Record<string, unknown> = {
       connected: false,
       entity,
