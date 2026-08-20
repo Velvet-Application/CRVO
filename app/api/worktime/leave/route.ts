@@ -27,12 +27,26 @@ export async function GET(request: Request) {
   if (!current) return json({ error: "Accès Temps de travail requis." }, 403);
   const url = new URL(request.url);
   const today = todayParis();
-  const from = isoDate(url.searchParams.get("from"), today.slice(0, 8) + "01");
-  const to = isoDate(url.searchParams.get("to"), from);
   const team = url.searchParams.get("team") || null;
   const sector = url.searchParams.get("sector") || null;
+
   try {
-    const payload = await authRpc<Record<string, unknown>>("kpi_worktime_leave_dashboard", {
+    const detailDate = url.searchParams.get("detailDate");
+    if (detailDate) {
+      const date = isoDate(detailDate, "");
+      if (!date) return json({ error: "Date invalide." }, 400);
+      const payload = await authRpc<Record<string, unknown>>("kpi_worktime_leave_day_detail", {
+        p_session_hash: current.tokenHash,
+        p_date: date,
+        p_team: team,
+        p_sector: sector,
+      });
+      return json(payload);
+    }
+
+    const from = isoDate(url.searchParams.get("from"), today.slice(0, 8) + "01");
+    const to = isoDate(url.searchParams.get("to"), from);
+    const payload = await authRpc<Record<string, unknown>>("kpi_worktime_leave_dashboard_v2", {
       p_session_hash: current.tokenHash,
       p_from: from,
       p_to: to,
