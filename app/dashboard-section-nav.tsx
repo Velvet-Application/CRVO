@@ -43,7 +43,7 @@ export default function DashboardSectionNav(){
   const supervisor=access.profile==="team_manager"&&access.level==="supervisor";
   const content=<div className={styles.wrap}>
     <nav className={styles.nav} aria-label="Pilotage de la capacité du jour">
-      <Link href={supervisor?"/equipe":"/"} className={styles.link} data-active={!presence}>Pilotage du jour</Link>
+      <Link href={supervisor?"/equipe":"/pilotage/performance?nav=today"} className={styles.link} data-active={!presence}>Pilotage du jour</Link>
       <Link href="/dashboard/presenteisme" className={styles.link} data-active={presence}>Présentéisme & capacité</Link>
     </nav>
   </div>;

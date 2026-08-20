@@ -36,7 +36,7 @@ export default function LoginPage() {
 
   return <main className={styles.page}>
     <section className={styles.card}>
-      <div className={styles.brand}><span>CRVO · LENS</span><h1>Accès sécurisé</h1><p>Reporting, Pilotage et CRVO COCKPIT V2</p></div>
+      <div className={styles.brand}><span>TOOLBOX CRVO · LENS</span><h1>Accès sécurisé</h1><p>Pilotage · Relation Client · RH · Administration · Transphère</p></div>
       <form onSubmit={submit} className={styles.form}>
         <label>Identifiant<input autoComplete="username" value={username} onChange={(event)=>setUsername(event.target.value)} autoFocus /></label>
         <label>Mot de passe<input type="password" autoComplete="current-password" value={password} onChange={(event)=>setPassword(event.target.value)} /></label>

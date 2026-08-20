@@ -13,19 +13,31 @@ async function validDirectionKioskToken(value?:string|null){if(!value)return fal
 function isStatic(pathname:string){return pathname.startsWith("/_next/")||pathname.startsWith("/assets/")||pathname==="/favicon.svg"||pathname==="/manifest.webmanifest"||/\.(?:css|js|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|map|webmanifest)$/i.test(pathname);}
 function apiUnauthorized(status=401,message="Authentification requise."){return NextResponse.json({error:message},{status,headers:{"Cache-Control":"no-store"}});}
 function has(session:Session,key:string){return session.role==="admin"||session.page_permissions?.includes("*")||session.page_permissions?.includes(key);}
-function firstAllowed(session:Session){if(session.access_profile==="team_manager")return "/equipe";if(session.access_profile==="transphere_manager"||session.access_profile==="transphere")return "/transphere";if(session.access_profile==="trainer")return "/formation";if(session.access_profile==="hr")return "/temps-travail";if(has(session,"reporting")||has(session,"book"))return "/";if(has(session,"training"))return "/formation";if(has(session,"worktime"))return "/temps-travail";if(has(session,"settings"))return "/?nav=objectives";if(has(session,"data_rh"))return "/animation-centre/rh";if(has(session,"productivity"))return "/performance/productivite";if(has(session,"monthly_animation"))return "/animation-mensuelle";if(has(session,"cockpit"))return "/cockpit-v2";if(has(session,"bodyshop"))return "/cockpit-v2/carrosserie";if(has(session,"client_dashboard"))return "/dashboard-client";if(has(session,"intelligence"))return "/intelligence";if(has(session,"transphere"))return "/transphere";return "/account";}
-function requiredPermission(path:string):string|null{if(path.startsWith("/formation")||path.startsWith("/api/training"))return "training";if(path.startsWith("/animation-centre/export")||path.startsWith("/api/animation-centre/export"))return "reporting";if(path.startsWith("/temps-travail")||path.startsWith("/api/worktime"))return "worktime";if(path==="/performance/productivite"||path.startsWith("/api/productivity")||path.startsWith("/api/staff/suggestions"))return "productivity";if(path.startsWith("/animation-mensuelle")||path.startsWith("/api/monthly-animation"))return "monthly_animation";if(path.startsWith("/animation-centre/rh")||path.startsWith("/data-rh")||path.startsWith("/api/data-import")||path.startsWith("/api/staff/directory")||path.startsWith("/api/staff/competencies")||path.startsWith("/api/staff/operational"))return "data_rh";if(path.startsWith("/cockpit-v2/carrosserie")||path.startsWith("/api/bodyshop"))return "bodyshop";if(path.startsWith("/cockpit-v2")||path.startsWith("/api/cockpit-v2")||path.startsWith("/pilotage")||path.startsWith("/api/pilotage")||path.startsWith("/api/operational-live"))return "cockpit";if(path.startsWith("/dashboard-client")||path.startsWith("/clients")||path.startsWith("/api/client-dashboard")||path.startsWith("/api/clients"))return "client_dashboard";if(path.startsWith("/intelligence")||path.startsWith("/api/intelligence"))return "intelligence";if(path.startsWith("/book")||path.startsWith("/api/import-book"))return "book";if(path.startsWith("/transphere")||path.startsWith("/api/transphere/dashboard")||path.startsWith("/api/transphere/animation"))return "transphere";return null;}
-function adminOnlyPath(path:string){return path.startsWith("/animation-mensuelle/payplan")||path.startsWith("/animation-mensuelle/acces")||path.startsWith("/api/payplan")||path.startsWith("/capacitaire")||path.startsWith("/api/capacity-simulator")||path.startsWith("/api/capacity-simple")||path.startsWith("/developpement")||path.startsWith("/api/development")||path.startsWith("/api/transphere/import-book")||path==="/expertise-mobile"||path==="/direction"||path.startsWith("/api/kiosk/direction");}
-function transphereRestrictedAllowed(path:string){return path.startsWith("/transphere")||path.startsWith("/api/transphere/dashboard")||path.startsWith("/api/transphere/animation")||path.startsWith("/temps-travail")||path.startsWith("/api/worktime");}
-function teamManagerAllowed(path:string){return path==="/equipe"||path.startsWith("/api/team-dashboard")||path.startsWith("/temps-travail")||path.startsWith("/api/worktime")||path.startsWith("/dashboard/presenteisme")||path.startsWith("/api/site-presence-capacity");}
-function trainerAllowed(path:string){return path.startsWith("/formation")||path.startsWith("/api/training")||path.startsWith("/notifications")||path.startsWith("/api/notifications");}
+function firstAllowed(session:Session){if(session.must_change_password)return"/account?change=1";return"/";}
+function requiredPermission(path:string):string|null{
+  if(path.startsWith("/formation")||path.startsWith("/api/training"))return"training";
+  if(path.startsWith("/animation-centre/export")||path.startsWith("/api/animation-centre/export"))return"reporting";
+  if(path.startsWith("/temps-travail")||path.startsWith("/api/worktime"))return"worktime";
+  if(path==="/performance/productivite"||path.startsWith("/api/productivity")||path.startsWith("/api/staff/suggestions"))return"productivity";
+  if(path.startsWith("/animation-mensuelle")||path.startsWith("/api/monthly-animation"))return"monthly_animation";
+  if(path.startsWith("/animation-centre/rh")||path.startsWith("/data-rh")||path.startsWith("/api/data-import")||path.startsWith("/api/staff/directory")||path.startsWith("/api/staff/competencies")||path.startsWith("/api/staff/operational"))return"data_rh";
+  if(path.startsWith("/cockpit-v2/carrosserie")||path.startsWith("/api/bodyshop"))return"bodyshop";
+  if(path.startsWith("/cockpit-v2")||path.startsWith("/api/cockpit-v2")||path==="/pilotage"||path.startsWith("/api/pilotage")||path.startsWith("/api/operational-live"))return"cockpit";
+  if(path.startsWith("/dashboard-client")||path.startsWith("/clients")||path.startsWith("/api/client-dashboard")||path.startsWith("/api/clients"))return"client_dashboard";
+  if(path.startsWith("/intelligence")||path.startsWith("/api/intelligence"))return"intelligence";
+  if(path.startsWith("/book")||path.startsWith("/api/import-book"))return"book";
+  if(path.startsWith("/transphere")||path.startsWith("/api/transphere/dashboard")||path.startsWith("/api/transphere/animation"))return"transphere";
+  return null;
+}
+function adminOnlyPath(path:string){return path.startsWith("/metiers/admin")||path.startsWith("/animation-mensuelle/payplan")||path.startsWith("/animation-mensuelle/acces")||path.startsWith("/api/payplan")||path.startsWith("/capacitaire")||path.startsWith("/api/capacity-simulator")||path.startsWith("/api/capacity-simple")||path.startsWith("/developpement")||path.startsWith("/api/development")||path.startsWith("/api/transphere/import-book")||path==="/expertise-mobile"||path==="/direction"||path.startsWith("/api/kiosk/direction");}
+function transphereRestrictedAllowed(path:string){return path==="/"||path.startsWith("/transphere")||path.startsWith("/api/transphere/dashboard")||path.startsWith("/api/transphere/animation")||path.startsWith("/notifications")||path.startsWith("/api/notifications");}
+function teamManagerAllowed(path:string){return path==="/"||path.startsWith("/metiers/rh")||path==="/equipe"||path.startsWith("/api/team-dashboard")||path.startsWith("/temps-travail")||path.startsWith("/api/worktime")||path.startsWith("/dashboard/presenteisme")||path.startsWith("/api/site-presence-capacity")||path.startsWith("/notifications")||path.startsWith("/api/notifications");}
+function trainerAllowed(path:string){return path==="/"||path.startsWith("/metiers/rh")||path.startsWith("/formation")||path.startsWith("/api/training")||path.startsWith("/notifications")||path.startsWith("/api/notifications");}
 
 export async function proxy(request:NextRequest){
   const path=request.nextUrl.pathname;
   if(path==="/developpement/expertise-mobile"){
-    const url=request.nextUrl.clone();
-    url.pathname="/expertise-mobile";
-    return NextResponse.redirect(url,307);
+    const url=request.nextUrl.clone();url.pathname="/expertise-mobile";return NextResponse.redirect(url,307);
   }
   const publicClientPortal=path.startsWith("/expertise/client/")||path.startsWith("/api/expertise/client/");
   const publicAtelier=path==="/atelier"||path.startsWith("/api/kiosk/atelier");
@@ -34,11 +46,8 @@ export async function proxy(request:NextRequest){
   if(path==="/direction"){
     const kioskQuery=request.nextUrl.searchParams.get("k");
     if(await validDirectionKioskToken(kioskQuery)){
-      const url=request.nextUrl.clone();
-      url.searchParams.delete("k");
-      const response=NextResponse.redirect(url,307);
-      response.cookies.set(DIRECTION_KIOSK_COOKIE,kioskQuery!,{httpOnly:true,secure:true,sameSite:"lax",path:"/",maxAge:60*60*24*365});
-      return response;
+      const url=request.nextUrl.clone();url.searchParams.delete("k");const response=NextResponse.redirect(url,307);
+      response.cookies.set(DIRECTION_KIOSK_COOKIE,kioskQuery!,{httpOnly:true,secure:true,sameSite:"lax",path:"/",maxAge:60*60*24*365});return response;
     }
     if(await validDirectionKioskToken(request.cookies.get(DIRECTION_KIOSK_COOKIE)?.value))return NextResponse.next();
   }
@@ -48,15 +57,14 @@ export async function proxy(request:NextRequest){
   if(!token){if(publicLogin)return NextResponse.next();if(path.startsWith("/api/"))return apiUnauthorized();const url=new URL("/login",request.url);if(path!=="/")url.searchParams.set("next",`${path}${request.nextUrl.search}`.slice(0,1000));return NextResponse.redirect(url);}
   try{
     const session=await validate(token);if(!session?.ok){const response=path.startsWith("/api/")?apiUnauthorized():NextResponse.redirect(new URL("/login",request.url));response.cookies.delete(COOKIE);return response;}
-    if(publicLogin)return NextResponse.redirect(new URL(session.must_change_password?"/account?change=1":firstAllowed(session),request.url));
+    if(publicLogin)return NextResponse.redirect(new URL(firstAllowed(session),request.url));
     if(session.must_change_password){const allowed=path==="/account"||path==="/api/auth/me"||path==="/api/auth/change-password"||path==="/api/auth/logout";if(!allowed){if(path.startsWith("/api/"))return apiUnauthorized(403,"Changement de mot de passe requis.");return NextResponse.redirect(new URL("/account?change=1",request.url));}}
     const authUtility=path==="/account"||path.startsWith("/api/auth/");if(authUtility)return NextResponse.next();
-    if(session.access_profile==="team_manager"&&!teamManagerAllowed(path)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Compte limité au cockpit équipe et au Temps de travail.");return NextResponse.redirect(new URL("/equipe",request.url));}
-    if(session.access_profile==="trainer"&&!trainerAllowed(path)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Compte limité au module Formation & compétences.");return NextResponse.redirect(new URL("/formation",request.url));}
-    if((session.access_profile==="transphere"||session.access_profile==="transphere_manager")&&!transphereRestrictedAllowed(path)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Compte limité à l'environnement Transphère.");return NextResponse.redirect(new URL("/transphere",request.url));}
-    if(adminOnlyPath(path)&&session.role!=="admin"){if(path.startsWith("/api/"))return apiUnauthorized(403,"Accès administrateur requis.");return NextResponse.redirect(new URL(firstAllowed(session),request.url));}
-    if(path==="/"&&!has(session,"reporting")&&!has(session,"book")&&!has(session,"settings"))return NextResponse.redirect(new URL(firstAllowed(session),request.url));
-    const permission=requiredPermission(path);if(permission&&!has(session,permission)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Cette donnée n'est pas autorisée pour ce compte.");return NextResponse.redirect(new URL(firstAllowed(session),request.url));}
+    if(session.access_profile==="team_manager"&&!teamManagerAllowed(path)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Compte limité au cockpit équipe et aux outils RH autorisés.");return NextResponse.redirect(new URL("/",request.url));}
+    if(session.access_profile==="trainer"&&!trainerAllowed(path)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Compte limité au module Formation & compétences.");return NextResponse.redirect(new URL("/",request.url));}
+    if((session.access_profile==="transphere"||session.access_profile==="transphere_manager")&&!transphereRestrictedAllowed(path)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Compte limité à l'environnement Transphère.");return NextResponse.redirect(new URL("/",request.url));}
+    if(adminOnlyPath(path)&&session.role!=="admin"){if(path.startsWith("/api/"))return apiUnauthorized(403,"Accès administrateur requis.");return NextResponse.redirect(new URL("/",request.url));}
+    const permission=requiredPermission(path);if(permission&&!has(session,permission)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Cette donnée n'est pas autorisée pour ce compte.");return NextResponse.redirect(new URL("/",request.url));}
     return NextResponse.next();
   }catch(error){console.error("crvo_auth_proxy_failed",error);if(path.startsWith("/api/"))return apiUnauthorized(503,"Service d'authentification temporairement indisponible.");return new NextResponse("Service d'authentification temporairement indisponible.",{status:503,headers:{"Content-Type":"text/plain; charset=utf-8","Cache-Control":"no-store"}});}
 }

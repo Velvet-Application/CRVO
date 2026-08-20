@@ -1,7 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="KPI CRVO">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ToolBox CRVO Lens">
   <rect width="512" height="512" fill="#004f9f"/>
   <circle cx="256" cy="256" r="188" fill="#ffffff" opacity="0.08"/>
-  <text x="256" y="248" text-anchor="middle" font-family="Arial, sans-serif" font-size="98" font-weight="800" font-style="italic" fill="#ffffff">CRVO</text>
-  <rect x="144" y="282" width="224" height="12" rx="6" fill="#009edb"/>
-  <text x="256" y="352" text-anchor="middle" font-family="Arial, sans-serif" font-size="44" font-weight="700" fill="#FEC82F">KPI LENS</text>
+  <text x="256" y="238" text-anchor="middle" font-family="Arial, sans-serif" font-size="98" font-weight="800" font-style="italic" fill="#ffffff">CRVO</text>
+  <rect x="144" y="272" width="224" height="12" rx="6" fill="#009edb"/>
+  <text x="256" y="342" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#FEC82F">TOOLBOX</text>
+  <text x="256" y="386" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="4" fill="#ffffff">LENS</text>
 </svg>
