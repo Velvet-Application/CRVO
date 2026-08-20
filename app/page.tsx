@@ -5,6 +5,7 @@ import ToolboxLiveWidgets from "./toolbox-live-widgets";
 import ToolboxMobileNav from "./toolbox-mobile-nav";
 import "./toolbox-live-home.css";
 import "./toolbox-mobile-home.css";
+import "./toolbox-mobile-launcher.css";
 import styles from "./toolbox-home.module.css";
 
 type DomainKey="pilotage"|"client"|"rh"|"admin"|"transphere";
