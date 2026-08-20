@@ -11,6 +11,7 @@ import "./expertise-workspace-fixes.css";
 import GlobalNavDrawer from "./global-nav-drawer-v2";
 import HomeSideMenu from "./home-side-menu-v2";
 import EnvironmentSwitcher from "./environment-switcher";
+import MobileNavigationFix from "./mobile-navigation-fix";
 import DataTrustGuard from "./data-trust-guard";
 import ActivityColorBinder from "./activity-color-binder";
 import KioskFetchBridge from "./kiosk-fetch-bridge";
@@ -54,6 +55,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <TransphereAccessManager />
     <WorktimeAnnualizationPanel />
     <AtelierPublicScreen />
+    <MobileNavigationFix />
     {children}
   </body></html>;
 }
