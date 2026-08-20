@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 
 type GroupKey="book"|"animation"|"cockpit"|"client"|"settings";
-type Me={role:"admin"|"user";displayName?:string;accessProfile:"admin"|"service_manager"|"team_manager"|"custom"|"transphere"|"transphere_manager"|"hr";pagePermissions:string[]};
+type Me={role:"admin"|"user";displayName?:string;accessProfile:"admin"|"service_manager"|"team_manager"|"custom"|"transphere"|"transphere_manager"|"hr"|"trainer";pagePermissions:string[]};
 const CLOSED:Record<GroupKey,boolean>={book:false,animation:false,cockpit:false,client:false,settings:false};
 function rootHref(view:string){return `/?nav=${encodeURIComponent(view)}`;}
 function activeGroup(path:string):GroupKey|null{if(path.startsWith("/performance/productivite")||path.startsWith("/animation-mensuelle")||path.startsWith("/animation-centre/rh"))return"animation";if(path.startsWith("/cockpit-v2")||path.startsWith("/intelligence"))return"cockpit";if(path.startsWith("/dashboard-client")||path.startsWith("/clients"))return"client";if(/^\/(account|data-rh|sources)/.test(path))return"settings";return null;}
@@ -15,7 +15,7 @@ export default function GlobalNavDrawerV2(){
   useEffect(()=>{if(standalone)return;let dead=false;let timer=0;let attempt=0;const run=async()=>{try{const value=await readMe();if(!dead&&value)setMe(value);}catch{attempt+=1;if(!dead&&attempt<4)timer=window.setTimeout(run,attempt*500);}};void run();return()=>{dead=true;window.clearTimeout(timer);};},[standalone]);
   useEffect(()=>{const group=activeGroup(pathname);if(group)setOpen({...CLOSED,[group]:true});},[pathname]);
   const admin=me?.role==="admin";const inTransphere=pathname.startsWith("/transphere");const allowed=(key:string)=>Boolean(me&&(admin||me.pagePermissions?.includes("*")||me.pagePermissions?.includes(key)));const animationVisible=allowed("data_rh")||allowed("productivity")||allowed("monthly_animation")||admin;const cockpitVisible=allowed("cockpit")||allowed("bodyshop")||allowed("intelligence")||admin;const clientVisible=allowed("client_dashboard");
-  const profile=useMemo(()=>!me?"":admin?"ADMIN":me.accessProfile==="service_manager"?"CHEF DE SERVICE":me.accessProfile==="team_manager"?"CHEF D'ÉQUIPE":me.accessProfile==="hr"?"RH":me.accessProfile==="transphere_manager"?"RESPONSABLE TRANSPHÈRE":me.accessProfile==="transphere"?"TRANSPHÈRE":"ACCÈS PERSONNALISÉ",[me,admin]);
+  const profile=useMemo(()=>!me?"":admin?"ADMIN":me.accessProfile==="service_manager"?"CHEF DE SERVICE":me.accessProfile==="team_manager"?"CHEF D'ÉQUIPE":me.accessProfile==="trainer"?"FORMATEUR":me.accessProfile==="hr"?"RH":me.accessProfile==="transphere_manager"?"RESPONSABLE TRANSPHÈRE":me.accessProfile==="transphere"?"TRANSPHÈRE":"ACCÈS PERSONNALISÉ",[me,admin]);
   if(standalone||!me)return null;
   const toggle=(key:GroupKey)=>setOpen(current=>({...CLOSED,[key]:!current[key]}));
   const group=(key:GroupKey,label:string,children:ReactNode)=><section className="gn2-group"><button type="button" onClick={()=>toggle(key)}><span>{label}</span><i className={open[key]?"open":""}>›</i></button><div className={`gn2-collapse${open[key]?" open":""}`}><div>{children}</div></div></section>;
@@ -30,6 +30,7 @@ export default function GlobalNavDrawerV2(){
       {animationVisible&&group("animation","Animation du centre",<>{allowed("data_rh")&&link("/animation-centre/rh","RH & Polycompétences")}{allowed("productivity")&&link("/performance/productivite","Productivité")}{allowed("monthly_animation")&&link("/animation-mensuelle","Variable")}{allowed("reporting")&&link("/animation-centre/export","Export")}{admin&&link("/animation-mensuelle/acces","Accès Workflow",true)}{admin&&link("/animation-mensuelle/payplan","Payplan",true)}</>)}
       {cockpitVisible&&group("cockpit","Cockpit V2",<>{allowed("cockpit")&&link("/cockpit-v2?section=pilotage","Pilotage du jour")}{allowed("cockpit")&&link("/cockpit-v2?section=synthese","Synthèse manager")}{allowed("cockpit")&&link("/cockpit-v2?section=decision","Aide à la décision")}{allowed("cockpit")&&link("/cockpit-v2?section=prevision","Prévision fin de journée")}{allowed("bodyshop")&&link("/cockpit-v2/carrosserie","Focus carrosserie")}{allowed("intelligence")&&link("/intelligence","Analyse")}</>)}
       {clientVisible&&group("client","Dashboard client",<>{link("/dashboard-client?scope=reseau","Réseau EFF & EFB")}{link("/dashboard-client?scope=bmw-mini","BMW / MINI")}</>)}
+      {allowed("training")&&topLink("/formation","Formation & compétences")}
       {allowed("worktime")&&topLink("/temps-travail","Temps de travail")}
       {topLink("/notifications","Notifications")}
       {group("settings","Paramètre",<>{allowed("settings")&&link(rootHref("objectives"),"Objectif & seuil")}{allowed("settings")&&link("/sources","Source & Connexion")}{link("/account","Mon compte & accès")}{allowed("data_rh")&&link("/data-rh","Data RH")}</>)}
