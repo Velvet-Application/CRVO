@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
-type Me={displayName:string;role:"admin"|"user";accessProfile:"admin"|"service_manager"|"team_manager"|"custom"};
-function profileLabel(me:Me){return me.role==="admin"||me.accessProfile==="admin"?"ADMIN":me.accessProfile==="service_manager"?"CHEF DE SERVICE":me.accessProfile==="team_manager"?"CHEF D'ÉQUIPE":"ACCÈS PERSONNALISÉ";}
+type Me={displayName:string;role:"admin"|"user";accessProfile:"admin"|"service_manager"|"team_manager"|"custom"|"transphere"|"transphere_manager"|"hr"|"trainer"};
+function profileLabel(me:Me){return me.role==="admin"||me.accessProfile==="admin"?"ADMIN":me.accessProfile==="service_manager"?"CHEF DE SERVICE":me.accessProfile==="team_manager"?"CHEF D'ÉQUIPE":me.accessProfile==="trainer"?"FORMATEUR":me.accessProfile==="hr"?"RH":me.accessProfile==="transphere_manager"?"RESPONSABLE TRANSPHÈRE":me.accessProfile==="transphere"?"TRANSPHÈRE":"ACCÈS PERSONNALISÉ";}
 
 export default function AuthNav(){
   const pathname=usePathname();
