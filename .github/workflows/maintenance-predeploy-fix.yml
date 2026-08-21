@@ -1,0 +1,55 @@
+name: Maintenance Predeploy TypeScript Fix
+
+on:
+  push:
+    branches:
+      - feature/admin-maintenance-center
+    paths:
+      - .github/workflows/maintenance-predeploy-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/admin-maintenance-center
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply narrow TypeScript fixes
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          function patch(path,replacements){
+            let text=fs.readFileSync(path,'utf8');
+            for(const [from,to] of replacements){
+              if(!text.includes(from)) throw new Error(`Pattern missing in ${path}: ${from.slice(0,100)}`);
+              text=text.replace(from,to);
+            }
+            fs.writeFileSync(path,text);
+          }
+          patch('app/animation-mensuelle/page.tsx',[
+            ['{totals.prorationHash&&<p','{Boolean(totals.prorationHash)&&<p'],
+            ['{totals.evidenceFrozenAt&&<p','{Boolean(totals.evidenceFrozenAt)&&<p'],
+          ]);
+          patch('app/messagerie/internal-chat.tsx',[
+            ['const roles:MentionChoice[]=[','const roles=(['],
+            ['].filter(item=>!q||normalizeText(item.token).includes(q)||normalizeText(item.title).includes(q));','] satisfies MentionChoice[]).filter(item=>!q||normalizeText(item.token).includes(q)||normalizeText(item.title).includes(q));'],
+          ]);
+          patch('app/reclamations-qualite/quality-production-enhancements.tsx',[
+            ['document.querySelectorAll<HTMLSelectElement>("select")','document.querySelectorAll("select")'],
+            ['image.addEventListener("error",()=>image.remove(),{once:true});\n    anchor.prepend(image);','anchor.insertAdjacentHTML("afterbegin",image.outerHTML);\n    const inserted=anchor.querySelector("img");\n    inserted?.addEventListener("error",()=>inserted.remove(),{once:true});'],
+          ]);
+          NODE
+      - name: Commit fixes
+        run: |
+          git config user.name "CRVO Maintenance Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add app/animation-mensuelle/page.tsx app/messagerie/internal-chat.tsx app/reclamations-qualite/quality-production-enhancements.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: unblock production TypeScript checks"
+          git push origin HEAD:feature/admin-maintenance-center
