@@ -25,7 +25,7 @@ export async function GET(request:Request){
     if(attachmentId){
       const file=await authRpc<{fileName?:string;mimeType?:string;fileData?:string}>("kpi_internal_chat_attachment_get",{p_session_hash:current.tokenHash,p_attachment_id:attachmentId});
       if(!file.fileData)return json({error:"Pièce jointe indisponible."},404);
-      return new Response(base64Bytes(file.fileData),{status:200,headers:{"Content-Type":file.mimeType||"application/octet-stream","Content-Disposition":`inline; filename="${safeFileName(file.fileName)}"`,`Cache-Control`:"private, no-store","X-Content-Type-Options":"nosniff"}});
+      return new Response(base64Bytes(file.fileData),{status:200,headers:{"Content-Type":file.mimeType||"application/octet-stream","Content-Disposition":`inline; filename="${safeFileName(file.fileName)}"`,"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"}});
     }
     const payload=await authRpc<Record<string,unknown>>("kpi_internal_chat_snapshot",{p_session_hash:current.tokenHash,p_thread_id:thread||null});
     return json(payload);
