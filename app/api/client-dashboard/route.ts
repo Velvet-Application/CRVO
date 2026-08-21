@@ -15,6 +15,13 @@ type History = {
   registration:string|null;
   flow:string|null;
 };
+type WorkloadMetricsRpc = {
+  fre_average?: number|null;
+  time_average_hours?: number|null;
+  matched_vehicle_count?: number|null;
+  total_vehicle_count?: number|null;
+  snapshot_at?: string|null;
+};
 type DashboardRpc = {
   found?: boolean;
   clients?: Row[];
@@ -23,9 +30,20 @@ type DashboardRpc = {
   vehicles?: Row[];
   history?: History[];
   vehicle?: Row | null;
+  workload_metrics?: WorkloadMetricsRpc | null;
 };
 
 function n(v:unknown){const x=Number(v);return Number.isFinite(x)?x:0;}
+function maybeNumber(v:unknown){if(v==null||v==="")return null;const x=Number(v);return Number.isFinite(x)?x:null;}
+function workloadMetrics(metrics:WorkloadMetricsRpc|null|undefined){
+  return {
+    freAverage:maybeNumber(metrics?.fre_average),
+    timeAverageHours:maybeNumber(metrics?.time_average_hours),
+    matchedVehicleCount:n(metrics?.matched_vehicle_count),
+    totalVehicleCount:n(metrics?.total_vehicle_count),
+    snapshotAt:metrics?.snapshot_at??null,
+  };
+}
 function bmwMetrics(vehicles:Row[],history:History[]){
   const ages=vehicles.map(v=>n(v.factory_age_days??v.status_age_days)).sort((a,b)=>a-b);
   const avg=ages.length?ages.reduce((a,b)=>a+b,0)/ages.length:0;
@@ -79,8 +97,7 @@ export async function GET(request:Request){
         vehicles,
         history,
         metrics:bmwMetrics(vehicles,history),
-        timeReady:false,
-        timeMessage:"Les heures et la main-d’œuvre restantes seront ajoutées dès que la source temps/MO sera disponible.",
+        workload:workloadMetrics(payload.workload_metrics),
       },{headers:{"Cache-Control":"no-store"}});
     }
 
@@ -101,8 +118,7 @@ export async function GET(request:Request){
       client:payload.client||client,
       summary:payload.summary,
       vehicles:payload.vehicles??[],
-      timeReady:false,
-      timeMessage:"Les heures et la main-d’œuvre restantes seront ajoutées dès que la source temps/MO sera disponible.",
+      workload:workloadMetrics(payload.workload_metrics),
     },{headers:{"Cache-Control":"no-store"}});
   }catch(error){
     console.error(JSON.stringify({event:"client_dashboard_private_failed",message:error instanceof Error?error.message:"unknown"}));
