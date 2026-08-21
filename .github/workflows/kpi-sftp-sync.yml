@@ -78,4 +78,4 @@ jobs:
           process.exit(1);
           NODE
 
-# Forced real sync marker: automation-run-2026-08-21-R
+# Forced real sync marker: automation-run-2026-08-21-S
