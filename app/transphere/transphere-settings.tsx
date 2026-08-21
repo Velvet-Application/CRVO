@@ -59,7 +59,7 @@ export default function TransphereSettings(){
   }
 
   return <div className={styles.page}><div className={styles.shell}>
-    <div className={styles.topbar}><a className={styles.back} href="/transphere">← Accueil Transphère</a><div className={styles.brand}><img className={styles.logo} src="/transphere-logo-v6.png" alt="Transphère"/></div></div>
+    <div className={styles.topbar}><a className={styles.back} href="/transphere">← Accueil Transphère</a><div className={styles.brand}><div className={styles.logo} role="img" aria-label="Transphère" /></div></div>
     <section className={styles.hero}><small>03 · PARAMÈTRE</small><h1>Import & reporting</h1><p>Centralisez ici les actions d’administration du Book Transphère et la génération du reporting d’animation.</p>
       <div className={styles.status}><div><span>DERNIER ARRÊTÉ</span><b>{loading?"Chargement…":dateLabel(data?.reportDate)}</b></div><div><span>SOURCE</span><b>{data?.sourceFile||"Book Transphère"}</b></div><div><span>ÉTAT</span><b>{error?"À contrôler":"Prêt"}</b></div></div>
     </section>
