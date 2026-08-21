@@ -6,7 +6,7 @@ import { supabaseRestHeaders } from "../../../supabase-rest";
 export const dynamic = "force-dynamic";
 
 const DIRECTION_KIOSK_COOKIE="crvo_direction_kiosk";
-const DIRECTION_KIOSK_TOKEN_HASH="cfec2c633ed2bfc5ac54785f9681b21bb6170667e5bf979bd28421673ecb7582";
+const DIRECTION_KIOSK_TOKEN_HASH="fa09db4afe4ad34ce588c4a307ed8e82f10799f186e00fc2d04f1a21370b3237";
 
 function env(){const supabaseUrl=process.env.SUPABASE_URL;const secretKey=process.env.SUPABASE_SECRET_KEY;return supabaseUrl&&secretKey?{supabaseUrl,secretKey}:null;}
 async function sha256Hex(value:string){const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,"0")).join("");}
