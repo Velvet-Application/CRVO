@@ -51,7 +51,7 @@ export async function GET(request: Request) {
       return json(payload);
     }
 
-    const payload = await authRpc<Record<string, unknown>>("kpi_site_presence_capacity_v8", {
+    const payload = await authRpc<Record<string, unknown>>("kpi_site_presence_capacity_v9", {
       p_session_hash: current.tokenHash,
       p_date: date,
     });
