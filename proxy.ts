@@ -23,6 +23,7 @@ function requiredPermission(path:string):string|null{
   if(path.startsWith("/animation-centre/rh")||path.startsWith("/data-rh")||path.startsWith("/api/data-import")||path.startsWith("/api/staff/directory")||path.startsWith("/api/staff/competencies")||path.startsWith("/api/staff/operational"))return"data_rh";
   if(path.startsWith("/cockpit-v2/carrosserie")||path.startsWith("/api/bodyshop"))return"bodyshop";
   if(path.startsWith("/cockpit-v2")||path.startsWith("/api/cockpit-v2")||path==="/pilotage"||path.startsWith("/api/pilotage")||path.startsWith("/api/operational-live"))return"cockpit";
+  if(path.startsWith("/reclamations-qualite")||path.startsWith("/api/quality-claims"))return"quality_claims";
   if(path.startsWith("/dashboard-client")||path.startsWith("/clients")||path.startsWith("/api/client-dashboard")||path.startsWith("/api/clients"))return"client_dashboard";
   if(path.startsWith("/intelligence")||path.startsWith("/api/intelligence"))return"intelligence";
   if(path.startsWith("/book")||path.startsWith("/api/import-book"))return"book";
@@ -39,9 +40,13 @@ export async function proxy(request:NextRequest){
   if(path==="/developpement/expertise-mobile"){
     const url=request.nextUrl.clone();url.pathname="/expertise-mobile";return NextResponse.redirect(url,307);
   }
-  const publicClientPortal=path.startsWith("/expertise/client/")||path.startsWith("/api/expertise/client/");
+  const publicClientPortal=path.startsWith("/expertise/client/")||path.startsWith("/api/expertise/client/")||path.startsWith("/qualite/client/")||path.startsWith("/api/quality-claims/client/");
   const publicAtelier=path==="/atelier"||path.startsWith("/api/kiosk/atelier");
-  if(isStatic(path)||path==="/api/health"||publicClientPortal||publicAtelier)return NextResponse.next();
+  if(isStatic(path)||path==="/api/health"||publicClientPortal||publicAtelier){
+    const response=NextResponse.next();
+    if(publicClientPortal){response.headers.set("Cache-Control","private, no-store");response.headers.set("Referrer-Policy","no-referrer");response.headers.set("X-Robots-Tag","noindex, nofollow, noarchive");}
+    return response;
+  }
 
   if(path==="/direction"){
     const kioskQuery=request.nextUrl.searchParams.get("k");
@@ -63,7 +68,8 @@ export async function proxy(request:NextRequest){
     if(publicLogin)return NextResponse.redirect(new URL(firstAllowed(session),request.url));
     if(session.must_change_password){const allowed=path==="/account"||path==="/api/auth/me"||path==="/api/auth/change-password"||path==="/api/auth/logout";if(!allowed){if(path.startsWith("/api/"))return apiUnauthorized(403,"Changement de mot de passe requis.");return NextResponse.redirect(new URL("/account?change=1",request.url));}}
     const authUtility=path==="/account"||path.startsWith("/api/auth/");if(authUtility)return NextResponse.next();
-    if(session.access_profile==="team_manager"&&!teamManagerAllowed(path)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Compte limité au cockpit équipe et aux outils RH autorisés.");return NextResponse.redirect(new URL("/",request.url));}
+    const qualityScoped=has(session,"quality_claims")&&(path.startsWith("/reclamations-qualite")||path.startsWith("/api/quality-claims")||path.startsWith("/metiers/relation-client"));
+    if(session.access_profile==="team_manager"&&!teamManagerAllowed(path)&&!qualityScoped){if(path.startsWith("/api/"))return apiUnauthorized(403,"Compte limité au cockpit équipe et aux outils RH autorisés.");return NextResponse.redirect(new URL("/",request.url));}
     if(session.access_profile==="trainer"&&!trainerAllowed(path)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Compte limité au module Formation & compétences.");return NextResponse.redirect(new URL("/",request.url));}
     if((session.access_profile==="transphere"||session.access_profile==="transphere_manager")&&!transphereRestrictedAllowed(path)){if(path.startsWith("/api/"))return apiUnauthorized(403,"Compte limité à l'environnement Transphère.");return NextResponse.redirect(new URL("/",request.url));}
     if(adminOnlyPath(path)&&session.role!=="admin"){if(path.startsWith("/api/"))return apiUnauthorized(403,"Accès administrateur requis.");return NextResponse.redirect(new URL("/",request.url));}
