@@ -1,0 +1,76 @@
+.backdrop{
+  position:fixed;
+  inset:0;
+  z-index:10000;
+  display:grid;
+  place-items:center;
+  padding:24px;
+  background:rgba(4,18,31,.94);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+.stage{
+  position:relative;
+  width:100%;
+  height:100%;
+  display:grid;
+  place-items:center;
+}
+.image{
+  display:block;
+  max-width:min(96vw,1800px);
+  max-height:calc(100vh - 100px);
+  width:auto;
+  height:auto;
+  object-fit:contain;
+  border-radius:12px;
+  background:#0b1824;
+  box-shadow:0 30px 90px rgba(0,0,0,.5);
+}
+.close,.previous,.next{
+  position:absolute;
+  z-index:2;
+  display:grid;
+  place-items:center;
+  border:1px solid rgba(255,255,255,.3);
+  background:rgba(8,28,44,.72);
+  color:#fff;
+  box-shadow:0 8px 28px rgba(0,0,0,.25);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  cursor:pointer;
+  transition:background .16s ease,transform .16s ease;
+}
+.close:hover,.previous:hover,.next:hover{background:#004f9f;transform:scale(1.04)}
+.close{top:0;right:0;width:48px;height:48px;border-radius:50%;font-size:30px;line-height:1}
+.previous,.next{top:50%;width:50px;height:64px;margin-top:-32px;border-radius:16px;font-size:30px}
+.previous{left:0}.next{right:0}
+.caption{
+  position:absolute;
+  left:50%;
+  bottom:0;
+  transform:translateX(-50%);
+  display:flex;
+  align-items:center;
+  gap:12px;
+  max-width:calc(100% - 130px);
+  padding:9px 14px;
+  border:1px solid rgba(255,255,255,.18);
+  border-radius:999px;
+  background:rgba(8,28,44,.76);
+  color:#fff;
+  font-size:11px;
+  font-weight:700;
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+}
+.caption strong{color:#74d7f7;font-weight:900;white-space:nowrap}
+.caption span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:720px){
+  .backdrop{padding:10px}
+  .image{max-width:100%;max-height:calc(100vh - 76px);border-radius:8px}
+  .close{top:6px;right:6px;width:44px;height:44px}
+  .previous,.next{width:42px;height:58px;border-radius:14px}
+  .previous{left:5px}.next{right:5px}
+  .caption{bottom:6px;max-width:calc(100% - 24px);font-size:10px}
+}
