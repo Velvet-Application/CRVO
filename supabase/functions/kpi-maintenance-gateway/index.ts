@@ -5,7 +5,8 @@ const EXPECTED_BRIDGE_TOKEN_SHA256 = "23354751dd7436e2115b97fe34b9192e75d0e7bc4d
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BRIDGE_TARGETS = ["source.ftp", "bridge.ftp", "data.factory", "data.park", "module.client_dashboard"];
 const BRIDGE_ACTIONS = ["test_ftp", "refresh_ftp", "restart_bridge", "refresh_factory", "refresh_all_feeds", "rebuild_kpi"];
-const GUARDIAN_ACTIONS = ["reload_page", "clear_cache", "restart_browser", "restart_guardian", "reboot_device"];
+const GUARDIAN_BROWSER_ACTIONS = ["reload_page", "clear_cache"];
+const GUARDIAN_NATIVE_ACTIONS = ["restart_browser", "restart_guardian", "reboot_device"];
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
@@ -97,9 +98,10 @@ Deno.serve(async (request: Request) => {
       const targetKey = String(body.targetKey ?? "");
       if (!await guardianAuthorized(supabase, request, targetKey)) return json({ error: "Accès Guardian refusé." }, 401);
       const details = body.details && typeof body.details === "object" ? body.details as Record<string, unknown> : {};
-      await heartbeat(supabase, targetKey, details, body.appVersion ? String(body.appVersion).slice(0, 120) : "browser-guardian");
+      const mode = body.mode === "native" ? "native" : "browser";
+      await heartbeat(supabase, targetKey, { ...details, mode }, body.appVersion ? String(body.appVersion).slice(0, 120) : `${mode}-guardian`);
       if (action === "guardian-heartbeat") return json({ ok: true });
-      if (action === "guardian-claim") return json({ ok: true, command: await claimOldest(supabase, [targetKey], GUARDIAN_ACTIONS) });
+      if (action === "guardian-claim") return json({ ok: true, command: await claimOldest(supabase, [targetKey], mode === "native" ? GUARDIAN_NATIVE_ACTIONS : GUARDIAN_BROWSER_ACTIONS) });
       if (action === "guardian-result") {
         const commandId = String(body.commandId ?? "");
         await finishCommand(supabase, commandId, targetKey, body.ok === true, (body.result && typeof body.result === "object" ? body.result : {}) as Record<string, unknown>, body.error ? String(body.error).slice(0, 2000) : null);
