@@ -16,6 +16,8 @@ export async function GET(request:Request){
   const thread=url.searchParams.get("thread");
   const avatarUserId=url.searchParams.get("avatarUserId");
   const attachmentId=url.searchParams.get("attachmentId");
+  const vehicleQuery=url.searchParams.get("vehicleQuery");
+  const vehicleRegistration=url.searchParams.get("vehicleRegistration");
   try{
     if(avatarUserId){
       const file=await authRpc<{found?:boolean;mimeType?:string;fileData?:string}>("kpi_internal_chat_avatar_get",{p_session_hash:current.tokenHash,p_user_id:avatarUserId});
@@ -27,7 +29,15 @@ export async function GET(request:Request){
       if(!file.fileData)return json({error:"Pièce jointe indisponible."},404);
       return new Response(base64Bytes(file.fileData),{status:200,headers:{"Content-Type":file.mimeType||"application/octet-stream","Content-Disposition":`inline; filename="${safeFileName(file.fileName)}"`,"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"}});
     }
-    const payload=await authRpc<Record<string,unknown>>("kpi_internal_chat_snapshot",{p_session_hash:current.tokenHash,p_thread_id:thread||null});
+    if(vehicleRegistration){
+      const vehicle=await authRpc<Record<string,unknown>>("kpi_internal_chat_vehicle_get",{p_session_hash:current.tokenHash,p_registration:vehicleRegistration});
+      return json({vehicle});
+    }
+    if(vehicleQuery!=null){
+      const vehicles=await authRpc<unknown[]>("kpi_internal_chat_vehicle_search",{p_session_hash:current.tokenHash,p_query:vehicleQuery});
+      return json({vehicles:Array.isArray(vehicles)?vehicles:[]});
+    }
+    const payload=await authRpc<Record<string,unknown>>("kpi_internal_chat_snapshot_v2",{p_session_hash:current.tokenHash,p_thread_id:thread||null});
     return json(payload);
   }catch(error){
     console.error("internal_chat_get_failed",error);
@@ -51,13 +61,16 @@ export async function POST(request:Request){
     if(action==="send"){
       const thread=String(body.threadId??"");
       if(!thread)return json({error:"Conversation requise."},400);
-      const payload=await authRpc<Record<string,unknown>>("kpi_internal_chat_send_v3",{
+      const sent=await authRpc<Record<string,unknown>>("kpi_internal_chat_send_v3",{
         p_session_hash:current.tokenHash,
         p_thread_id:thread,
         p_body:body.message==null?null:String(body.message),
         p_linked_claim_id:body.linkedClaimId?String(body.linkedClaimId):null,
         p_attachments:Array.isArray(body.attachments)?body.attachments:[],
       });
+      const detail=(sent.detail&&typeof sent.detail==="object"?sent.detail:null) as Record<string,unknown>|null;
+      const targetThread=detail?.id?String(detail.id):thread;
+      const payload=await authRpc<Record<string,unknown>>("kpi_internal_chat_snapshot_v2",{p_session_hash:current.tokenHash,p_thread_id:targetThread});
       return json(payload);
     }
     if(action==="avatar"){
