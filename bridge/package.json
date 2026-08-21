@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "description": "CRVO FTP bridge - forced sync 2026-08-21T08:00",
   "scripts": {
     "sync": "node src/index.mjs",
     "watch": "node src/watch-daemon.mjs",
