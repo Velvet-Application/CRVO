@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createTransphereDailyPdf, type TransphereSummary, type TransphereTrend } from "./transphere-report";
+import TransportDecisionMatrix from "./transport-decision-matrix";
 import styles from "./transphere-dashboard.module.css";
 
 type Payload = TransphereSummary & { connected?: boolean; generatedBy?: string; username?: string; error?: string };
@@ -93,6 +94,8 @@ export default function TransphereDashboard() {
       </header>
 
       {error ? <div className={styles.error}>{error}</div> : null}{notice ? <div className={styles.notice}>{notice}</div> : null}
+
+      <TransportDecisionMatrix />
 
       <section className={styles.heroGrid}>
         <article className={styles.heroCard}><small>TRANSPORTS CUMULÉS · MOIS EN COURS</small><div className={styles.heroTop}><div className={styles.heroValue}>{fmt(m.total)}</div><div className={styles.heroObjective}><span>OBJECTIF À DATE</span><b>{fmt(m.objectiveAtDate)}</b><span>{fmt(m.achievementAtDate,1)} % de réalisation</span></div></div><div className={styles.progress}><i style={{ width: `${Math.min(100, m.monthlyProgress ?? 0)}%` }}/></div><div className={styles.heroMeta}><span>Écart cumulé <b>{signed(m.delta)}</b></span><span>Entrées <b>{fmt(m.entries)}</b></span><span>Sorties <b>{fmt(m.exits)}</b></span><span>Moyenne <b>{fmt(m.averageDaily,1)}/j</b></span></div></article>
