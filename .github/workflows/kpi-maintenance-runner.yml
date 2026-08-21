@@ -1,0 +1,43 @@
+name: KPI CRVO - Maintenance Runner
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kpi-crvo-maintenance-runner
+  cancel-in-progress: false
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: bridge
+    env:
+      FTP_HOST: ${{ secrets.FTP_HOST || secrets.SFTP_HOST }}
+      FTP_PORT: ${{ secrets.FTP_PORT || secrets.SFTP_PORT }}
+      FTP_USERNAME: ${{ secrets.FTP_USERNAME || secrets.SFTP_USERNAME }}
+      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD || secrets.SFTP_PASSWORD }}
+      FTP_REMOTE_DIR: ${{ secrets.FTP_REMOTE_DIR || secrets.SFTP_REMOTE_DIR }}
+      FTP_SECURE: ${{ vars.FTP_SECURE || 'false' }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      KPI_SOURCE_ID: dfbb57cc-8771-4e53-b52b-38defa389b64
+      KPI_HEALTH_URL: https://kpi-crvo.cyril-gay.workers.dev/api/health
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: bridge/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Validate maintenance runner
+        run: node --check src/maintenance-command-runner.mjs
+      - name: Process maintenance commands
+        run: node src/maintenance-command-runner.mjs

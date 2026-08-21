@@ -50,7 +50,7 @@ function enhancePeriodControls(){
   const currentMonth=currentMonthValue();
   document.querySelectorAll<HTMLInputElement>('input[type="date"]').forEach(i=>{i.min=MIN_DATE;i.max=today});
   document.querySelectorAll<HTMLInputElement>('input[type="month"]').forEach(i=>{i.min=MIN_MONTH;i.max=currentMonth});
-  document.querySelectorAll<HTMLSelectElement>("select").forEach(s=>{
+  document.querySelectorAll("select").forEach(s=>{
     if((s.closest("label")?.textContent||"").includes("Année")){
       const currentYear=new Date().getFullYear();
       Array.from(s.options).forEach(o=>{const y=Number(o.value||o.text);const unavailable=y<2026||y>currentYear;o.disabled=unavailable;o.hidden=unavailable});
@@ -92,8 +92,9 @@ function enhancePhotoPreviews(){
     image.style.border="1px solid rgba(0,79,159,.18)";
     image.style.background="#f3f7fb";
     image.style.pointerEvents="none";
-    image.addEventListener("error",()=>image.remove(),{once:true});
-    anchor.prepend(image);
+    anchor.insertAdjacentHTML("afterbegin",image.outerHTML);
+    const inserted=anchor.querySelector("img");
+    inserted?.addEventListener("error",()=>inserted.remove(),{once:true});
   }
 }
 function currentPhotoItems(){

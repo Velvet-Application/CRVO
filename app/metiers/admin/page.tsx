@@ -8,6 +8,7 @@ export default async function AdminMetierPage(){
   const items:ToolboxDomainItem[]=[
     {section:"Paramètres & accès",kicker:"PARAMÈTRES",label:"Objectifs & seuils",href:"/pilotage/performance?nav=objectives",description:"Configurer les objectifs, seuils et paramètres utilisés dans les restitutions métier."},
     {section:"Paramètres & accès",kicker:"SOURCES",label:"Sources & connexion",href:"/sources",description:"Contrôler les sources de données, connexions et paramètres d’alimentation."},
+    {section:"Paramètres & accès",kicker:"MAINTENANCE",label:"Maintenance système",href:"/maintenance",description:"Diagnostiquer, relancer et réparer les composants critiques de ToolBox en autonomie."},
     {section:"Paramètres & accès",kicker:"COMPTES",label:"Mon compte & accès",href:"/account",description:"Créer les utilisateurs, gérer les profils et administrer les droits d’accès."},
     {section:"Workflow",kicker:"WORKFLOW",label:"Accès Workflow",href:"/animation-mensuelle/acces",description:"Administrer les accès et responsabilités du workflow d’animation mensuelle."},
     {section:"Workflow",kicker:"PAYPLAN",label:"Payplan",href:"/animation-mensuelle/payplan",description:"Configurer et piloter les règles liées au Payplan."},

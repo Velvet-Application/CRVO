@@ -57,6 +57,7 @@ function routeContext(pathname:string,params:URLSearchParams):RouteContext{
   if(pathname.startsWith("/animation-mensuelle"))return{domain:linkedDomain("RH","/metiers/rh"),leaf:{label:"Variable"},parentHref:"/metiers/rh"};
   if(pathname.startsWith("/data-rh"))return{domain:linkedDomain("RH","/metiers/rh"),leaf:{label:"Data RH"},parentHref:"/metiers/rh"};
   if(pathname.startsWith("/sources"))return{domain:linkedDomain("Admin","/metiers/admin"),leaf:{label:"Sources & connexion"},parentHref:"/metiers/admin"};
+  if(pathname.startsWith("/maintenance"))return{domain:linkedDomain("Admin","/metiers/admin"),leaf:{label:"Maintenance système"},parentHref:"/metiers/admin"};
   if(pathname.startsWith("/capacitaire"))return{domain:linkedDomain("Admin","/metiers/admin"),leaf:{label:"Simulateur capacitaire"},parentHref:"/metiers/admin"};
   if(pathname.startsWith("/developpement"))return{domain:linkedDomain("Admin","/metiers/admin"),leaf:{label:"Développement"},parentHref:"/metiers/admin"};
   if(pathname.startsWith("/transphere"))return{domain:{label:"Transphère"},parentHref:"/"};

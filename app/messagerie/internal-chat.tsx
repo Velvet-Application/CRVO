@@ -92,10 +92,10 @@ export default function InternalChat({sessionName}:{sessionName:string}){
     const users=data?.users??[];
     const supervisors=users.filter(u=>u.positionLevel==="supervisor").length;
     const teamLeaders=users.filter(u=>u.positionLevel==="team_leader").length;
-    const roles:MentionChoice[]=[
+    const roles=([
       {kind:"role",token:"superviseur",title:"@superviseur",subtitle:"Écrire au groupe Superviseurs CRVO",count:supervisors,icon:"S"},
       {kind:"role",token:"chef-equipe",title:"@chef-equipe",subtitle:"Écrire à tous les chefs d’équipe",count:teamLeaders,icon:"CE"},
-    ].filter(item=>!q||normalizeText(item.token).includes(q)||normalizeText(item.title).includes(q));
+    ] satisfies MentionChoice[]).filter(item=>!q||normalizeText(item.token).includes(q)||normalizeText(item.title).includes(q));
     const vehicleMatches=vehicleResults.slice(0,5).map<MentionChoice>(v=>({kind:"vehicle",token:v.registration,title:`@${v.registration}`,subtitle:`${v.model||"Véhicule"} · ${v.status||"Statut non renseigné"}${v.workOrder?` · OR ${v.workOrder}`:""}`,vehicle:v,icon:"VO"}));
     const claimMatches=mention.fragment.length<2?[]:claims.filter(c=>normalizeText(`${c.claim_number} ${c.registration} ${c.client_name}`).includes(q)).slice(0,5).map<MentionChoice>(c=>({kind:"claim",token:c.claim_number,title:`@${c.claim_number}`,subtitle:`${c.registration} · ${c.client_name}`,claim:c,icon:"RQ"}));
     return[...roles,...vehicleMatches,...claimMatches].slice(0,10);
