@@ -19,7 +19,7 @@ function DomainGlyph({domain}:{domain:DomainKey}){
   if(domain==="client")return <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="18" cy="18" r="6"/><circle cx="32.5" cy="20" r="4.5"/><path d="M7 37c0-7 4.8-11 11-11s11 4 11 11M27 29c1.5-2 3.5-3 6-3 5 0 8 3.5 8 9"/></svg>;
   if(domain==="rh")return <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="16" cy="19" r="5"/><circle cx="32" cy="19" r="5"/><path d="M6 36c0-6 4.5-10 10-10s10 4 10 10M22 36c0-6 4.5-10 10-10s10 4 10 10"/><path d="M24 8v6M21 11h6"/></svg>;
   if(domain==="admin")return <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6c5 4 10 5.5 15 6v10c0 10-5.5 16.5-15 21-9.5-4.5-15-11-15-21V12c5-.5 10-2 15-6Z"/><path d="M18 24l4 4 8-9"/></svg>;
-  return <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M7 40V22l10 5v-8l10 5v-9l14 8v17Z"/><path d="M7 22V10h7v14M13 40v-7h6v7M25 32h4M34 32h4M25 37h4M34 37h4"/></svg>;
+  return null;
 }
 
 export default async function Page({searchParams}:PageProps){
@@ -51,7 +51,7 @@ export default async function Page({searchParams}:PageProps){
         </div>
       </div>
       {visible.map(domain=><a key={domain.key} href={domain.href} className={`${styles.satellite} toolboxMobileUniverse`} data-domain={domain.key}>
-        <div className={styles.cardVisual}><span className={styles.domainGlyph}><DomainGlyph domain={domain.key}/></span><span className={styles.icon}>{domain.short}</span></div>
+        <div className={styles.cardVisual}><span className={styles.domainGlyph}>{domain.key==="transphere"?<Image className={styles.transphereLogo} src="/transphere-logo-v6.png" alt="Transphère" width={52} height={34} unoptimized/>:<DomainGlyph domain={domain.key}/>}</span></div>
         <div className={styles.cardCopy}><h2>{domain.label}</h2><p>{domain.description}</p></div>
         <footer><span>OUVRIR L’UNIVERS</span><i>›</i></footer>
       </a>)}
