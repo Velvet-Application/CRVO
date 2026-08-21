@@ -1,0 +1,119 @@
+name: Verify Maintenance Production
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/verify-maintenance-production.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: crvo-maintenance-production-verification
+  cancel-in-progress: true
+
+jobs:
+  verify-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for Cloudflare and verify production
+        id: verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          ORIGIN="https://kpi-crvo.cyril-gay.workers.dev"
+          mkdir -p ops
+          success=0
+          attempts=0
+          last_health=""
+          last_maintenance=""
+          last_api_maintenance=""
+          last_atelier=""
+          last_direction=""
+          last_manifest=""
+          last_sw=""
+
+          for attempt in $(seq 1 48); do
+            attempts="$attempt"
+            stamp="$(date +%s%3N)"
+            health_code="$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 20 -H 'Cache-Control: no-cache' "$ORIGIN/api/health?_=$stamp" || true)"
+            maintenance_code="$(curl -sS -o /tmp/maintenance.html -w '%{http_code}' --max-time 20 -H 'Cache-Control: no-cache' -D /tmp/maintenance.headers "$ORIGIN/maintenance?_=$stamp" || true)"
+            api_maintenance_code="$(curl -sS -o /tmp/api-maintenance.json -w '%{http_code}' --max-time 20 -H 'Cache-Control: no-cache' "$ORIGIN/api/maintenance?_=$stamp" || true)"
+            atelier_code="$(curl -sS -o /tmp/atelier.json -w '%{http_code}' --max-time 20 -H 'Cache-Control: no-cache' "$ORIGIN/api/kiosk/atelier?resource=dashboard&_=$stamp" || true)"
+            direction_code="$(curl -sS -o /tmp/direction.json -w '%{http_code}' --max-time 20 -H 'Cache-Control: no-cache' "$ORIGIN/api/kiosk/direction?resource=dashboard&_=$stamp" || true)"
+            manifest_code="$(curl -sS -o /tmp/manifest.json -w '%{http_code}' --max-time 20 -H 'Cache-Control: no-cache' "$ORIGIN/manifest.webmanifest?_=$stamp" || true)"
+            sw_code="$(curl -sS -o /tmp/sw.js -w '%{http_code}' --max-time 20 -H 'Cache-Control: no-cache' "$ORIGIN/sw.js?_=$stamp" || true)"
+
+            last_health="$health_code"
+            last_maintenance="$maintenance_code"
+            last_api_maintenance="$api_maintenance_code"
+            last_atelier="$atelier_code"
+            last_direction="$direction_code"
+            last_manifest="$manifest_code"
+            last_sw="$sw_code"
+
+            health_ok="$(node -e 'const fs=require("fs");try{const x=JSON.parse(fs.readFileSync("/tmp/health.json","utf8"));process.stdout.write(String(x.ok===true&&x.dataReady===true&&x.trustLevel!=="red"&&x.dataTrustOk!==false))}catch{process.stdout.write("false")}' 2>/dev/null || echo false)"
+            maintenance_location="$(awk 'BEGIN{IGNORECASE=1}/^location:/{gsub(/\r/,"");print $2;exit}' /tmp/maintenance.headers 2>/dev/null || true)"
+
+            # /maintenance must exist and protect anonymous access. Depending on framework/runtime it may be 200 shell or 3xx to /login.
+            maintenance_route_ok=false
+            if [[ "$maintenance_code" == "200" ]] && grep -q "Maintenance système" /tmp/maintenance.html 2>/dev/null; then maintenance_route_ok=true; fi
+            if [[ "$maintenance_code" =~ ^30[1278]$ ]] && [[ "$maintenance_location" == *"/login"* ]]; then maintenance_route_ok=true; fi
+
+            # /api/maintenance must exist and reject anonymous requests, proving the new API is deployed.
+            api_maintenance_ok=false
+            if [[ "$api_maintenance_code" == "401" || "$api_maintenance_code" == "403" ]]; then api_maintenance_ok=true; fi
+
+            if [[ "$health_code" == "200" && "$health_ok" == "true" && "$maintenance_route_ok" == "true" && "$api_maintenance_ok" == "true" && "$atelier_code" == "200" && "$direction_code" == "401" && "$manifest_code" == "200" && "$sw_code" == "200" ]]; then
+              success=1
+              break
+            fi
+            sleep 15
+          done
+
+          node <<'NODE'
+          const fs=require('fs');
+          const read=(p)=>{try{return fs.readFileSync(p,'utf8').slice(0,4000)}catch{return ''}};
+          const env=process.env;
+          const healthRaw=read('/tmp/health.json');
+          let health={}; try{health=JSON.parse(healthRaw||'{}')}catch{}
+          const out={
+            checkedAt:new Date().toISOString(),
+            commit:env.GITHUB_SHA,
+            workflowRun:env.GITHUB_RUN_ID,
+            productionOrigin:'https://kpi-crvo.cyril-gay.workers.dev',
+            success:env.SUCCESS==='1',
+            attempts:Number(env.ATTEMPTS||0),
+            checks:{
+              health:{status:Number(env.HEALTH||0),ok:health.ok??null,dataReady:health.dataReady??null,trustLevel:health.trustLevel??null,dataTrustOk:health.dataTrustOk??null,ftpAgeMinutes:health?.ftp?.syncAgeMinutes??null,sourceAgeMinutes:health?.production?.sourceAgeMinutes??null},
+              maintenance:{status:Number(env.MAINTENANCE||0)},
+              maintenanceApi:{status:Number(env.API_MAINTENANCE||0)},
+              atelier:{status:Number(env.ATELIER||0)},
+              direction:{status:Number(env.DIRECTION||0)},
+              manifest:{status:Number(env.MANIFEST||0)},
+              serviceWorker:{status:Number(env.SW||0)},
+            }
+          };
+          fs.writeFileSync('ops/production-verification.json',JSON.stringify(out,null,2)+'\n');
+          NODE
+        env:
+          SUCCESS: ${{ steps.verify.outputs.success }}
+      - name: Persist verification result
+        if: always()
+        shell: bash
+        run: |
+          # Recreate the result with shell values from the verification attempt if the previous node block did not receive them.
+          if [ ! -f ops/production-verification.json ]; then
+            printf '{"checkedAt":"%s","commit":"%s","success":false,"error":"verification result missing"}\n' "$(date -u +%FT%TZ)" "$GITHUB_SHA" > ops/production-verification.json
+          fi
+          git config user.name "CRVO Production Verification"
+          git config user.email "actions@users.noreply.github.com"
+          git add ops/production-verification.json
+          git diff --cached --quiet && exit 0
+          git commit -m "ops: record maintenance production verification"
+          git push origin HEAD:main
