@@ -53,8 +53,11 @@ export default function TransphereDashboard() {
     <div className={styles.shell}>
       <div style={{marginBottom:14}}><a href="/transphere" style={{fontWeight:800,color:"#0055a5",textDecoration:"none"}}>← Accueil Transphère</a></div>
       <header className={styles.header}>
-        <div className={styles.brand}><img src="/transphere-logo-v6.png" alt="Transphère"/><div><small>ENVIRONNEMENT TRANSPHÈRE</small><h1>Pilotage Transphère</h1><p>Navettes CRVO · flux entrées/sorties · temps de service · consommation</p></div></div>
-        <div><div className={styles.actions}><button onClick={() => void load()} disabled={loading}>{loading ? "Actualisation…" : "Actualiser"}</button><a href="/transphere/parametre" className={styles.report} style={{textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Paramètre</a></div><div className={styles.source}>Arrêté au {dateLabel(data.reportDate)} · {data.sourceFile || "Book Transphère"}</div></div>
+        <div className={styles.brand}>
+          <div className={styles.logoBox}><img src="/transphere-logo-v6.png" alt="Transphère"/></div>
+          <div><small>ENVIRONNEMENT TRANSPHÈRE</small><h1>Pilotage Transphère</h1><p>Navettes CRVO · flux entrées/sorties · temps de service · consommation</p></div>
+        </div>
+        <div><div className={styles.actions}><button onClick={() => void load()} disabled={loading}>{loading ? "Actualisation…" : "Actualiser"}</button></div><div className={styles.source}>Arrêté au {dateLabel(data.reportDate)} · {data.sourceFile || "Book Transphère"}</div></div>
       </header>
 
       {error ? <div className={styles.error}>{error}</div> : null}
@@ -74,7 +77,7 @@ export default function TransphereDashboard() {
 
       <section className={styles.content}>
         <article className={styles.panel}><div className={styles.panelHead}><div><small>01 · TRAJECTOIRE</small><h2>Réalisé vs objectif cumulé</h2></div><div className={styles.legend}><span><i style={{background:"#0055a5"}}/>Réalisé</span><span><i style={{background:"#fec82f"}}/>Objectif</span></div></div><TrajectoryChart trend={data.trend}/><div className={styles.dailyTable}>{data.trend.slice(-7).map((row) => <div className={styles.dailyRow} key={row.date}><b>{shortDate(row.date)}</b><span>IN <b>{fmt(row.entries)}</b></span><span>OUT <b>{fmt(row.exits)}</b></span><span>Total <b>{fmt(row.total)}</b></span><span className={row.total >= row.objective ? styles.good : styles.bad}>{fmt(row.total/Math.max(1,row.objective)*100)} %</span></div>)}</div></article>
-        <aside className={styles.panel}><div className={styles.panelHead}><div><small>02 · LECTURE MANAGER</small><h2>Animation du jour</h2></div></div><div className={styles.readCard}><strong>{m.delta >= 0 ? "Dynamique positive" : "Trajectoire à reprendre"}</strong><p>{readout}</p></div><div className={styles.miniStats}><div><span>MOYENNE JOUR</span><b>{fmt(m.averageDaily,1)} transports</b></div><div><span>RÉALISATION À DATE</span><b>{fmt(m.achievementAtDate,1)} %</b></div><div><span>HEURES CUMULÉES</span><b>{fmt(m.serviceHours,1)} h</b></div><div><span>CONSO MOYENNE</span><b>{fmt(m.averageFuelLPer100,1)} L/100</b></div></div><p className={styles.switchNote}>L’import du Book et la génération du reporting sont maintenant regroupés dans l’onglet Paramètre.</p></aside>
+        <aside className={styles.panel}><div className={styles.panelHead}><div><small>02 · LECTURE MANAGER</small><h2>Animation du jour</h2></div></div><div className={styles.readCard}><strong>{m.delta >= 0 ? "Dynamique positive" : "Trajectoire à reprendre"}</strong><p>{readout}</p></div><div className={styles.miniStats}><div><span>MOYENNE JOUR</span><b>{fmt(m.averageDaily,1)} transports</b></div><div><span>RÉALISATION À DATE</span><b>{fmt(m.achievementAtDate,1)} %</b></div><div><span>HEURES CUMULÉES</span><b>{fmt(m.serviceHours,1)} h</b></div><div><span>CONSO MOYENNE</span><b>{fmt(m.averageFuelLPer100,1)} L/100</b></div></div></aside>
       </section>
     </div>
     <style>{`body:has(.transphere-shell) .gn2-trigger,body:has(.transphere-shell) .trust-guard,body:has(.transphere-shell) .daily-animation-root{display:none!important}`}</style>
