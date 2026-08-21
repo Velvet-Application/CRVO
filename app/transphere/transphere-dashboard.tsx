@@ -54,7 +54,7 @@ export default function TransphereDashboard() {
       <div style={{marginBottom:14}}><a href="/transphere" style={{fontWeight:800,color:"#0055a5",textDecoration:"none"}}>← Accueil Transphère</a></div>
       <header className={styles.header}>
         <div className={styles.brand}>
-          <div className={styles.logoBox}><img src="/transphere-logo-v6.png" alt="Transphère"/></div>
+          <div className={styles.logoBox} role="img" aria-label="Transphère" />
           <div><small>ENVIRONNEMENT TRANSPHÈRE</small><h1>Pilotage Transphère</h1><p>Navettes CRVO · flux entrées/sorties · temps de service · consommation</p></div>
         </div>
         <div><div className={styles.actions}><button onClick={() => void load()} disabled={loading}>{loading ? "Actualisation…" : "Actualiser"}</button></div><div className={styles.source}>Arrêté au {dateLabel(data.reportDate)} · {data.sourceFile || "Book Transphère"}</div></div>
