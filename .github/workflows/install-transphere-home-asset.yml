@@ -1,0 +1,51 @@
+name: Install exact Transphere homepage asset
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/install-transphere-home-asset.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: install-transphere-home-asset
+  cancel-in-progress: false
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Download approved homepage image unchanged
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 --retry-delay 2 \
+            -o public/transphere-home-exact.png \
+            "https://at.adobe.com/vkLA72goulLTAmjm"
+          file public/transphere-home-exact.png
+          test "$(stat -c%s public/transphere-home-exact.png)" -gt 500000
+          file public/transphere-home-exact.png | grep -qi 'PNG image data'
+
+      - name: Commit exact asset
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/transphere-home-exact.png
+          if git diff --cached --quiet; then
+            echo "Asset already installed."
+            exit 0
+          fi
+          git commit -m "asset: install exact Transphere homepage visual"
+          git pull --rebase origin main
+          git push origin HEAD:main
