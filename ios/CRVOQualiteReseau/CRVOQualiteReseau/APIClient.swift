@@ -38,7 +38,8 @@ actor CRVOQualityAPI {
 
     func dashboard(claimId: String? = nil) async throws -> QualityDashboard {
         let suffix = claimId.map { "?claimId=\($0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0)&_=\(Int(Date().timeIntervalSince1970))" } ?? "?_=\(Int(Date().timeIntervalSince1970))"
-        return try JSONDecoder.crvo.decode(QualityDashboard.self, from: request(pathQuery: suffix).get())
+        let data = try await request(pathQuery: suffix)
+        return try JSONDecoder.crvo.decode(QualityDashboard.self, from: data)
     }
 
     func lookup(registration: String) async throws -> VehicleLookup {
@@ -48,17 +49,13 @@ actor CRVOQualityAPI {
     }
 
     func create(_ payload: ClaimCreatePayload) async throws -> QualityDetail {
-        var values: [String: Any] = [
-            "registration": payload.registration,
-            "category": payload.category,
-            "description": payload.description
-        ]
+        var values: [String: Any] = ["registration": payload.registration,"category": payload.category,"description": payload.description]
         if !payload.estimateAmount.isEmpty { values["estimateAmount"] = payload.estimateAmount }
         if let vehicle = payload.lookup?.vehicle {
-            values["workOrder"] = vehicle.workOrder as Any
-            values["vin"] = vehicle.vin as Any
-            values["model"] = vehicle.model as Any
-            values["mileage"] = vehicle.mileage as Any
+            if let value = vehicle.workOrder { values["workOrder"] = value }
+            if let value = vehicle.vin { values["vin"] = value }
+            if let value = vehicle.model { values["model"] = value }
+            if let value = vehicle.mileage { values["mileage"] = value }
         }
         let data = try await request(method: "POST", json: ["action":"create","payload":values])
         struct Envelope: Codable { let detail: QualityDetail }
@@ -73,25 +70,11 @@ actor CRVOQualityAPI {
 
     func upload(claimId: String, fileName: String, mimeType: String, data: Data) async throws {
         let kind = mimeType.hasPrefix("image/") ? "PHOTO" : mimeType == "application/pdf" ? "QUOTE" : "OTHER"
-        _ = try await request(method: "POST", json: [
-            "action":"attachment",
-            "claimId":claimId,
-            "attachment":[
-                "kind":kind,
-                "fileName":fileName,
-                "mimeType":mimeType,
-                "sizeBytes":data.count,
-                "fileData":data.base64EncodedString()
-            ]
-        ])
+        _ = try await request(method: "POST", json: ["action":"attachment","claimId":claimId,"attachment":["kind":kind,"fileName":fileName,"mimeType":mimeType,"sizeBytes":data.count,"fileData":data.base64EncodedString()]])
     }
 
     func attachmentURL(id: String) -> URL? {
-        guard let root = session.apiRoot else { return nil }
-        return URL(string: root.absoluteString + "?attachmentId=" + id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!)
+        guard let root = session.apiRoot, let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
+        return URL(string: root.absoluteString + "?attachmentId=" + encoded)
     }
-}
-
-private extension Data {
-    func get() throws -> Data { self }
 }
