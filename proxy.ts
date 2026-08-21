@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const COOKIE="crvo_session";
 const DIRECTION_KIOSK_COOKIE="crvo_direction_kiosk";
-const DIRECTION_KIOSK_TOKEN_HASH="cfec2c633ed2bfc5ac54785f9681b21bb6170667e5bf979bd28421673ecb7582";
+const DIRECTION_KIOSK_TOKEN_HASH="fa09db4afe4ad34ce588c4a307ed8e82f10799f186e00fc2d04f1a21370b3237";
 const SUPABASE_URL="https://tvmkhvfmdstkunwwuzuz.supabase.co";
 const SUPABASE_KEY="sb_publishable_bGCdOoq05alXNTOtouIQcQ_HX9jpKnv";
 
@@ -46,8 +46,11 @@ export async function proxy(request:NextRequest){
   if(path==="/direction"){
     const kioskQuery=request.nextUrl.searchParams.get("k");
     if(await validDirectionKioskToken(kioskQuery)){
-      const url=request.nextUrl.clone();url.searchParams.delete("k");const response=NextResponse.redirect(url,307);
-      response.cookies.set(DIRECTION_KIOSK_COOKIE,kioskQuery!,{httpOnly:true,secure:true,sameSite:"lax",path:"/",maxAge:60*60*24*365});return response;
+      const response=NextResponse.next();
+      response.cookies.set(DIRECTION_KIOSK_COOKIE,kioskQuery!,{httpOnly:true,secure:true,sameSite:"lax",path:"/",maxAge:60*60*24*3650});
+      response.headers.set("Cache-Control","private, no-store");
+      response.headers.set("Referrer-Policy","no-referrer");
+      return response;
     }
     if(await validDirectionKioskToken(request.cookies.get(DIRECTION_KIOSK_COOKIE)?.value))return NextResponse.next();
   }
