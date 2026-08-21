@@ -40,6 +40,16 @@ export async function POST(request: Request) {
       });
       return json({ ok: true });
     }
+    if (body.action === "contract_indexation") {
+      await authRpc<boolean>("kpi_transphere_transport_contract_indexation_update_admin", {
+        p_session_hash: auth.current.tokenHash,
+        p_crvo: body.crvo,
+        p_carrier: body.carrier,
+        p_source_label: body.sourceLabel,
+        p_fuel_indexation_pct: body.fuelIndexationPct,
+      });
+      return json({ ok: true });
+    }
     if (body.action !== "tariff") return json({ error: "Action inconnue." }, 400);
     const id = await authRpc<number>("kpi_transphere_transport_tariff_upsert_admin", {
       p_session_hash: auth.current.tokenHash,
