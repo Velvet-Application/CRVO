@@ -16,6 +16,7 @@ import KioskFetchBridge from "./kiosk-fetch-bridge";
 import PwaRegister from "./pwa-register";
 import DailyAnimationOneClick from "./daily-animation-one-click-v2";
 import TransphereAccessManager from "./transphere-access-manager";
+import TransphereCrvoSwitch from "./transphere-crvo-switch";
 import WorktimeAnnualizationPanel from "./worktime-annualization-panel";
 import AtelierPublicScreen from "./atelier-public-screen";
 import FriendlyLoadingPatch from "./friendly-loading-patch";
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <ToolboxShell />
     <DailyAnimationOneClick />
     <TransphereAccessManager />
+    <TransphereCrvoSwitch />
     <WorktimeAnnualizationPanel />
     <AtelierPublicScreen />
     {children}
