@@ -51,7 +51,6 @@ async function runNode(script) {
 const before = await readHealth();
 if (!before.abnormal) {
   log("healthy_no_action", before);
-  await gateway("bridge-claim", { autoHealHeartbeatOnly: true }).catch(() => null);
   process.exit(0);
 }
 
