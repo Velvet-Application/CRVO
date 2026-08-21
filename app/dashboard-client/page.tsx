@@ -5,8 +5,9 @@ import "./dashboard-client.css";
 
 type Row = Record<string, string | number | boolean | null>;
 type History = { event_date:string; event_time:string|null; status:string|null; client?:string|null; work_order:string|null; registration:string|null; flow:string|null };
+type WorkloadMetrics = { freAverage:number|null; timeAverageHours:number|null; matchedVehicleCount:number; totalVehicleCount:number; snapshotAt:string|null };
 type ListPayload = { clients:Row[]; totalClients:number; totalVehicles:number; updatedAt:string|null };
-type DetailPayload = { client:string; summary:Row; vehicles:Row[]; timeReady:boolean; timeMessage:string };
+type DetailPayload = { client:string; summary:Row; vehicles:Row[]; workload:WorkloadMetrics };
 type FocusPayload = { vehicle:Row; history:History[] };
 type BmwPayload = DetailPayload & { history:History[]; metrics:{ vehicleCount:number; urgentCount:number; averageAgeDays:number; medianAgeDays:number; oldestAgeDays:number; historyEventCount:number; positions:Array<{position:string;count:number}>; movements:Array<{registration:string|null;workOrder:string|null;lastEventDate:string|null;lastEventTime:string|null;lastStatus:string|null;eventCount:number}> } };
 type Mode = "clients" | "bmw";
@@ -20,6 +21,8 @@ const summarySectors = [
 ] as const;
 function n(v:unknown){const x=Number(v);return Number.isFinite(x)?x:0;}
 function fmt(v:unknown,max=1){return n(v).toLocaleString("fr-FR",{maximumFractionDigits:max});}
+function euro(v:unknown){if(v==null||v==="")return"—";const x=Number(v);return Number.isFinite(x)?new Intl.NumberFormat("fr-FR",{style:"currency",currency:"EUR",maximumFractionDigits:0}).format(x):"—";}
+function hours(v:unknown){if(v==null||v==="")return"—";const x=Number(v);return Number.isFinite(x)?`${x.toLocaleString("fr-FR",{maximumFractionDigits:1})} h`:"—";}
 function age(v:unknown){const x=Number(v);return Number.isFinite(x)?`${x.toLocaleString("fr-FR",{maximumFractionDigits:1})} j`:"—";}
 function km(v:unknown){const x=Number(v);return Number.isFinite(x)?`${Math.round(x).toLocaleString("fr-FR")} km`:"—";}
 function frDateTime(date:string|null,time?:string|null){if(!date)return"—";const d=new Date(`${date}T${time||"00:00:00"}`);if(Number.isNaN(d.getTime()))return date;return new Intl.DateTimeFormat("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric",hour:time?"2-digit":undefined,minute:time?"2-digit":undefined,timeZone:"Europe/Paris"}).format(d);}
@@ -86,7 +89,7 @@ export default function DashboardClientPage(){
 
       {mode==="bmw"&&bmw&&<BmwPrecision payload={bmw}/>} 
 
-      <section className="dc-future"><div><span>CAPACITÉ PRÉVUE</span><h3>Heures & main-d’œuvre restantes</h3><p>{active.timeMessage}</p></div><div><span>HEURES RESTANTES</span><strong>À VENIR</strong></div><div><span>MO RESTANTE</span><strong>À VENIR</strong></div></section>
+      <section className="dc-future"><div><span>ENCOURS CLIENT</span><h3>FRE & temps moyens</h3><p>{active.workload.matchedVehicleCount?`${active.workload.matchedVehicleCount}/${active.workload.totalVehicleCount} véhicules en cours rapprochés avec la source encours du ${frDateTime(active.workload.snapshotAt)}.`:"Aucun encours rapproché disponible pour ce client."}</p></div><div><span>FRE MOYEN</span><strong>{euro(active.workload.freAverage)}</strong></div><div><span>TPS MOYEN</span><strong>{hours(active.workload.timeAverageHours)}</strong></div></section>
 
       <section className="dc-section" id="vehicle-list"><div className="dc-section-head"><div><span>DÉTAIL DU PARC</span><h3>{filteredVehicles.length} véhicule{filteredVehicles.length>1?"s":""}{activeFilterLabel?` · ${activeFilterLabel}`:" en cours"}</h3></div><p>Cliquez sur une immatriculation pour ouvrir immédiatement le journal complet du dossier.</p></div><div className="dc-table-wrap"><table><thead><tr><th>Véhicule</th><th>OR</th><th>Modèle</th><th>Km</th><th>Position du véhicule</th><th>Âge usine</th>{mode==="bmw"&&<th>Dernier mouvement</th>}<th>Point à traiter</th><th>Heures</th></tr></thead><tbody>{filteredVehicles.map((v,index)=>{const move=bmw?.metrics.movements.find(m=>String(m.registration??"")===String(v.registration??""));const reg=String(v.registration??"");return <tr key={`${v.registration}-${v.work_order}-${index}`}><td><button type="button" className="dc-registration-link no-print" onClick={()=>void openRegistration(reg)}>{reg||"—"}</button><strong className="dc-registration-print">{reg||"—"}</strong><small>{String(v.vin??"")}</small></td><td>{String(v.work_order??"—")}</td><td>{String(v.model??"—")}</td><td>{km(v.mileage)}</td><td><strong className="dc-position">{String(v.status??"—")}</strong><small>{age(v.status_age_days)} à cette position</small></td><td><strong>{age(v.factory_age_days??v.status_age_days)}</strong></td>{mode==="bmw"&&<td>{move?frDateTime(move.lastEventDate,move.lastEventTime):"—"}<small>{move?.eventCount??0} événements</small></td>}<td>{String(v.alert??"—")}</td><td className="dc-pending">À venir</td></tr>;})}</tbody></table></div></section>
       <footer className="dc-footer"><span>CRVO Lens · Dashboard client</span><span>{mode==="bmw"?"BMW France":active.client}</span><span>Situation actualisée · document limité au périmètre client sélectionné</span></footer>
