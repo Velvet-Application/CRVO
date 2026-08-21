@@ -116,6 +116,26 @@ function applyPreviousMonth(){
   if(dates.length>=2){setControlledValue(dates[0],p.from);setControlledValue(dates[1],p.to)}
   clickApply();
 }
+async function openClaimFromQuery(){
+  const claimId=new URLSearchParams(window.location.search).get("claimId");
+  if(!claimId)return;
+  try{
+    const q=new URLSearchParams({dateFrom:MIN_DATE,dateTo:isoLocal(new Date()),claimId});
+    const response=await fetch(`/api/quality-claims-v2?${q.toString()}&_=${Date.now()}`,{cache:"no-store"});
+    if(!response.ok)return;
+    const payload=await response.json() as {detail?:{claim?:{claim_number?:string}}};
+    const claimNumber=payload.detail?.claim?.claim_number;
+    if(!claimNumber)return;
+    applySinceJanuary();
+    let attempts=0;
+    const open=()=>{
+      const row=Array.from(document.querySelectorAll<HTMLTableRowElement>("tbody tr")).find(r=>(r.textContent||"").includes(claimNumber));
+      if(row){row.click();row.scrollIntoView({behavior:"smooth",block:"center"});return;}
+      attempts+=1;if(attempts<28)window.setTimeout(open,250);
+    };
+    window.setTimeout(open,300);
+  }catch{}
+}
 
 export default function QualityProductionEnhancements(){
   const[viewer,setViewer]=useState<ViewerState|null>(null);
@@ -123,6 +143,7 @@ export default function QualityProductionEnhancements(){
   useEffect(()=>{
     const run=()=>{enhancePeriodControls();enhancePhotoPreviews()};
     run();
+    void openClaimFromQuery();
     const observer=new MutationObserver(run);
     observer.observe(document.body,{childList:true,subtree:true});
     const onClick=(event:MouseEvent)=>{
