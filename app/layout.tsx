@@ -6,6 +6,7 @@ import "@fontsource/exo/700.css";
 import "@fontsource/exo/800.css";
 import "@fontsource/exo/800-italic.css";
 import "./globals.css";
+import "./toolbox-font-bridge.css";
 import "./production-fixes.css";
 import "./expertise-workspace-fixes.css";
 import "./toolbox-navigation-overrides.css";
