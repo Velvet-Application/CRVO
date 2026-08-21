@@ -7,6 +7,7 @@ const MIN_MONTH = "2026-01";
 
 function pad(value:number){return String(value).padStart(2,"0")}
 function isoLocal(date:Date){return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}`}
+function currentMonthValue(){const now=new Date();return `${now.getFullYear()}-${pad(now.getMonth()+1)}`}
 function previousCalendarMonth(){
   const now=new Date();
   const first=new Date(now.getFullYear(),now.getMonth()-1,1);
@@ -31,11 +32,14 @@ function enhancePeriodControls(){
   if(history){history.textContent="DEPUIS JANVIER 2026";history.dataset.period2026="1"}
   const prev=buttons.find(b=>b.textContent?.startsWith("MOIS PRÉCÉDENT")||b.dataset.previousMonth2026==="1");
   if(prev){const p=previousCalendarMonth();prev.textContent=`MOIS PRÉCÉDENT · ${p.label.toUpperCase()}`;prev.dataset.previousMonth2026="1"}
-  document.querySelectorAll<HTMLInputElement>('input[type="date"]').forEach(i=>{i.min=MIN_DATE});
-  document.querySelectorAll<HTMLInputElement>('input[type="month"]').forEach(i=>{i.min=MIN_MONTH});
+  const today=isoLocal(new Date());
+  const currentMonth=currentMonthValue();
+  document.querySelectorAll<HTMLInputElement>('input[type="date"]').forEach(i=>{i.min=MIN_DATE;i.max=today});
+  document.querySelectorAll<HTMLInputElement>('input[type="month"]').forEach(i=>{i.min=MIN_MONTH;i.max=currentMonth});
   document.querySelectorAll<HTMLSelectElement>("select").forEach(s=>{
     if((s.closest("label")?.textContent||"").includes("Année")){
-      Array.from(s.options).forEach(o=>{if(Number(o.value||o.text)<2026){o.disabled=true;o.hidden=true}});
+      const currentYear=new Date().getFullYear();
+      Array.from(s.options).forEach(o=>{const y=Number(o.value||o.text);const unavailable=y<2026||y>currentYear;o.disabled=unavailable;o.hidden=unavailable});
     }
   });
 }
