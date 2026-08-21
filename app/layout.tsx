@@ -21,6 +21,8 @@ import TransphereCrvoSwitch from "./transphere-crvo-switch";
 import WorktimeAnnualizationPanel from "./worktime-annualization-panel";
 import AtelierPublicScreen from "./atelier-public-screen";
 import FriendlyLoadingPatch from "./friendly-loading-patch";
+import NotificationCenter from "./notification-center";
+import InternalChatLauncher from "./internal-chat-launcher";
 
 export const metadata: Metadata = {
   title: "ToolBox CRVO Lens",
@@ -46,6 +48,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <ActivityColorBinder />
     <FriendlyLoadingPatch />
     <ToolboxShell />
+    <NotificationCenter />
+    <InternalChatLauncher />
     <DailyAnimationOneClick />
     <TransphereAccessManager />
     <TransphereCrvoSwitch />
