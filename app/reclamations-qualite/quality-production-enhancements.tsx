@@ -29,9 +29,18 @@ function clickApply(){
 function enhancePeriodControls(){
   const buttons=Array.from(document.querySelectorAll<HTMLButtonElement>("button"));
   const history=buttons.find(b=>b.textContent?.trim()==="TOUT L’HISTORIQUE"||b.dataset.period2026==="1");
-  if(history){history.textContent="DEPUIS JANVIER 2026";history.dataset.period2026="1"}
+  if(history){
+    const text="DEPUIS JANVIER 2026";
+    if(history.textContent!==text)history.textContent=text;
+    history.dataset.period2026="1";
+  }
   const prev=buttons.find(b=>b.textContent?.startsWith("MOIS PRÉCÉDENT")||b.dataset.previousMonth2026==="1");
-  if(prev){const p=previousCalendarMonth();prev.textContent=`MOIS PRÉCÉDENT · ${p.label.toUpperCase()}`;prev.dataset.previousMonth2026="1"}
+  if(prev){
+    const p=previousCalendarMonth();
+    const text=`MOIS PRÉCÉDENT · ${p.label.toUpperCase()}`;
+    if(prev.textContent!==text)prev.textContent=text;
+    prev.dataset.previousMonth2026="1";
+  }
   const today=isoLocal(new Date());
   const currentMonth=currentMonthValue();
   document.querySelectorAll<HTMLInputElement>('input[type="date"]').forEach(i=>{i.min=MIN_DATE;i.max=today});
