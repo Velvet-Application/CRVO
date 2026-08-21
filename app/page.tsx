@@ -3,6 +3,11 @@ import { redirect } from "next/navigation";
 import { currentSession, hasPageAccess } from "./lib/crvo-auth";
 import ToolboxLiveWidgets from "./toolbox-live-widgets";
 import ToolboxMobileNav from "./toolbox-mobile-nav";
+import transphereSatellite1 from "./transphere-satellite-chunk-1";
+import transphereSatellite2 from "./transphere-satellite-chunk-2";
+import transphereSatellite3 from "./transphere-satellite-chunk-3";
+import transphereSatellite4 from "./transphere-satellite-chunk-4";
+import transphereSatellite5 from "./transphere-satellite-chunk-5";
 import "./toolbox-live-home.css";
 import "./toolbox-mobile-home.css";
 import "./toolbox-mobile-launcher.css";
@@ -13,6 +18,7 @@ type DomainKey="pilotage"|"client"|"rh"|"admin"|"transphere";
 type Domain={key:DomainKey;label:string;short:string;href:string;description:string;visible:boolean};
 type PageProps={searchParams:Promise<Record<string,string|string[]|undefined>>};
 const LEGACY_VIEWS=new Set(["today","yesterday","bottlenecks","walking","finance","objectives","sources"]);
+const TRANSPHERE_SATELLITE_IMAGE=`data:image/webp;base64,${transphereSatellite1}${transphereSatellite2}${transphereSatellite3}${transphereSatellite4}${transphereSatellite5}`;
 
 function DomainGlyph({domain}:{domain:DomainKey}){
   if(domain==="pilotage")return <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 30a16 16 0 1 1 32 0"/><path d="M24 14v4M12.7 19.3l3 3M35.3 19.3l-3 3M9 30h4M35 30h4"/><path d="M24 30l9-8"/><circle cx="24" cy="30" r="2.8"/></svg>;
@@ -50,10 +56,8 @@ export default async function Page({searchParams}:PageProps){
           <span className={styles.centerText}>ToolBox CRVO Lens</span>
         </div>
       </div>
-      {visible.map(domain=><a key={domain.key} href={domain.href} className={`${styles.satellite} toolboxMobileUniverse`} data-domain={domain.key}>
-        <div className={styles.cardVisual}><span className={styles.domainGlyph}>{domain.key==="transphere"?<Image src="/transphere-logo-v6.png" alt="Transphère" width={52} height={34} style={{width:"50px",height:"auto",objectFit:"contain"}} unoptimized/>:<DomainGlyph domain={domain.key}/>}</span></div>
-        <div className={styles.cardCopy}><h2>{domain.label}</h2><p>{domain.description}</p></div>
-        <footer><span>OUVRIR L’UNIVERS</span><i>›</i></footer>
+      {visible.map(domain=><a key={domain.key} href={domain.href} className={`${styles.satellite} toolboxMobileUniverse`} data-domain={domain.key} aria-label={domain.key==="transphere"?"Ouvrir l’univers Transphère":undefined} style={domain.key==="transphere"?{padding:0,border:0,background:"transparent",boxShadow:"none",display:"block",minHeight:0}:undefined}>
+        {domain.key==="transphere"?<Image src={TRANSPHERE_SATELLITE_IMAGE} alt="Transphère — ouvrir l’univers" width={660} height={347} unoptimized style={{display:"block",width:"100%",height:"auto",borderRadius:"28px",border:"1px solid rgba(0,79,159,.18)",boxShadow:"0 18px 42px rgba(22,60,85,.10)"}}/>:<><div className={styles.cardVisual}><span className={styles.domainGlyph}><DomainGlyph domain={domain.key}/></span></div><div className={styles.cardCopy}><h2>{domain.label}</h2><p>{domain.description}</p></div><footer><span>OUVRIR L’UNIVERS</span><i>›</i></footer></>}
       </a>)}
       {!visible.length&&<div className={styles.empty}>Aucun univers métier n’est encore autorisé pour ce compte. Contacte un administrateur pour ajuster les droits.</div>}
     </section>
