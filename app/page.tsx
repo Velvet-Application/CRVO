@@ -51,7 +51,7 @@ export default async function Page({searchParams}:PageProps){
         </div>
       </div>
       {visible.map(domain=><a key={domain.key} href={domain.href} className={`${styles.satellite} toolboxMobileUniverse`} data-domain={domain.key}>
-        <div className={styles.cardVisual}><span className={styles.domainGlyph}>{domain.key==="transphere"?<Image className={styles.transphereLogo} src="/transphere-logo-v6.png" alt="Transphère" width={52} height={34} unoptimized/>:<DomainGlyph domain={domain.key}/>}</span></div>
+        <div className={styles.cardVisual}><span className={styles.domainGlyph}>{domain.key==="transphere"?<Image src="/transphere-logo-v6.png" alt="Transphère" width={52} height={34} style={{width:"50px",height:"auto",objectFit:"contain"}} unoptimized/>:<DomainGlyph domain={domain.key}/>}</span></div>
         <div className={styles.cardCopy}><h2>{domain.label}</h2><p>{domain.description}</p></div>
         <footer><span>OUVRIR L’UNIVERS</span><i>›</i></footer>
       </a>)}
