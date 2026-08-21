@@ -14,6 +14,7 @@ import "./toolbox-arc-reactor.css";
 import ToolboxShell from "./toolbox-shell";
 import ActivityColorBinder from "./activity-color-binder";
 import KioskFetchBridge from "./kiosk-fetch-bridge";
+import KioskMaintenanceGuardian from "./kiosk-maintenance-guardian";
 import PwaRegister from "./pwa-register";
 import DailyAnimationOneClick from "./daily-animation-one-click-v2";
 import TransphereAccessManager from "./transphere-access-manager";
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return <html lang="fr"><body>
     <PwaRegister />
     <KioskFetchBridge />
+    <KioskMaintenanceGuardian />
     <ActivityColorBinder />
     <FriendlyLoadingPatch />
     <ToolboxShell />
