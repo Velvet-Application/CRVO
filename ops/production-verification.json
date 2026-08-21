@@ -1,37 +1,37 @@
 {
-  "checkedAt": "2026-08-21T18:34:42.422Z",
-  "commit": "bd18c2f930f66d1ee22d64c35acced3ec33b170e",
-  "workflowRun": "32514047929",
+  "checkedAt": "2026-08-21T18:35:21.908Z",
+  "commit": "eb116953af30ad600bd18ece5c48db0edc827ea9",
+  "workflowRun": "32514104534",
   "productionOrigin": "https://kpi-crvo.cyril-gay.workers.dev",
-  "success": false,
-  "attempts": 0,
+  "success": true,
+  "attempts": 1,
   "checks": {
     "health": {
-      "status": 0,
+      "status": 200,
       "ok": true,
       "dataReady": true,
       "trustLevel": "green",
       "dataTrustOk": true,
-      "ftpAgeMinutes": 20.5,
-      "sourceAgeMinutes": 30.4
+      "ftpAgeMinutes": 21.5,
+      "sourceAgeMinutes": 31.4
     },
     "maintenance": {
-      "status": 0
+      "status": 307
     },
     "maintenanceApi": {
-      "status": 0
+      "status": 401
     },
     "atelier": {
-      "status": 0
+      "status": 200
     },
     "direction": {
-      "status": 0
+      "status": 401
     },
     "manifest": {
-      "status": 0
+      "status": 200
     },
     "serviceWorker": {
-      "status": 0
+      "status": 200
     }
   }
 }
