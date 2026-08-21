@@ -51,7 +51,7 @@ export async function POST(request:Request){
     if(action==="send"){
       const thread=String(body.threadId??"");
       if(!thread)return json({error:"Conversation requise."},400);
-      const payload=await authRpc<Record<string,unknown>>("kpi_internal_chat_send_v2",{
+      const payload=await authRpc<Record<string,unknown>>("kpi_internal_chat_send_v3",{
         p_session_hash:current.tokenHash,
         p_thread_id:thread,
         p_body:body.message==null?null:String(body.message),
