@@ -1,0 +1,57 @@
+name: Apply exact CRVO aerial map
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-crvo-aerial-zones.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Install exact aerial background and calibrated marker coordinates
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          tsx_path=Path('app/developpement/production-parking-locator.tsx')
+          css_path=Path('app/developpement/production-parking-locator.module.css')
+          tsx=tsx_path.read_text()
+          css=css_path.read_text()
+
+          zone_points='const ZONE_POINTS:Record<string,[number,number]>={"A0":[56.44,5.7],"A1":[64.46,5.1],"A2":[66.4,5.3],"A3":[68.33,5.5],"A4":[70.23,5.7],"A5":[72.12,5.9],"A6":[74.0,6.09],"A7":[75.86,6.29],"A8":[77.7,6.48],"A9":[79.53,6.67],"A10":[81.34,6.86],"A11":[83.14,7.04],"A12":[84.92,7.23],"A13":[86.68,7.41],"A14":[88.43,7.6],"C1":[62.94,54.72],"C2":[62.98,49.04],"C3":[63.02,43.31],"C4":[63.05,37.53],"C5":[63.09,31.71],"C6":[55.77,34.86],"C7":[55.77,34.86],"C8":[55.78,27.34],"C9":[55.78,27.34],"C10":[55.78,19.73],"C11":[55.78,19.73],"C12":[55.79,12.05],"CT1":[84.12,34.98],"CT2":[84.23,39.6],"CT3":[84.34,44.19],"CT4":[84.45,48.74],"CT5":[84.55,53.26],"CT6":[84.66,57.75],"CT7":[84.77,62.2],"CT8":[84.87,66.62],"CT9":[84.98,71.02],"D1":[71.42,26.99],"D2":[66.92,26.75],"D3":[62.33,26.5],"D4":[57.64,26.24],"D5":[52.85,25.98],"D6":[47.95,25.72],"D7":[42.95,25.44],"D8":[71.42,26.99],"D9":[66.92,26.75],"D10":[62.33,26.5],"D11":[57.64,26.24],"D12":[52.85,25.98],"D13":[47.95,25.72],"D14":[42.95,25.44],"D15":[65.95,20.69],"D16":[61.25,20.38],"D17":[56.44,20.05],"D18":[51.52,19.6],"D19":[46.5,19.13],"D20":[37.65,24.53],"D21":[65.95,20.69],"D22":[61.25,20.38],"D23":[56.44,20.05],"D24":[51.52,19.6],"D25":[46.5,19.13],"D26":[53.5,13.85],"D27":[48.5,13.45],"D28":[43.55,13.04],"D29":[41.13,18.65],"D30":[53.5,13.85],"D31":[48.5,13.45],"D32":[43.55,13.04],"D33":[49.61,7.54],"D34":[44.95,6.95],"J1":[76.44,41.13],"J2":[76.56,45.11],"J3":[76.68,49.06],"J4":[76.8,52.99],"J5":[76.92,56.9],"J6":[77.03,60.78],"J7":[77.15,64.63],"J8":[77.26,68.47],"J9":[77.38,72.28],"J10":[77.49,76.06],"M1":[88.25,34.96],"M2":[88.32,38.65],"M3":[88.4,42.31],"M4":[88.47,45.96],"M5":[88.55,49.58],"M6":[88.62,53.18],"M7":[88.7,56.76],"M8":[88.77,60.32],"M9":[88.84,63.86],"M10":[88.91,67.38],"M11":[88.98,70.88],"M12":[89.06,74.35],"M13":[89.13,77.81],"M14":[89.2,81.25],"V1":[57.55,56.8],"V2":[57.75,61.32],"V3":[57.96,65.8],"V4":[58.16,70.25],"Z1":[82.55,78.54],"Z2":[82.5,83.63],"Z3":[77.88,78.55],"Z4":[77.84,83.7]};'
+
+          start=tsx.index('const D_POINTS:')
+          end=tsx.index('function normalize', start)
+          tsx=tsx[:start]+zone_points+'\n\n'+tsx[end:]
+
+          pstart=tsx.index('function pointForToken')
+          pend=tsx.index('function resolveLocation', pstart)
+          tsx=tsx[:pstart]+'function pointForToken(token:string):[number,number]|null{return ZONE_POINTS[token]||null}\n'+tsx[pend:]
+
+          tsx=tsx.replace('CRVO Lens · Rue Alexis Halette · 62300 Lens. Les extérieurs du site sont volontairement floutés. Le parking visiteur est positionné entre le poste de garde et le bâtiment conservé.','CRVO Lens · Rue Alexis Halette · 62300 Lens. Vue aérienne fournie par l’utilisateur, affichée sans reconstruction. Seul le zonage opérationnel est superposé.')
+
+          css=css.replace('.mapCanvas{position:relative;width:100%;height:100%;overflow:hidden;', '.mapCanvas{position:relative;height:100%;width:auto;aspect-ratio:943/879;max-width:100%;max-height:100%;overflow:hidden;')
+          css=css.replace('background:#061522 url("/crvo-lens-aerial-exact.png") center center/contain no-repeat;', 'background-color:#061522;background-image:url("/crvo-lens-zones-overlay.svg"),url("/crvo-lens-aerial-source.png");background-position:center,center;background-size:100% 100%,100% 100%;background-repeat:no-repeat,no-repeat;')
+          css=css.replace('@media(max-width:1050px){.overlay', '@media(max-width:1050px){.mapCanvas{width:100%;height:auto;max-height:100%;aspect-ratio:943/879}.overlay')
+
+          tsx_path.write_text(tsx)
+          css_path.write_text(css)
+          PY
+      - name: Commit Toolbox map update
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/developpement/production-parking-locator.tsx app/developpement/production-parking-locator.module.css public/crvo-lens-zones-overlay.svg public/crvo-lens-aerial-source.png
+          git commit -m 'feat(production): use exact aerial photo with calibrated zone overlay'
+          git push origin HEAD:main
