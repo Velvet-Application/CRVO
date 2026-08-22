@@ -14,6 +14,7 @@ type Vehicle = {
   statusAgeDays: number | null;
   factoryAgeDays: number | null;
   alert: string | null;
+  remainingActivities?: string[];
   updatedAt: string | null;
 };
 type Metrics = {
@@ -50,7 +51,6 @@ type PortalPayload = {
   isClientAdmin?: boolean;
 };
 type Tab = "overview" | "vehicles" | "claims";
-
 type Stage = { label: string; progress: number; detail: string };
 
 function n(value: unknown) {
@@ -95,6 +95,9 @@ function shortVin(vin: string | null) {
   if (!vin) return "VIN non renseigné";
   return `VIN ···${vin.slice(-6)}`;
 }
+function remaining(vehicle: Vehicle) {
+  return Array.isArray(vehicle.remainingActivities) ? vehicle.remainingActivities.filter(Boolean) : [];
+}
 async function fileData(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -114,6 +117,7 @@ export default function ClientPortalPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [claimOpen, setClaimOpen] = useState(false);
   const [claimSaving, setClaimSaving] = useState(false);
   const [claimRegistration, setClaimRegistration] = useState("");
@@ -138,6 +142,7 @@ export default function ClientPortalPage() {
       if (!response.ok) throw new Error(data.error || "Données indisponibles.");
       setPayload(data as PortalPayload);
       setSelectedClient(String(data.client ?? client ?? ""));
+      setSelectedVehicle(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Données indisponibles.");
     } finally {
@@ -157,6 +162,7 @@ export default function ClientPortalPage() {
   const claims = payload?.claims ?? [];
 
   function openClaim(registration = "") {
+    setSelectedVehicle(null);
     setClaimRegistration(registration);
     setClaimCategory("Carrosserie");
     setClaimDescription("");
@@ -274,7 +280,7 @@ export default function ClientPortalPage() {
       <section className={styles.panel}>
         <div className={styles.panelHead}><div><span>VOS VÉHICULES</span><h2>À suivre aujourd’hui</h2></div><button onClick={() => setTab("vehicles")}>Voir tout</button></div>
         <div className={styles.vehiclePreview}>
-          {vehicles.slice(0, 4).map((vehicle) => <VehicleCard key={`${vehicle.client}-${vehicle.registration}`} vehicle={vehicle} onClaim={() => openClaim(vehicle.registration)} compact />)}
+          {vehicles.slice(0, 4).map((vehicle) => <VehicleCard key={`${vehicle.client}-${vehicle.registration}`} vehicle={vehicle} onOpen={() => setSelectedVehicle(vehicle)} onClaim={() => openClaim(vehicle.registration)} compact />)}
           {!vehicles.length && <p className={styles.empty}>Aucun véhicule en cours pour cette concession.</p>}
         </div>
       </section>
@@ -291,7 +297,7 @@ export default function ClientPortalPage() {
     {payload && tab === "vehicles" && <section className={styles.panel}>
       <div className={styles.panelHead}><div><span>PARC EN COURS</span><h2>{filteredVehicles.length} véhicule{filteredVehicles.length > 1 ? "s" : ""}</h2></div></div>
       <div className={styles.search}><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Immatriculation, VIN ou modèle…" autoComplete="off" /></div>
-      <div className={styles.vehicleList}>{filteredVehicles.map((vehicle) => <VehicleCard key={`${vehicle.client}-${vehicle.registration}`} vehicle={vehicle} onClaim={() => openClaim(vehicle.registration)} />)}</div>
+      <div className={styles.vehicleList}>{filteredVehicles.map((vehicle) => <VehicleCard key={`${vehicle.client}-${vehicle.registration}`} vehicle={vehicle} onOpen={() => setSelectedVehicle(vehicle)} onClaim={() => openClaim(vehicle.registration)} />)}</div>
       {!filteredVehicles.length && <p className={styles.empty}>Aucun véhicule ne correspond à cette recherche.</p>}
     </section>}
 
@@ -308,6 +314,8 @@ export default function ClientPortalPage() {
         {!claims.length && <p className={styles.empty}>Aucune réclamation enregistrée pour cette concession.</p>}
       </div>
     </section>}
+
+    {selectedVehicle && <VehicleDetail vehicle={selectedVehicle} onClose={() => setSelectedVehicle(null)} onClaim={() => openClaim(selectedVehicle.registration)} />}
 
     {claimOpen && <div className={styles.modalBackdrop} onMouseDown={(event) => { if (event.target === event.currentTarget && !claimSaving) setClaimOpen(false); }}>
       <form className={styles.claimSheet} onSubmit={submitClaim}>
@@ -330,13 +338,61 @@ export default function ClientPortalPage() {
   </main>;
 }
 
-function VehicleCard({ vehicle, onClaim, compact = false }: { vehicle: Vehicle; onClaim: () => void; compact?: boolean }) {
+function RemainingWork({ vehicle, compact = false }: { vehicle: Vehicle; compact?: boolean }) {
+  const items = remaining(vehicle);
+  const shown = compact ? items.slice(0, 3) : items.slice(0, 5);
+  const hidden = Math.max(0, items.length - shown.length);
+  return <div style={{ marginTop: 12, minWidth: 0 }}>
+    <div style={{ color: "#6b8291", fontSize: 8, fontWeight: 900, letterSpacing: ".08em", textTransform: "uppercase" }}>Reste à réaliser</div>
+    {items.length ? <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7, minWidth: 0 }}>
+      {shown.map((item) => <span key={item} style={{ maxWidth: "100%", padding: "5px 8px", borderRadius: 999, background: "#edf6fb", color: "#0068a7", fontSize: 8, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item}</span>)}
+      {hidden > 0 && <span style={{ padding: "5px 8px", borderRadius: 999, background: "#f1f4f6", color: "#657b89", fontSize: 8, fontWeight: 800 }}>+{hidden}</span>}
+    </div> : <div style={{ marginTop: 6, color: "#2b7e68", fontSize: 9, fontWeight: 800 }}>Aucune opération atelier restante identifiée.</div>}
+  </div>;
+}
+
+function VehicleCard({ vehicle, onOpen, onClaim, compact = false }: { vehicle: Vehicle; onOpen: () => void; onClaim: () => void; compact?: boolean }) {
   const state = stage(vehicle.status);
   return <article className={`${styles.vehicleCard} ${compact ? styles.compactVehicle : ""}`}>
     <div className={styles.vehicleTop}><div><span>{vehicle.registration}</span><strong>{vehicle.model || "Véhicule"}</strong><small>{shortVin(vehicle.vin)}</small></div><em>{state.label}</em></div>
     <div className={styles.progress}><i style={{ width: `${state.progress}%` }} /></div>
     <p>{state.detail}</p>
+    <RemainingWork vehicle={vehicle} compact={compact} />
     <div className={styles.vehicleMeta}><span>Au CRVO <strong>{one(vehicle.factoryAgeDays, " j")}</strong></span>{vehicle.alert && <span className={styles.vehicleAlert}>Suivi renforcé</span>}</div>
+    <button type="button" onClick={onOpen}>Voir la fiche véhicule</button>
     {!compact && <button type="button" onClick={onClaim}>Signaler un problème sur ce véhicule</button>}
   </article>;
+}
+
+function VehicleDetail({ vehicle, onClose, onClaim }: { vehicle: Vehicle; onClose: () => void; onClaim: () => void }) {
+  const state = stage(vehicle.status);
+  const items = remaining(vehicle);
+  return <div className={styles.modalBackdrop} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className={styles.claimSheet} aria-modal="true" role="dialog" aria-label={`Fiche véhicule ${vehicle.registration}`}>
+      <div className={styles.sheetHandle} />
+      <div className={styles.sheetHead}><div><span>FICHE VÉHICULE</span><h2>{vehicle.registration}</h2><p>{vehicle.model || "Véhicule"} · {shortVin(vehicle.vin)}</p></div><button type="button" onClick={onClose} aria-label="Fermer">×</button></div>
+      <div style={{ border: "1px solid #dbe8ef", borderRadius: 16, background: "#f8fbfd", padding: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><div><div style={{ color: "#718696", fontSize: 8, fontWeight: 900, textTransform: "uppercase" }}>Étape actuelle</div><strong style={{ display: "block", marginTop: 4, color: "#004f9f", fontSize: 17 }}>{state.label}</strong></div><span style={{ padding: "6px 9px", borderRadius: 999, background: "#eaf6fc", color: "#0074af", fontSize: 8, fontWeight: 900 }}>{one(vehicle.factoryAgeDays, " j au CRVO")}</span></div>
+        <div className={styles.progress}><i style={{ width: `${state.progress}%` }} /></div>
+        <p style={{ minHeight: 0, marginBottom: 0 }}>{state.detail}</p>
+      </div>
+
+      <div style={{ marginTop: 18 }}>
+        <div style={{ color: "#009edb", fontSize: 8, fontWeight: 900, letterSpacing: ".12em" }}>TRAVAUX RESTANTS</div>
+        <h3 style={{ margin: "5px 0 4px", color: "#173b52", fontSize: 18 }}>Ce qu’il reste à réaliser</h3>
+        <p style={{ margin: 0, color: "#7b8f9d", fontSize: 9, lineHeight: 1.5 }}>Ces éléments proviennent directement du suivi du dossier véhicule.</p>
+        {items.length ? <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))", gap: 8, marginTop: 13 }}>
+          {items.map((item, index) => <div key={item} style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 9, border: "1px solid #dce8ef", borderRadius: 12, background: "#fbfdfe", padding: "10px 11px" }}><span style={{ flex: "0 0 auto", width: 22, height: 22, display: "grid", placeItems: "center", borderRadius: 999, background: "#eaf6fc", color: "#0074af", fontSize: 8, fontWeight: 900 }}>{index + 1}</span><strong style={{ minWidth: 0, color: "#31566d", fontSize: 10, overflowWrap: "anywhere" }}>{item}</strong></div>)}
+        </div> : <div style={{ marginTop: 13, borderRadius: 12, background: "#eaf9f0", padding: 13, color: "#247447", fontSize: 10, fontWeight: 800 }}>Aucune opération atelier restante identifiée sur le dossier.</div>}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, marginTop: 18 }}>
+        <div style={{ borderTop: "1px solid #e3edf3", paddingTop: 10 }}><span style={{ display: "block", color: "#81939f", fontSize: 7, fontWeight: 800, textTransform: "uppercase" }}>Kilométrage</span><strong style={{ display: "block", marginTop: 4, color: "#264a60", fontSize: 12 }}>{vehicle.mileage == null ? "—" : `${n(vehicle.mileage).toLocaleString("fr-FR")} km`}</strong></div>
+        <div style={{ borderTop: "1px solid #e3edf3", paddingTop: 10 }}><span style={{ display: "block", color: "#81939f", fontSize: 7, fontWeight: 800, textTransform: "uppercase" }}>Ancienneté statut</span><strong style={{ display: "block", marginTop: 4, color: "#264a60", fontSize: 12 }}>{one(vehicle.statusAgeDays, " j")}</strong></div>
+        <div style={{ borderTop: "1px solid #e3edf3", paddingTop: 10 }}><span style={{ display: "block", color: "#81939f", fontSize: 7, fontWeight: 800, textTransform: "uppercase" }}>Actualisé</span><strong style={{ display: "block", marginTop: 4, color: "#264a60", fontSize: 12 }}>{date(vehicle.updatedAt)}</strong></div>
+      </div>
+
+      <button className={styles.submitButton} type="button" onClick={onClaim}>Signaler un problème sur ce véhicule</button>
+    </section>
+  </div>;
 }
