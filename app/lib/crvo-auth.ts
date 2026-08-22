@@ -6,7 +6,7 @@ export const CRVO_SESSION_SECONDS = 12 * 60 * 60;
 export const CRVO_SUPABASE_URL = "https://tvmkhvfmdstkunwwuzuz.supabase.co";
 export const CRVO_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_bGCdOoq05alXNTOtouIQcQ_HX9jpKnv";
 
-export type AccessProfile = "admin" | "service_manager" | "team_manager" | "custom" | "transphere" | "transphere_manager" | "hr" | "trainer";
+export type AccessProfile = "admin" | "service_manager" | "team_manager" | "custom" | "transphere" | "transphere_manager" | "hr" | "trainer" | "client" | "client_admin";
 
 export type CrvoSession = {
   ok: boolean;
@@ -21,12 +21,19 @@ export type CrvoSession = {
   productivity_scopes: string[];
   team_scopes: string[];
   can_manage_bonus_workflow: boolean;
+  client_scopes: string[];
 };
 
 export function hasPageAccess(session: CrvoSession, key: string) {
   return session.role === "admin"
     || session.page_permissions?.includes("*")
     || session.page_permissions?.includes(key);
+}
+
+export function isClientPortalSession(session: Pick<CrvoSession, "access_profile" | "page_permissions">) {
+  return session.access_profile === "client"
+    || session.access_profile === "client_admin"
+    || session.page_permissions?.includes("client_portal");
 }
 
 export async function sha256Hex(value: string) {
@@ -55,7 +62,7 @@ export async function authRpc<T>(name: string, body: Record<string, unknown>): P
 export async function validateSessionToken(token: string | null | undefined): Promise<CrvoSession | null> {
   if (!token || token.length < 32) return null;
   const hash = await sha256Hex(token);
-  const rows = await authRpc<CrvoSession[]>("crvo_auth_context_v2", { p_token_hash: hash });
+  const rows = await authRpc<CrvoSession[]>("crvo_auth_context_v3", { p_token_hash: hash });
   return rows[0] ?? null;
 }
 
@@ -64,7 +71,7 @@ export async function currentSession(): Promise<{ token: string; tokenHash: stri
   const token = store.get(CRVO_SESSION_COOKIE)?.value;
   if (!token) return null;
   const tokenHash = await sha256Hex(token);
-  const rows = await authRpc<CrvoSession[]>("crvo_auth_context_v2", { p_token_hash: tokenHash });
+  const rows = await authRpc<CrvoSession[]>("crvo_auth_context_v3", { p_token_hash: tokenHash });
   const session = rows[0];
   if (!session?.ok) return null;
   return { token, tokenHash, session };

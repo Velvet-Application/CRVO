@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentSession } from "../../../lib/crvo-auth";
+import { currentSession, isClientPortalSession } from "../../../lib/crvo-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +18,8 @@ export async function GET() {
       pagePermissions: session.page_permissions ?? [],
       productivityScopes: session.productivity_scopes ?? [],
       teamScopes: session.team_scopes ?? [],
+      clientScopes: session.client_scopes ?? [],
+      clientPortal: isClientPortalSession(session),
       canManageBonusWorkflow: Boolean(session.can_manage_bonus_workflow),
       mustChangePassword: session.must_change_password,
       expiresAt: session.expires_at,

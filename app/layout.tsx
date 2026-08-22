@@ -24,6 +24,7 @@ import AtelierPublicScreen from "./atelier-public-screen";
 import FriendlyLoadingPatch from "./friendly-loading-patch";
 import NotificationCenter from "./notification-center";
 import InternalChatLauncher from "./internal-chat-launcher";
+import ClientPortalGuard from "./client-portal-guard";
 
 export const metadata: Metadata = {
   title: "ToolBox CRVO Lens",
@@ -49,6 +50,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <KioskMaintenanceGuardian />
     <ActivityColorBinder />
     <FriendlyLoadingPatch />
+    <ClientPortalGuard />
     <ToolboxShell />
     <NotificationCenter />
     <InternalChatLauncher />
