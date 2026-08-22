@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentSession } from "../../lib/crvo-auth";
+import { authRpc, currentSession } from "../../lib/crvo-auth";
 import { supabaseRestHeaders } from "../../supabase-rest";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,9 @@ type PersonRow={employee_key?:string|null;matricule?:string|null;full_name?:stri
 type ClientRow={client?:string|null;vehicle_count?:number|null;expertise_count?:number|null;chiffrage_count?:number|null;controle_technique_count?:number|null;mecanique_count?:number|null;carrosserie_count?:number|null;preparation_count?:number|null;qualite_count?:number|null;sortie_usine_count?:number|null;source_modified_at?:string|null};
 type SearchKind="vehicle"|"claim"|"client"|"person";
 type RpcRow={kind:SearchKind;source_id:string;payload:Record<string,unknown>;score:number};
-type SearchResult={id:string;kind:SearchKind;eyebrow:string;title:string;subtitle:string;href:string;sourceLabel:string;badges:string[];summary:Array<{label:string;value:string}>};
+type QuickLocation={location:string;sourceModifiedAt:string|null;site:string|null};
+type SearchResult={id:string;kind:SearchKind;eyebrow:string;title:string;subtitle:string;href:string;sourceLabel:string;badges:string[];summary:Array<{label:string;value:string}>;quickLocation?:QuickLocation|null};
+type LocationRow={source_modified_at?:string|null;metadata?:Record<string,unknown>|null};
 
 function env(){const supabaseUrl=process.env.SUPABASE_URL;const secretKey=process.env.SUPABASE_SECRET_KEY;return supabaseUrl&&secretKey?{supabaseUrl,secretKey}:null;}
 function clean(value:unknown){return String(value??"").trim();}
@@ -21,10 +23,29 @@ function dateLabel(value:unknown){const text=clean(value);if(!text)return"—";c
 function safeQuery(value:string){return value.replace(/[\u0000-\u001f\u007f]/g," ").replace(/\s+/g," ").trim().slice(0,80);}
 function encoded(value:string){return encodeURIComponent(value);}
 function summary(...rows:Array<[string,unknown]>){return rows.filter(([,value])=>clean(value)).map(([label,value])=>({label,value:shown(value)}));}
+function textMeta(row:LocationRow|undefined,key:string){const value=row?.metadata?.[key];return typeof value==="string"&&value.trim()?value.trim():null;}
+function inFactoryStatus(status:string){const value=status.trim().toLowerCase();return !["transport à vide","en attente de transport aller","sortie usine","en attente de transport retour","transport retour planifié","transport retour effectué"].includes(value);}
 
-function vehicleResult(row:VehicleRow,index:number):SearchResult{
+async function quickLocationForVehicle(row:VehicleRow,tokenHash:string):Promise<QuickLocation|null>{
+  if(!inFactoryStatus(clean(row.status)))return null;
+  if(!clean(row.vin)&&!clean(row.registration)&&!clean(row.work_order))return null;
+  try{
+    const rows=await authRpc<LocationRow[]>("kpi_production_dev_location_find",{
+      p_token_hash:tokenHash,
+      p_vin:row.vin??null,
+      p_registration:row.registration??null,
+      p_work_order:row.work_order??null,
+    });
+    const locationRow=Array.isArray(rows)?rows[0]:undefined;
+    const location=textMeta(locationRow,"position");
+    if(!location)return null;
+    return{location,sourceModifiedAt:locationRow?.source_modified_at??null,site:textMeta(locationRow,"site")};
+  }catch{return null;}
+}
+
+function vehicleResult(row:VehicleRow,index:number,quickLocation:QuickLocation|null=null):SearchResult{
   const registration=shown(row.registration,"Véhicule");const client=shown(row.client,"Client non renseigné");
-  return{id:`vehicle-${clean(row.vin)||clean(row.work_order)||clean(row.registration)||index}`,kind:"vehicle",eyebrow:"VÉHICULE / OR",title:registration,subtitle:[clean(row.model),clean(row.status)].filter(Boolean).join(" · ")||client,href:`/clients?client=${encoded(clean(row.client))}&vehicle=${encoded(clean(row.registration)||clean(row.vin)||clean(row.work_order))}`,sourceLabel:"Parc & dossier client",badges:[clean(row.urgency),clean(row.alert)].filter(Boolean),summary:summary(["Client",row.client],["VIN",row.vin],["N° OR",row.work_order],["Modèle",row.model],["Kilométrage",row.mileage!=null?`${numberLabel(row.mileage)} km`:null],["Statut",row.status],["Âge statut",row.status_age_days!=null?`${numberLabel(row.status_age_days)} j`:null],["Âge usine",row.factory_age_days!=null?`${numberLabel(row.factory_age_days)} j`:null])};
+  return{id:`vehicle-${clean(row.vin)||clean(row.work_order)||clean(row.registration)||index}`,kind:"vehicle",eyebrow:"VÉHICULE / OR",title:registration,subtitle:[clean(row.model),clean(row.status)].filter(Boolean).join(" · ")||client,href:`/clients?client=${encoded(clean(row.client))}&vehicle=${encoded(clean(row.registration)||clean(row.vin)||clean(row.work_order))}`,sourceLabel:"Parc & dossier client",badges:[clean(row.urgency),clean(row.alert)].filter(Boolean),summary:summary(["Client",row.client],["VIN",row.vin],["N° OR",row.work_order],["Modèle",row.model],["Kilométrage",row.mileage!=null?`${numberLabel(row.mileage)} km`:null],["Statut",row.status],["Âge statut",row.status_age_days!=null?`${numberLabel(row.status_age_days)} j`:null],["Âge usine",row.factory_age_days!=null?`${numberLabel(row.factory_age_days)} j`:null]),quickLocation};
 }
 function claimResult(row:ClaimRow,index:number):SearchResult{
   const claim=shown(row.claim_number,"Réclamation");const sourceId=clean(row.id)||String(index);
@@ -58,8 +79,10 @@ export async function GET(request:Request){
   if(q.length<2)return NextResponse.json({query:raw,results:[],total:0},{headers:{"Cache-Control":"private, no-store"}});
   try{
     const rows=await searchRpc(config.supabaseUrl,config.secretKey,q);
+    const firstVehicleIndex=rows.findIndex(row=>row.kind==="vehicle");
+    const firstVehicleQuick=firstVehicleIndex>=0?await quickLocationForVehicle(rows[firstVehicleIndex].payload as VehicleRow,session.tokenHash):null;
     const results:SearchResult[]=rows.map((row,index)=>{
-      if(row.kind==="vehicle")return vehicleResult(row.payload as VehicleRow,index);
+      if(row.kind==="vehicle")return vehicleResult(row.payload as VehicleRow,index,index===firstVehicleIndex?firstVehicleQuick:null);
       if(row.kind==="claim")return claimResult(row.payload as ClaimRow,index);
       if(row.kind==="person")return personResult(row.payload as PersonRow,index);
       return clientResult(row.payload as ClientRow,index);
