@@ -24,7 +24,12 @@ export default function LoginPage() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Connexion impossible.");
-      const next = payload.user?.mustChangePassword ? "/account?change=1" : params.get("next") || "/";
+      const requestedNext = params.get("next");
+      const next = payload.user?.mustChangePassword
+        ? "/account?change=1"
+        : payload.user?.clientPortal
+          ? "/espace-client"
+          : requestedNext || "/";
       router.replace(next.startsWith("/") ? next : "/");
       router.refresh();
     } catch (cause) {
