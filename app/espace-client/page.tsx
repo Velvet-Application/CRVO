@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import styles from "./client-portal.module.css";
 
-type ClientOption = { client: string; vehicleCount: number; updatedAt: string | null };
+type ClientOption = { client: string; vehicleCount: number; inboundCount?: number; updatedAt: string | null };
 type Vehicle = {
   client: string;
   registration: string;
@@ -15,6 +15,20 @@ type Vehicle = {
   factoryAgeDays: number | null;
   alert: string | null;
   remainingActivities?: string[];
+  updatedAt: string | null;
+};
+type InboundVehicle = {
+  client: string;
+  registration: string;
+  vin: string | null;
+  model: string | null;
+  mileage: number | null;
+  sourceStatus: string | null;
+  manufacturerDelivery: boolean;
+  displayStatus: string;
+  movementLabel: string;
+  movementDetail: string;
+  statusAgeDays: number | null;
   updatedAt: string | null;
 };
 type Metrics = {
@@ -47,6 +61,7 @@ type PortalPayload = {
   summary?: { client: string; vehicleCount: number; updatedAt: string | null; snapshotAt: string | null };
   metrics?: Metrics;
   vehicles?: Vehicle[];
+  inboundVehicles?: InboundVehicle[];
   claims?: Claim[];
   isClientAdmin?: boolean;
 };
@@ -153,6 +168,7 @@ export default function ClientPortalPage() {
   useEffect(() => { void load(); }, []);
 
   const vehicles = payload?.vehicles ?? [];
+  const inboundVehicles = payload?.inboundVehicles ?? [];
   const filteredVehicles = useMemo(() => {
     const q = search.trim().toLocaleLowerCase("fr");
     if (!q) return vehicles;
@@ -254,7 +270,7 @@ export default function ClientPortalPage() {
       {(payload?.clients?.length ?? 0) > 1 && <label className={styles.clientPicker}>
         <span>Concession affichée</span>
         <select value={selectedClient} onChange={(event) => { const value = event.target.value; setSelectedClient(value); void load(value); }}>
-          {(payload?.clients ?? []).map((client) => <option key={client.client} value={client.client}>{client.client} · {client.vehicleCount} VO</option>)}
+          {(payload?.clients ?? []).map((client) => <option key={client.client} value={client.client}>{client.client} · {client.vehicleCount} au CRVO{n(client.inboundCount) > 0 ? ` · ${n(client.inboundCount)} attendu${n(client.inboundCount) > 1 ? "s" : ""}` : ""}</option>)}
         </select>
       </label>}
     </section>
@@ -276,6 +292,8 @@ export default function ClientPortalPage() {
         <article><span>FRE moyen</span><strong>{euro(metrics.freAverage)}</strong><small>sur l’encours rapproché</small></article>
         <article><span>Réclamations ouvertes</span><strong>{n(metrics.openClaims)}</strong><small>{n(metrics.claims30d)} sur les 30 derniers jours</small></article>
       </section>
+
+      <InboundTransportPanel vehicles={inboundVehicles} />
 
       <section className={styles.panel}>
         <div className={styles.panelHead}><div><span>VOS VÉHICULES</span><h2>À suivre aujourd’hui</h2></div><button onClick={() => setTab("vehicles")}>Voir tout</button></div>
@@ -336,6 +354,49 @@ export default function ClientPortalPage() {
       </form>
     </div>}
   </main>;
+}
+
+function InboundTransportPanel({ vehicles }: { vehicles: InboundVehicle[] }) {
+  if (!vehicles.length) return null;
+  const dealerPickup = vehicles.filter((vehicle) => !vehicle.manufacturerDelivery);
+  const manufacturer = vehicles.filter((vehicle) => vehicle.manufacturerDelivery);
+  return <section className={styles.panel} style={{ borderColor: "#c9dfec", background: "linear-gradient(145deg,#ffffff 0%,#f3f9fc 100%)" }}>
+    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 14 }}>
+      <div>
+        <span style={{ display: "block", color: "#009edb", fontSize: 8, fontWeight: 900, letterSpacing: ".13em" }}>ARRIVÉES CRVO</span>
+        <h2 style={{ margin: "4px 0 0", color: "#173b52", fontSize: 20 }}>Véhicules attendus au CRVO</h2>
+        <p style={{ margin: "6px 0 0", color: "#758b98", fontSize: 9, lineHeight: 1.45 }}>Tous les véhicules de votre concession actuellement en attente de transport vers le CRVO.</p>
+      </div>
+      <strong style={{ minWidth: 42, height: 42, display: "grid", placeItems: "center", borderRadius: 12, background: "#eaf6fc", color: "#0067a8", fontSize: 18 }}>{vehicles.length}</strong>
+    </div>
+
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 13, padding: "9px 11px", borderRadius: 11, background: "rgba(234,246,252,.72)", color: "#627b8c", fontSize: 8, lineHeight: 1.4 }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><i style={{ width: 7, height: 7, borderRadius: 999, background: "#004f9f" }} /> <strong style={{ color: "#31566d" }}>Retrait concession</strong> · véhicule à retirer dans votre concession</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><i style={{ width: 7, height: 7, borderRadius: 999, background: "#009edb" }} /> <strong style={{ color: "#31566d" }}>Livraison constructeur</strong> · livraison directe au CRVO</span>
+    </div>
+
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 10, maxHeight: 390, overflowY: "auto", paddingRight: 3 }}>
+      {vehicles.map((vehicle) => <article key={`${vehicle.client}-${vehicle.registration}`} style={{ minWidth: 0, border: "1px solid #dce8ef", borderRadius: 14, background: "rgba(255,255,255,.94)", padding: 13 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <strong style={{ display: "block", color: "#004f9f", fontSize: 13, letterSpacing: ".04em" }}>{vehicle.registration}</strong>
+            <span style={{ display: "block", marginTop: 3, color: "#2e4d61", fontSize: 10, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{vehicle.model || "Véhicule"}</span>
+            <small style={{ display: "block", marginTop: 3, color: "#8b9ba6", fontSize: 8 }}>{shortVin(vehicle.vin)}</small>
+          </div>
+          <span title={vehicle.movementDetail} style={{ flex: "0 0 auto", maxWidth: "48%", padding: "5px 7px", borderRadius: 999, background: vehicle.manufacturerDelivery ? "#e9f8fc" : "#edf3fb", color: vehicle.manufacturerDelivery ? "#00779f" : "#004f9f", fontSize: 7, fontWeight: 900, textAlign: "center" }}>{vehicle.movementLabel}</span>
+        </div>
+        <div style={{ marginTop: 11, borderLeft: `3px solid ${vehicle.manufacturerDelivery ? "#009edb" : "#004f9f"}`, padding: "8px 10px", background: "#f7fbfd" }}>
+          <strong style={{ display: "block", color: "#31566d", fontSize: 9 }}>{vehicle.displayStatus}</strong>
+          <span style={{ display: "block", marginTop: 3, color: "#718696", fontSize: 8, lineHeight: 1.4 }}>{vehicle.movementDetail}</span>
+        </div>
+      </article>)}
+    </div>
+
+    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12, color: "#7c919e", fontSize: 8 }}>
+      <span><strong style={{ color: "#31566d" }}>{dealerPickup.length}</strong> retrait{dealerPickup.length > 1 ? "s" : ""} concession</span>
+      <span><strong style={{ color: "#31566d" }}>{manufacturer.length}</strong> livraison{manufacturer.length > 1 ? "s" : ""} constructeur</span>
+    </div>
+  </section>;
 }
 
 function RemainingWork({ vehicle, compact = false }: { vehicle: Vehicle; compact?: boolean }) {
