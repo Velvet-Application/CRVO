@@ -69,6 +69,24 @@ export async function POST(request: Request) {
       result = await authRpc("kpi_pr_dev_upsert_package", { p_token_hash: gate.current.tokenHash, p_package: body.package || {} });
     } else if (action === "saveSetting") {
       result = await authRpc("kpi_pr_dev_save_setting", { p_token_hash: gate.current.tokenHash, p_key: body.key, p_value: body.value || {} });
+    } else if (action === "beginCatalogImport") {
+      result = await authRpc("kpi_pr_dev_import_begin", {
+        p_token_hash: gate.current.tokenHash,
+        p_source_name: body.sourceName || null,
+        p_source_fingerprint: body.sourceFingerprint || null,
+        p_mapping: body.mapping || {},
+      });
+    } else if (action === "importCatalogChunk") {
+      result = await authRpc("kpi_pr_dev_import_catalog_chunk", {
+        p_token_hash: gate.current.tokenHash,
+        p_batch_id: body.batchId,
+        p_rows: body.rows || [],
+      });
+    } else if (action === "completeCatalogImport") {
+      result = await authRpc("kpi_pr_dev_import_complete", {
+        p_token_hash: gate.current.tokenHash,
+        p_batch_id: body.batchId,
+      });
     } else {
       return NextResponse.json({ error: "Action PR inconnue." }, { status: 400 });
     }
