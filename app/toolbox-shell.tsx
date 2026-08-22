@@ -88,7 +88,10 @@ export default function ToolboxShell(){
         <span className={styles.tickerDot}/><div>{currentTicker?<><strong>{currentTicker.title}</strong><small>{currentTicker.message}</small></>:<><strong>ToolBox CRVO Lens</strong><small>Aucune notification prioritaire non lue.</small></>}</div><i>›</i>
       </a>
       <div className={styles.account}>
-        <a className={styles.bell} href="/notifications" aria-label={`Notifications${unread?` · ${unread} non lues`:""}`}><span>●</span>{unread>0&&<b>{unread>99?"99+":unread}</b>}</a>
+        <a className={styles.bell} href="/notifications" aria-label={`Notifications${unread?` · ${unread} non lues`:""}`} title="Notifications">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          {unread>0&&<b>{unread>99?"99+":unread}</b>}
+        </a>
         <a className={styles.identity} href="/account"><span>ESPACE SÉCURISÉ</span><strong>{me.displayName}</strong><small>{profileLabel(me)}</small></a>
         <button className={styles.logout} type="button" onClick={()=>void logout()} title="Se déconnecter">↪<span>Déconnexion</span></button>
       </div>

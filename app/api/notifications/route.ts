@@ -39,3 +39,28 @@ export async function PATCH(request: Request) {
     return json({ error: "Lecture impossible." }, 400);
   }
 }
+
+export async function DELETE(request: Request) {
+  const current = await currentSession();
+  if (!current) return json({ error: "Session requise." }, 401);
+  const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+  try {
+    if (body.id) {
+      const payload = await authRpc<Record<string, unknown>>("kpi_notifications_dismiss", {
+        p_session_hash: current.tokenHash,
+        p_notification_id: String(body.id),
+      });
+      return json(payload);
+    }
+    if (body.readOnly === true) {
+      const payload = await authRpc<Record<string, unknown>>("kpi_notifications_purge_read", {
+        p_session_hash: current.tokenHash,
+      });
+      return json(payload);
+    }
+    return json({ error: "Notification ou mode de purge requis." }, 400);
+  } catch (error) {
+    console.error("notifications_delete_failed", error);
+    return json({ error: "Suppression impossible." }, 400);
+  }
+}
