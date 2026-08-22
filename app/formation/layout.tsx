@@ -13,6 +13,7 @@ export default async function FormationLayout({children}:{children:React.ReactNo
     <nav className={styles.nav} aria-label="Navigation Formation">
       <span className={styles.brand}>PÔLE FORMATION</span>
       <Link className={styles.link} href="/formation">Formation & compétences</Link>
+      <Link className={styles.link} href="/formation/planning">Planning</Link>
       <Link className={`${styles.link} ${styles.afest}`} href="/formation/afest">AFEST · OPCO</Link>
     </nav>
     {children}
