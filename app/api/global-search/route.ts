@@ -12,7 +12,7 @@ type SearchKind="vehicle"|"claim"|"client"|"person";
 type RpcRow={kind:SearchKind;source_id:string;payload:Record<string,unknown>;score:number};
 type QuickLocation={location:string;sourceModifiedAt:string|null;site:string|null};
 type SearchResult={id:string;kind:SearchKind;eyebrow:string;title:string;subtitle:string;href:string;sourceLabel:string;badges:string[];summary:Array<{label:string;value:string}>;quickLocation?:QuickLocation|null};
-type LocationRow={source_modified_at?:string|null;metadata?:Record<string,unknown>|null};
+type LocationRow={location?:string|null;source_modified_at?:string|null;site?:string|null};
 
 function env(){const supabaseUrl=process.env.SUPABASE_URL;const secretKey=process.env.SUPABASE_SECRET_KEY;return supabaseUrl&&secretKey?{supabaseUrl,secretKey}:null;}
 function clean(value:unknown){return String(value??"").trim();}
@@ -23,23 +23,22 @@ function dateLabel(value:unknown){const text=clean(value);if(!text)return"—";c
 function safeQuery(value:string){return value.replace(/[\u0000-\u001f\u007f]/g," ").replace(/\s+/g," ").trim().slice(0,80);}
 function encoded(value:string){return encodeURIComponent(value);}
 function summary(...rows:Array<[string,unknown]>){return rows.filter(([,value])=>clean(value)).map(([label,value])=>({label,value:shown(value)}));}
-function textMeta(row:LocationRow|undefined,key:string){const value=row?.metadata?.[key];return typeof value==="string"&&value.trim()?value.trim():null;}
 function inFactoryStatus(status:string){const value=status.trim().toLowerCase();return !["transport à vide","en attente de transport aller","sortie usine","en attente de transport retour","transport retour planifié","transport retour effectué"].includes(value);}
 
 async function quickLocationForVehicle(row:VehicleRow,tokenHash:string):Promise<QuickLocation|null>{
   if(!inFactoryStatus(clean(row.status)))return null;
   if(!clean(row.vin)&&!clean(row.registration)&&!clean(row.work_order))return null;
   try{
-    const rows=await authRpc<LocationRow[]>("kpi_production_dev_location_find",{
+    const rows=await authRpc<LocationRow[]>("kpi_global_vehicle_location",{
       p_token_hash:tokenHash,
       p_vin:row.vin??null,
       p_registration:row.registration??null,
       p_work_order:row.work_order??null,
     });
     const locationRow=Array.isArray(rows)?rows[0]:undefined;
-    const location=textMeta(locationRow,"position");
+    const location=clean(locationRow?.location);
     if(!location)return null;
-    return{location,sourceModifiedAt:locationRow?.source_modified_at??null,site:textMeta(locationRow,"site")};
+    return{location,sourceModifiedAt:locationRow?.source_modified_at??null,site:clean(locationRow?.site)||null};
   }catch{return null;}
 }
 
