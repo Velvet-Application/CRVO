@@ -2,7 +2,7 @@
 
 import {useEffect,useRef,useState} from "react";
 import {usePathname} from "next/navigation";
-import styles from "./toolbox-shell.module.css";
+import styles from "./global-search.module.css";
 
 type SearchKind="vehicle"|"claim"|"client"|"person";
 type SearchResult={id:string;kind:SearchKind;eyebrow:string;title:string;subtitle:string;href:string;sourceLabel:string;badges:string[];summary:Array<{label:string;value:string}>};
