@@ -8,7 +8,7 @@ type Thread={unread:number};type Snapshot={threads:Thread[]};
 export default function InternalChatLauncher(){
   const pathname=usePathname();
   const[unread,setUnread]=useState(0);
-  const hidden=useMemo(()=>pathname==="/login"||pathname.startsWith("/qualite/client/")||pathname.startsWith("/q/")||pathname==="/expertise-mobile"||pathname.startsWith("/expertise/client/")||pathname==="/atelier"||pathname==="/direction"||pathname.startsWith("/messagerie"),[pathname]);
+  const hidden=useMemo(()=>pathname==="/login"||pathname.startsWith("/espace-client")||pathname.startsWith("/qualite/client/")||pathname.startsWith("/q/")||pathname==="/expertise-mobile"||pathname.startsWith("/expertise/client/")||pathname==="/atelier"||pathname==="/direction"||pathname.startsWith("/messagerie"),[pathname]);
   useEffect(()=>{
     if(hidden)return;
     let dead=false;
