@@ -11,6 +11,7 @@ import "./production-fixes.css";
 import "./expertise-workspace-fixes.css";
 import "./toolbox-navigation-overrides.css";
 import "./toolbox-arc-reactor.css";
+import "./parking-locator-edge-fix.css";
 import ToolboxShell from "./toolbox-shell";
 import ActivityColorBinder from "./activity-color-binder";
 import KioskFetchBridge from "./kiosk-fetch-bridge";
