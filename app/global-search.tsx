@@ -2,13 +2,35 @@
 
 import {useEffect,useRef,useState} from "react";
 import {usePathname} from "next/navigation";
+import {parkingPointForLocation} from "./parking-zone-coordinates";
 import styles from "./global-search.module.css";
 
 type SearchKind="vehicle"|"claim"|"client"|"person";
-type SearchResult={id:string;kind:SearchKind;eyebrow:string;title:string;subtitle:string;href:string;sourceLabel:string;badges:string[];summary:Array<{label:string;value:string}>};
+type QuickLocation={location:string;sourceModifiedAt:string|null;site:string|null};
+type SearchResult={id:string;kind:SearchKind;eyebrow:string;title:string;subtitle:string;href:string;sourceLabel:string;badges:string[];summary:Array<{label:string;value:string}>;quickLocation?:QuickLocation|null};
 type SearchPayload={query:string;results:SearchResult[];total:number;error?:string};
 
 const kindIcon:Record<SearchKind,string>={vehicle:"VO",claim:"RQ",client:"CL",person:"RH"};
+
+function VehicleQuickLocation({location}:{location:QuickLocation}){
+  const point=parkingPointForLocation(location.location);
+  if(!point)return null;
+  return <div className={styles.quickLocation}>
+    <div className={styles.quickLocationInfo}>
+      <span><i/> EN PRODUCTION</span>
+      <strong>{location.location}</strong>
+      <small>Position parc issue du dernier relevé FTP</small>
+      <b>Voir immédiatement où se trouve le véhicule</b>
+    </div>
+    <div className={styles.quickLocationMap} aria-label={`Position ${location.location} sur le parc`}>
+      <span className={styles.quickLocationPin} style={{left:`clamp(12px, ${point.x}%, calc(100% - 12px))`,top:`clamp(12px, ${point.y}%, calc(100% - 12px))`}}>
+        <i/>
+        <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M16 24l5-9c1-2 3-3 5-3h12c2 0 4 1 5 3l5 9 5 3c2 1 3 3 3 5v11c0 2-1 3-3 3h-2v3c0 2-1 3-3 3h-3c-2 0-3-1-3-3v-3H22v3c0 2-1 3-3 3h-3c-2 0-3-1-3-3v-3h-2c-2 0-3-1-3-3V32c0-2 1-4 3-5l5-3zm7-5l-3 7h24l-3-7c-.5-1-1-1-2-1H25c-1 0-2 0-2 1zm-6 13a4 4 0 100 8 4 4 0 000-8zm30 0a4 4 0 100 8 4 4 0 000-8z"/></svg>
+      </span>
+      <span className={styles.quickLocationCode}>{point.key}</span>
+    </div>
+  </div>;
+}
 
 export default function GlobalSearch(){
   const pathname=usePathname();
@@ -66,6 +88,7 @@ export default function GlobalSearch(){
             <div className={styles.searchResultTitle}><div><small>{result.eyebrow}</small><strong>{result.title}</strong></div><span>›</span></div>
             {result.subtitle&&<p>{result.subtitle}</p>}
             {result.badges.length>0&&<div className={styles.searchBadges}>{result.badges.map((badge,index)=><b key={`${badge}-${index}`}>{badge}</b>)}</div>}
+            {result.kind==="vehicle"&&result.quickLocation&&<VehicleQuickLocation location={result.quickLocation}/>}
             {result.summary.length>0&&<dl>{result.summary.slice(0,10).map(item=><div key={`${result.id}-${item.label}`}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}</dl>}
             <footer><span>Source</span><strong>{result.sourceLabel}</strong><i>Ouvrir →</i></footer>
           </div>
