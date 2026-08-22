@@ -22,3 +22,72 @@
 /* Keep emergency/source messages readable and visually controlled. */
 .main-workspace [class*="error"]{border-radius:10px!important;border:1px solid #f0d1cf!important;border-left:4px solid #eb5b56!important;box-shadow:none!important;font-size:13px!important;line-height:1.45!important}
 .main-workspace [class*="error"] strong{color:#8b3331!important}
+
+/* Mobile hardening: no business dossier, card, modal or wide table is allowed to
+   push the viewport wider than the device. Keep horizontal scrolling local to the
+   component that really needs it (mostly data tables). */
+@media (max-width:760px){
+  html,body{max-width:100%;overflow-x:hidden}
+  body{min-width:0}
+
+  .app-shell,.main-workspace,.view-page,main{min-width:0!important;max-width:100%!important;width:100%!important}
+  .main-workspace{overflow-x:hidden}
+  .view-page{padding-left:12px!important;padding-right:12px!important;padding-bottom:calc(104px + env(safe-area-inset-bottom))!important}
+
+  main>*,section,article,aside,form,fieldset,
+  [class*="card"],[class*="Card"],[class*="panel"],[class*="Panel"],
+  [class*="sheet"],[class*="Sheet"],[class*="drawer"],[class*="Drawer"]{
+    min-width:0!important;
+    max-width:100%;
+    box-sizing:border-box;
+  }
+
+  [class*="claimCard"],[class*="vehicleCard"],[class*="dossier"],[class*="Dossier"]{
+    min-width:0!important;
+    max-width:100%!important;
+    overflow:hidden;
+  }
+  [class*="claimCard"]>*,[class*="vehicleCard"]>*,[class*="dossier"]>*,[class*="Dossier"]>*{min-width:0}
+  [class*="claimCard"] p,[class*="claimCard"] strong,[class*="claimCard"] small,
+  [class*="vehicleCard"] p,[class*="vehicleCard"] strong,[class*="vehicleCard"] small,
+  [class*="dossier"] p,[class*="dossier"] strong,[class*="Dossier"] p,[class*="Dossier"] strong{
+    max-width:100%;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+  }
+
+  [role="dialog"],[class*="modal"],[class*="Modal"]{
+    width:min(720px,calc(100vw - 16px))!important;
+    max-width:calc(100vw - 16px)!important;
+    max-height:calc(100vh - 16px)!important;
+    max-height:calc(100dvh - 16px)!important;
+    overflow:auto!important;
+    overscroll-behavior:contain;
+  }
+
+  table{
+    display:block;
+    width:100%;
+    max-width:100%;
+    overflow-x:auto;
+    overscroll-behavior-inline:contain;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  img,video,canvas{max-width:100%;height:auto}
+  pre,code{max-width:100%}
+  pre{overflow:auto;-webkit-overflow-scrolling:touch}
+  input,select,textarea{min-width:0;max-width:100%;box-sizing:border-box}
+
+  /* Prevent iOS auto-zoom and keep search / claim entry usable on small screens. */
+  [class*="searchField"] input,[class*="claimSheet"] input,[class*="claimSheet"] select,[class*="claimSheet"] textarea{font-size:16px!important}
+
+  [class*="searchPopover"]{
+    left:8px!important;
+    right:8px!important;
+    width:auto!important;
+    max-width:calc(100vw - 16px)!important;
+    max-height:calc(100vh - 128px)!important;
+    max-height:calc(100dvh - 128px)!important;
+  }
+}
