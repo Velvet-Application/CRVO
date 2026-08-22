@@ -1,0 +1,43 @@
+name: Verify AFEST production
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/verify-afest-live.yml"
+  workflow_run:
+    workflows:
+      - "Deploy ToolBox CRVO to Cloudflare"
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-afest:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify AFEST route and API boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          origin="https://kpi-crvo.cyril-gay.workers.dev"
+          for attempt in $(seq 1 12); do
+            stamp="$(date +%s)"
+            api_code="$(curl -sS -o /tmp/afest-api.json -w '%{http_code}' "${origin}/api/training/afest?_=${stamp}" || true)"
+            page_code="$(curl -sS -o /tmp/afest-page.html -w '%{http_code}' --max-redirs 0 "${origin}/formation/afest?_=${stamp}" || true)"
+            health_code="$(curl -sS -o /tmp/health.json -w '%{http_code}' "${origin}/api/health?_=${stamp}" || true)"
+            echo "attempt=${attempt} afestApi=${api_code} afestPage=${page_code} health=${health_code}"
+            if [[ "${api_code}" == "403" && "${health_code}" == "200" && "${page_code}" != "404" && "${page_code}" != "000" && "${page_code}" -lt 500 ]]; then
+              echo "AFEST production smoke check passed."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "AFEST production smoke check failed." >&2
+          echo "API body:" >&2
+          cat /tmp/afest-api.json >&2 || true
+          exit 1
