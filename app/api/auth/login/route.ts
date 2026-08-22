@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { CRVO_SESSION_COOKIE, CRVO_SESSION_SECONDS, authRpc, newSessionToken, sha256Hex } from "../../../lib/crvo-auth";
+import { CRVO_SESSION_COOKIE, CRVO_SESSION_SECONDS, authRpc, isClientPortalSession, newSessionToken, sha256Hex, type CrvoSession } from "../../../lib/crvo-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +39,10 @@ export async function POST(request: Request) {
       );
     }
 
+    const contextRows = await authRpc<CrvoSession[]>("crvo_auth_context_v3", { p_token_hash: tokenHash });
+    const context = contextRows[0] ?? null;
+    const clientPortal = context ? isClientPortalSession(context) : false;
+
     const response = NextResponse.json({
       ok: true,
       user: {
@@ -47,6 +51,8 @@ export async function POST(request: Request) {
         displayName: row.display_name,
         role: row.role,
         mustChangePassword: row.must_change_password,
+        accessProfile: context?.access_profile ?? null,
+        clientPortal,
       },
     });
     response.cookies.set(CRVO_SESSION_COOKIE, token, {
