@@ -1,0 +1,3 @@
+/* Zones M are on the extreme right edge of the aerial. Keep the vehicle callout inside the map. */
+[role="dialog"][aria-label^="Localisation de"] [class*="marker"][style*="left: 94."] [class*="markerLabel"]{left:auto!important;right:33px!important;text-align:right!important}
+[role="dialog"][aria-label^="Localisation de"] [class*="marker"][style*="left: 94."] [class*="markerLabel"]:before{left:auto!important;right:-18px!important;transform:rotate(28deg)!important;transform-origin:left!important}
