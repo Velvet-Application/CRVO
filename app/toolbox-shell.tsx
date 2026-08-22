@@ -2,6 +2,7 @@
 
 import {useEffect,useMemo,useState} from "react";
 import {usePathname,useSearchParams} from "next/navigation";
+import GlobalSearch from "./global-search";
 import styles from "./toolbox-shell.module.css";
 
 type Me={displayName:string;role:"admin"|"user";accessProfile:string};
@@ -82,6 +83,7 @@ export default function ToolboxShell(){
   return <header className={styles.shell}>
     <div className={styles.mainRow}>
       <a className={styles.brand} href="/"><span>CRVO · LENS</span><strong>ToolBox CRVO Lens</strong></a>
+      <GlobalSearch/>
       <a className={`${styles.ticker} ${currentTicker?styles[currentTicker.severity]:""}`} href={tickerHref} aria-label={healthAlert?"Ouvrir le contrôle des sources":"Ouvrir les notifications"}>
         <span className={styles.tickerDot}/><div>{currentTicker?<><strong>{currentTicker.title}</strong><small>{currentTicker.message}</small></>:<><strong>ToolBox CRVO Lens</strong><small>Aucune notification prioritaire non lue.</small></>}</div><i>›</i>
       </a>
