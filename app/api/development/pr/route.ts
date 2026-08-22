@@ -22,20 +22,11 @@ export async function GET(request: Request) {
   try {
     let payload: PrPayload;
     if (workOrder) {
-      payload = await authRpc<PrPayload>("kpi_pr_dev_work_order", {
-        p_token_hash: gate.current.tokenHash,
-        p_work_order: workOrder,
-      });
+      payload = await authRpc<PrPayload>("kpi_pr_dev_work_order", { p_token_hash: gate.current.tokenHash, p_work_order: workOrder });
     } else if (inventory) {
-      payload = await authRpc<PrPayload>("kpi_pr_dev_inventory_get", {
-        p_token_hash: gate.current.tokenHash,
-        p_session_id: inventory,
-      });
+      payload = await authRpc<PrPayload>("kpi_pr_dev_inventory_get", { p_token_hash: gate.current.tokenHash, p_session_id: inventory });
     } else {
-      payload = await authRpc<PrPayload>("kpi_pr_dev_snapshot", {
-        p_token_hash: gate.current.tokenHash,
-        p_query: query,
-      });
+      payload = await authRpc<PrPayload>("kpi_pr_dev_snapshot", { p_token_hash: gate.current.tokenHash, p_query: query });
     }
     return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
@@ -72,6 +63,12 @@ export async function POST(request: Request) {
       result = await authRpc("kpi_pr_dev_count_inventory_line", { p_token_hash: gate.current.tokenHash, p_line_id: body.lineId, p_count: body.count });
     } else if (action === "closeInventory") {
       result = await authRpc("kpi_pr_dev_close_inventory", { p_token_hash: gate.current.tokenHash, p_session_id: body.sessionId });
+    } else if (action === "upsertDiscountRule") {
+      result = await authRpc("kpi_pr_dev_upsert_discount_rule", { p_token_hash: gate.current.tokenHash, p_rule: body.rule || {} });
+    } else if (action === "upsertPackage") {
+      result = await authRpc("kpi_pr_dev_upsert_package", { p_token_hash: gate.current.tokenHash, p_package: body.package || {} });
+    } else if (action === "saveSetting") {
+      result = await authRpc("kpi_pr_dev_save_setting", { p_token_hash: gate.current.tokenHash, p_key: body.key, p_value: body.value || {} });
     } else {
       return NextResponse.json({ error: "Action PR inconnue." }, { status: 400 });
     }
