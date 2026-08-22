@@ -1,1 +1,1 @@
-export { default } from "./magasin-workspace";
+export { default } from "./magasin-workspace-v2";
