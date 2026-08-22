@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "CRVO FTP bridge - forced sync retry 2026-08-22T02:10Z",
+  "description": "CRVO FTP bridge - forced sync retry 2026-08-22T06:16Z",
   "scripts": {
     "sync": "node src/index.mjs",
     "watch": "node src/watch-daemon.mjs",
