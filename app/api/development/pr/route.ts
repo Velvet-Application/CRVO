@@ -18,10 +18,12 @@ export async function GET(request: Request) {
   const query = url.searchParams.get("q")?.trim() || null;
   const workOrder = url.searchParams.get("workOrder")?.trim() || null;
   const inventory = url.searchParams.get("inventory")?.trim() || null;
+  const inventoryQuery = url.searchParams.get("iq")?.trim() || null;
+  const offset = Math.max(0, Number(url.searchParams.get("offset") || "0") || 0);
   try {
     let payload: PrPayload;
     if (workOrder) payload = await authRpc<PrPayload>("kpi_pr_dev_work_order", { p_token_hash: gate.current.tokenHash, p_work_order: workOrder });
-    else if (inventory) payload = await authRpc<PrPayload>("kpi_pr_dev_inventory_get", { p_token_hash: gate.current.tokenHash, p_session_id: inventory });
+    else if (inventory) payload = await authRpc<PrPayload>("kpi_pr_dev_inventory_page", { p_token_hash: gate.current.tokenHash, p_session_id: inventory, p_query: inventoryQuery, p_limit: 100, p_offset: offset });
     else payload = await authRpc<PrPayload>("kpi_pr_dev_snapshot", { p_token_hash: gate.current.tokenHash, p_query: query });
     return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
@@ -47,6 +49,7 @@ export async function POST(request: Request) {
     else if (action === "createInventory") result = await authRpc("kpi_pr_dev_create_inventory", { p_token_hash: gate.current.tokenHash, p_filters: body.filters || {} });
     else if (action === "countInventoryLine") result = await authRpc("kpi_pr_dev_count_inventory_line", { p_token_hash: gate.current.tokenHash, p_line_id: body.lineId, p_count: body.count });
     else if (action === "closeInventory") result = await authRpc("kpi_pr_dev_close_inventory", { p_token_hash: gate.current.tokenHash, p_session_id: body.sessionId });
+    else if (action === "detectBodyshopCession") result = await authRpc("kpi_pr_dev_detect_bodyshop_cession", { p_token_hash: gate.current.tokenHash });
     else if (action === "upsertDiscountRule") result = await authRpc("kpi_pr_dev_upsert_discount_rule", { p_token_hash: gate.current.tokenHash, p_rule: body.rule || {} });
     else if (action === "upsertPackage") result = await authRpc("kpi_pr_dev_upsert_package", { p_token_hash: gate.current.tokenHash, p_package: body.package || {} });
     else if (action === "saveSetting") result = await authRpc("kpi_pr_dev_save_setting", { p_token_hash: gate.current.tokenHash, p_key: body.key, p_value: body.value || {} });
