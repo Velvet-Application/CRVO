@@ -17,11 +17,26 @@ export async function GET(request: Request) {
   if ("error" in gate) return gate.error;
   const url = new URL(request.url);
   const query = url.searchParams.get("q")?.trim() || null;
+  const workOrder = url.searchParams.get("workOrder")?.trim() || null;
+  const inventory = url.searchParams.get("inventory")?.trim() || null;
   try {
-    const payload = await authRpc<PrPayload>("kpi_pr_dev_snapshot", {
-      p_token_hash: gate.current.tokenHash,
-      p_query: query,
-    });
+    let payload: PrPayload;
+    if (workOrder) {
+      payload = await authRpc<PrPayload>("kpi_pr_dev_work_order", {
+        p_token_hash: gate.current.tokenHash,
+        p_work_order: workOrder,
+      });
+    } else if (inventory) {
+      payload = await authRpc<PrPayload>("kpi_pr_dev_inventory_get", {
+        p_token_hash: gate.current.tokenHash,
+        p_session_id: inventory,
+      });
+    } else {
+      payload = await authRpc<PrPayload>("kpi_pr_dev_snapshot", {
+        p_token_hash: gate.current.tokenHash,
+        p_query: query,
+      });
+    }
     return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({ connected: false, error: error instanceof Error ? error.message : "Module PR indisponible." }, { status: 500 });
@@ -45,6 +60,12 @@ export async function POST(request: Request) {
       result = await authRpc("kpi_pr_dev_upsert_item", { p_token_hash: gate.current.tokenHash, p_item: body.item || {} });
     } else if (action === "movement") {
       result = await authRpc("kpi_pr_dev_post_movement", { p_token_hash: gate.current.tokenHash, p_payload: body.payload || {} });
+    } else if (action === "reserve") {
+      result = await authRpc("kpi_pr_dev_reserve", { p_token_hash: gate.current.tokenHash, p_payload: body.payload || {} });
+    } else if (action === "releaseReservation") {
+      result = await authRpc("kpi_pr_dev_release_reservation", { p_token_hash: gate.current.tokenHash, p_reservation_id: body.reservationId });
+    } else if (action === "serveReservation") {
+      result = await authRpc("kpi_pr_dev_serve_reservation", { p_token_hash: gate.current.tokenHash, p_reservation_id: body.reservationId });
     } else if (action === "createInventory") {
       result = await authRpc("kpi_pr_dev_create_inventory", { p_token_hash: gate.current.tokenHash, p_filters: body.filters || {} });
     } else if (action === "countInventoryLine") {
