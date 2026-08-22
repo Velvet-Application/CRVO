@@ -1,0 +1,67 @@
+name: Install exact CRVO aerial view
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/install-crvo-aerial-exact.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: install-crvo-aerial-exact
+  cancel-in-progress: false
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Download exact approved aerial image
+        run: |
+          set -euo pipefail
+          mkdir -p public
+          curl -L --fail --retry 4 --retry-delay 2 \
+            -o public/crvo-lens-aerial-exact.png \
+            "https://at.adobe.com/1YKL6sl3xVISlYEN"
+          file public/crvo-lens-aerial-exact.png
+          test "$(stat -c%s public/crvo-lens-aerial-exact.png)" -gt 3000000
+          file public/crvo-lens-aerial-exact.png | grep -qi 'PNG image data'
+          echo "70126682419e318b3b3793d5e8058852a38637a744d611b6bb1a64a7fe20c948  public/crvo-lens-aerial-exact.png" | sha256sum -c -
+
+      - name: Point Toolbox locator to the exact image
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('app/developpement/production-parking-locator.module.css')
+          text = path.read_text()
+          old = 'background:#061522 url("/crvo-aerial/map.svg") center center/contain no-repeat;'
+          new = 'background:#061522 url("/crvo-lens-aerial-exact.png") center center/contain no-repeat;'
+          if old not in text and new not in text:
+              raise SystemExit('Expected locator background rule was not found')
+          path.write_text(text.replace(old, new))
+          PY
+
+      - name: Commit exact aerial view and locator switch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/crvo-lens-aerial-exact.png app/developpement/production-parking-locator.module.css
+          if git diff --cached --quiet; then
+            echo "Exact aerial view already installed."
+            exit 0
+          fi
+          git commit -m "fix(production): install exact CRVO aerial locator background"
+          git pull --rebase origin main
+          git push origin HEAD:main
